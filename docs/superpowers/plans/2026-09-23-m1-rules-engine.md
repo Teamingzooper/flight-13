@@ -3041,20 +3041,25 @@ function simulate(seed: number, players: number, destination: DestinationId): Ga
 
 describe('bot simulation', () => {
   it('every game ends cleanly across sizes and destinations', () => {
-    const wins: Record<string, number> = {};
+    const report: string[] = [];
+    const reasons: Record<string, number> = {};
     let games = 0;
     for (let players = 4; players <= 16; players++) {
+      const wins: Record<string, number> = { passengers: 0, saboteurs: 0, draw: 0 };
       for (const destination of DESTINATION_ORDER) {
         for (let seed = 1; seed <= 6; seed++) {
           const s = simulate(seed * 1000 + players, players, destination);
           expect(s.phase.kind).toBe('ended');
           expect(s.result).not.toBeNull();
-          wins[s.result!.winner] = (wins[s.result!.winner] ?? 0) + 1;
+          wins[s.result!.winner]++;
+          reasons[s.result!.reason] = (reasons[s.result!.reason] ?? 0) + 1;
           games++;
         }
       }
+      report.push(`${String(players).padStart(2)} players: passengers ${wins.passengers}, saboteurs ${wins.saboteurs}, draw ${wins.draw}`);
     }
-    if (process.env.SIM_REPORT) console.table(wins);
+    // Vitest hides console output of passing tests; stderr always shows.
+    if (process.env.SIM_REPORT) process.stderr.write(`${report.join('\n')}\nby reason: ${JSON.stringify(reasons)}\n`);
     expect(games).toBe(13 * 5 * 6);
   });
 });
@@ -3108,7 +3113,7 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
 - [ ] **Step 4: Run it and watch it pass, with the win-rate report**
 
 Run: `SIM_REPORT=1 npx vitest run src/engine/sim.test.ts`
-Expected: 1 passed, plus a table of wins by team (random bots, so the split only needs to be non-degenerate: both teams win some games).
+Expected: 1 passed, plus wins by team per player count on stderr (random bots, so the split only needs to be non-degenerate: both teams win at every size). Vitest 5 hides `console` output of passing tests, so the report goes to stderr.
 
 - [ ] **Step 5: Commit**
 
