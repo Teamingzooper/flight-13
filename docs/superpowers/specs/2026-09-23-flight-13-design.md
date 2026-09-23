@@ -155,13 +155,16 @@ Saboteurs know each other (names and roles), share a private night chat, and see
 
 | Players | Bomber | Mastermind | Stewardess | Pilot | Nurse | Investigator |
 |---|---|---|---|---|---|---|
-| 4 | 1 | 0 | 1 | 1 | 1 | 0 |
+| 4 | 1 | 0 | 0 | 1 | 1 | 0 |
 | 5–6 | 1 | 0 | 1 | 1 | 1 | 1 |
 | 7–9 | 2 | 0 | 1 | 1 | 1 | 1 |
 | 10–12 | 2 | 1 | 1 | 1 | 1 | 1 |
 | 13–16 | 3 | 1 | 1 | 1 | 1 | 2 |
 
-Validation: at least one Bomber or Mastermind; special cards ≤ players.
+Validation: at least one Bomber or Mastermind; special cards ≤ players; and saboteurs must start as a
+minority — `2 × (bombers + masterminds + stewardess cards that could turn rogue) < players` — so a game
+can never begin at parity. The host chooses **Auto** roles (the preset for however many passengers
+board; default) or **Custom** counts.
 
 ## 8. Resolution order
 
