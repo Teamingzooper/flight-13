@@ -155,13 +155,12 @@ export class Lighting {
 
   private pickReadingLights(): void {
     this.clearReadingLights();
-    const all = [...this.cabin.readingLights.keys()];
-    for (const seat of all) if (Math.random() < 0.12) this.litSeats.add(seat);
-    for (const seat of this.litSeats) this.cabin.readingLights.get(seat)!.material = this.cabin.readingOn;
+    for (const seat of this.cabin.readingLights.seats) if (Math.random() < 0.12) this.litSeats.add(seat);
+    for (const seat of this.litSeats) this.cabin.readingLights.set(seat, true);
   }
 
   private clearReadingLights(): void {
-    for (const seat of this.litSeats) this.cabin.readingLights.get(seat)!.material = this.cabin.readingOff;
+    for (const seat of this.litSeats) this.cabin.readingLights.set(seat, false);
     this.litSeats.clear();
   }
 

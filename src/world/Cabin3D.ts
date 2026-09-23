@@ -140,11 +140,12 @@ export class Cabin3D {
     cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
 
     // Only your own seatbelt sign lights up for you (who else is buckled stays secret).
-    for (const sign of cabin.seatbeltSigns.values()) sign.material = cabin.seatbeltOff;
     if (seat && game.you?.buckled) {
       const cell = grid.parseSeat(seat)!;
-      cabin.seatbeltSigns.get(`${cell.row}${cell.col < grid.AISLE_COL ? 'L' : 'R'}`)!.material = cabin.seatbeltOn;
+      cabin.lightSeatbelt(`${cell.row}${cell.col < grid.AISLE_COL ? 'L' : 'R'}`);
       if (game.you.buckled === 'turbulence') this.controls.shake(0.05);
+    } else {
+      cabin.lightSeatbelt(null);
     }
   }
 

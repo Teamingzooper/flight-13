@@ -42,7 +42,7 @@ export function buildSeats(rows: number): SeatParts {
   const seats = grid.allSeats(rows);
 
   const fabric = new THREE.MeshStandardMaterial({ map: fabricTexture(), roughness: 0.92 });
-  const headrest = new THREE.MeshStandardMaterial({ color: '#e7eaf0', roughness: 0.85 });
+  const headrest = new THREE.MeshStandardMaterial({ color: '#c9ced8', roughness: 0.9 });
   const shell = new THREE.MeshStandardMaterial({ color: '#2b303a', roughness: 0.45 });
   const armMat = new THREE.MeshStandardMaterial({ color: '#3a404b', roughness: 0.5 });
   const metal = new THREE.MeshStandardMaterial({ color: '#8b939e', roughness: 0.35, metalness: 0.6 });
@@ -105,7 +105,7 @@ export function buildSeats(rows: number): SeatParts {
   instanced(new RoundedBoxGeometry(0.43, 0.11, 0.46, 3, 0.045), fabric, cushions);
   instanced(new RoundedBoxGeometry(0.43, 0.66, 0.09, 3, 0.04), fabric, backs);
   instanced(new RoundedBoxGeometry(0.44, 0.64, 0.03, 2, 0.012), shell, shells);
-  instanced(new RoundedBoxGeometry(0.34, 0.2, 0.012, 2, 0.005), headrest, headrests, false);
+  instanced(new RoundedBoxGeometry(0.3, 0.16, 0.012, 2, 0.005), headrest, headrests, false);
   instanced(new RoundedBoxGeometry(0.38, 0.28, 0.014, 2, 0.006), shell, trays, false);
   instanced(new RoundedBoxGeometry(0.05, 0.05, 0.42, 2, 0.02), armMat, arms);
   instanced(new THREE.BoxGeometry(0.035, 0.4, 0.035), metal, legs, false);

@@ -7,6 +7,8 @@ const LEAN_SECONDS = 0.75;
 /** How far in front of the screen the camera stops when leaning in. */
 const LEAN_DISTANCE = 0.2;
 const TAP_SLOP_PX = 7;
+/** Resting gaze: slightly down, so your screen and the cabin ahead are both in view. */
+const REST_PITCH = -0.26;
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -27,9 +29,9 @@ interface Walk {
 export class SeatControls {
   locked = false;
   private yaw = 0;
-  private pitch = -0.08;
+  private pitch = REST_PITCH;
   private targetYaw = 0;
-  private targetPitch = -0.08;
+  private targetPitch = REST_PITCH;
   private restYaw = 0;
   private lean = 0;
   private leanTarget = 0;
@@ -180,6 +182,7 @@ export class SeatControls {
       if (w.t >= 1) {
         this.walk = null;
         this.targetYaw = this.restYaw;
+        this.targetPitch = REST_PITCH;
       }
     } else {
       this.position.copy(this.eye);

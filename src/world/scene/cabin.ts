@@ -27,14 +27,10 @@ export interface CabinParts {
   windowGlass: THREE.MeshBasicMaterial[];
   skyDay: THREE.CanvasTexture;
   skyNight: THREE.CanvasTexture;
-  readingOn: THREE.MeshStandardMaterial;
-  readingOff: THREE.MeshStandardMaterial;
-  /** One reading-light disc per seat. */
-  readingLights: Map<SeatId, THREE.Mesh>;
-  seatbeltOn: THREE.MeshStandardMaterial;
-  seatbeltOff: THREE.MeshStandardMaterial;
-  /** One seatbelt sign per row side ("12L" / "12R"). */
-  seatbeltSigns: Map<string, THREE.Mesh>;
+  /** Reading lights, one per seat, drawn as a single instanced mesh. */
+  readingLights: { seats: SeatId[]; set(seat: SeatId, on: boolean): void };
+  /** Light the seatbelt sign above one row side ("12L" / "12R"), or none. */
+  lightSeatbelt(key: string | null): void;
   lavatoryDoor: THREE.Mesh;
   frontZ: number;
   rearZ: number;
@@ -106,8 +102,7 @@ export function buildCabin(rows: number): CabinParts {
   const cove = new THREE.MeshStandardMaterial({ color: '#0b0d12', emissive: '#e9f0ff', emissiveIntensity: 1.4 });
   const floorLights = new THREE.MeshStandardMaterial({ color: '#0b0d12', emissive: '#bcd3ff', emissiveIntensity: 0.1 });
   const exitSigns = new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ffffff', emissiveIntensity: 1.6, map: signTexture('EXIT', '#6bff9a', '#062812'), emissiveMap: signTexture('EXIT', '#6bff9a', '#062812') });
-  const readingOn = new THREE.MeshStandardMaterial({ color: '#fff4dc', emissive: '#ffd89a', emissiveIntensity: 4 });
-  const readingOff = new THREE.MeshStandardMaterial({ color: '#d9dbe0', roughness: 0.3 });
+  const readingMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
   const beltTexture = seatbeltSignTexture();
   const seatbeltOff = new THREE.MeshStandardMaterial({ color: '#15181e', map: beltTexture, emissive: '#000' });
   const seatbeltOn = new THREE.MeshStandardMaterial({ color: '#15181e', map: beltTexture, emissive: '#ffffff', emissiveMap: beltTexture, emissiveIntensity: 2.2 });
@@ -222,10 +217,13 @@ export function buildCabin(rows: number): CabinParts {
   }
 
   // Passenger service units under the bins: reading lights and seatbelt signs.
-  const readingLights = new Map<SeatId, THREE.Mesh>();
-  const seatbeltSigns = new Map<string, THREE.Mesh>();
+  const readingSeats: SeatId[] = [];
+  const readingMatrices: THREE.Matrix4[] = [];
+  const signKeys: string[] = [];
+  const signMatrices: THREE.Matrix4[] = [];
   const discGeometry = new THREE.CircleGeometry(0.024, 16);
   const signGeometry = new THREE.PlaneGeometry(0.1, 0.05);
+  const faceDown = Math.PI / 2;
   for (let row = 1; row <= rows; row++) {
     const z = rowZ(row) - 0.08;
     for (const side of [-1, 1]) {
@@ -235,17 +233,11 @@ export function buildCabin(rows: number): CabinParts {
       for (const col of cols) {
         // Aisle seat nearest the aisle end of the panel, window seat nearest the wall.
         const fromAisle = side < 0 ? 2 - col : col - 4;
-        const disc = new THREE.Mesh(discGeometry, readingOff);
-        disc.rotation.x = Math.PI / 2;
-        disc.position.set(side * (CABIN_HALF_WIDTH - BIN_DEPTH + 0.1 + fromAisle * 0.22), BIN_BOTTOM - 0.021, z - 0.06);
-        group.add(disc);
-        readingLights.set(grid.seatId({ row, col }), disc);
+        readingSeats.push(grid.seatId({ row, col }));
+        readingMatrices.push(m4(side * (CABIN_HALF_WIDTH - BIN_DEPTH + 0.1 + fromAisle * 0.22), BIN_BOTTOM - 0.021, z - 0.06, 0, faceDown));
       }
-      const sign = new THREE.Mesh(signGeometry, seatbeltOff);
-      sign.rotation.x = Math.PI / 2;
-      sign.position.set(side * (CABIN_HALF_WIDTH - BIN_DEPTH + 0.2), BIN_BOTTOM - 0.022, z + 0.1);
-      group.add(sign);
-      seatbeltSigns.set(`${row}${side < 0 ? 'L' : 'R'}`, sign);
+      signKeys.push(`${row}${side < 0 ? 'L' : 'R'}`);
+      signMatrices.push(m4(side * (CABIN_HALF_WIDTH - BIN_DEPTH + 0.2), BIN_BOTTOM - 0.022, z + 0.1, 0, faceDown));
     }
   }
 
@@ -286,6 +278,24 @@ export function buildCabin(rows: number): CabinParts {
   statics.build(group);
   windowBatches.forEach((batch) => batch.build(group, false));
 
+  const lampOff = new THREE.Color('#8e929a');
+  const lampOn = new THREE.Color('#ffe6b3');
+  const lamps = new THREE.InstancedMesh(discGeometry, readingMat, readingMatrices.length);
+  readingMatrices.forEach((m, i) => {
+    lamps.setMatrixAt(i, m);
+    lamps.setColorAt(i, lampOff);
+  });
+  group.add(lamps);
+  const lampIndex = new Map(readingSeats.map((seat, i) => [seat, i]));
+  const signs = new THREE.InstancedMesh(signGeometry, seatbeltOff, signMatrices.length);
+  signMatrices.forEach((m, i) => signs.setMatrixAt(i, m));
+  group.add(signs);
+  const litSign = new THREE.Mesh(signGeometry, seatbeltOn);
+  litSign.matrixAutoUpdate = false;
+  litSign.visible = false;
+  group.add(litSign);
+  const signIndex = new Map(signKeys.map((key, i) => [key, i]));
+
   return {
     group,
     cove,
@@ -294,12 +304,23 @@ export function buildCabin(rows: number): CabinParts {
     windowGlass,
     skyDay,
     skyNight,
-    readingOn,
-    readingOff,
-    readingLights,
-    seatbeltOn,
-    seatbeltOff,
-    seatbeltSigns,
+    readingLights: {
+      seats: readingSeats,
+      set(seat, on) {
+        const i = lampIndex.get(seat);
+        if (i === undefined) return;
+        lamps.setColorAt(i, on ? lampOn : lampOff);
+        lamps.instanceColor!.needsUpdate = true;
+      },
+    },
+    lightSeatbelt(key) {
+      const i = key === null ? undefined : signIndex.get(key);
+      litSign.visible = i !== undefined;
+      if (i === undefined) return;
+      // Sit the lit copy a hair below the dark sign.
+      litSign.matrix.copy(signMatrices[i]).multiply(new THREE.Matrix4().makeTranslation(0, 0, 0.001));
+      litSign.matrixWorldNeedsUpdate = true;
+    },
     lavatoryDoor,
     frontZ,
     rearZ,
