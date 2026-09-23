@@ -20,6 +20,7 @@
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
+    "@trystero-p2p/torrent": "^0.25.4",
     "preact": "^10.29.8",
     "trystero": "^0.25.4"
   }

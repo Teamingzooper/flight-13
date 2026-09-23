@@ -20,6 +20,9 @@ export type ActiveFlight = OpenFlight | { kind: 'blocked'; code: string };
 
 let active: { flight: ActiveFlight; stop: () => void } | null = null;
 
+// Live sessions hold WebRTC connections that hot updates cannot migrate: reload the page instead.
+import.meta.hot?.accept(() => location.reload());
+
 /** Create a new flight hosted by this browser and return its flight number. */
 export function bookFlight(settings: Settings, controlTower: boolean): string {
   const profile = loadProfile();
@@ -63,6 +66,7 @@ export function openFlight(code: string): ActiveFlight {
       tower: saved.controlTower,
     });
     const flight: OpenFlight = { kind: 'ok', code, client, host };
+    exposeForDev(flight);
     active = {
       flight,
       stop: () => {
@@ -77,8 +81,14 @@ export function openFlight(code: string): ActiveFlight {
 
   const client = new ClientSession({ transport: trysteroTransport(code), code, token: profile.token, name: profile.name, look: profile.look });
   const flight: OpenFlight = { kind: 'ok', code, client, host: null };
+  exposeForDev(flight);
   active = { flight, stop: () => client.close() };
   return flight;
+}
+
+/** Development only: expose the open flight so tests in the browser can drive it. */
+function exposeForDev(flight: ActiveFlight): void {
+  if (import.meta.env.DEV) (globalThis as { f13?: ActiveFlight }).f13 = flight;
 }
 
 export function closeFlight(code: string): void {

@@ -59,6 +59,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
     if (ok) setText('');
   };
 
+  const ready = game.mine?.ready ?? false;
   return (
     <div class="tab chat-tab">
       <div class="chips">
@@ -67,6 +68,11 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
             {LABEL[c]}
           </button>
         ))}
+        {alive && kind === 'day_discuss' && (
+          <button class={`chip ready-chip${ready ? ' on' : ''}`} disabled={ready} onClick={() => void send({ kind: 'ready' })}>
+            {ready ? 'Ready ✓ waiting for the others' : 'Ready to vote'}
+          </button>
+        )}
       </div>
       {channel === 'whisper' && whisperTargets.length > 0 && (
         <div class="chips whisper-to">

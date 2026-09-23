@@ -1299,6 +1299,12 @@ git commit -m "feat(net): host and client sessions over pluggable transports"
 
 ### Task 3: Browser transport and background-safe ticker
 
+> **Deviation found in browser testing (Task 8):** Trystero's default Nostr relays for this app id were
+> partly offline, and big relays rate-limit or reject this traffic (relay.damus.io bans it, offchain.pub
+> requires a web of trust). The transport now joins through WebTorrent trackers *and* a curated Nostr list
+> at once, merging peers and dropping duplicate messages (`@trystero-p2p/torrent` added). The session
+> module also reloads the page on hot updates, and a Ready-to-vote chip was added to the Chat tab.
+
 No unit tests (they need WebRTC and Workers); verified in the browser in Task 7.
 
 **Files:**
@@ -1307,28 +1313,94 @@ No unit tests (they need WebRTC and Workers); verified in the browser in Task 7.
 - [ ] **Step 1: Trystero transport**
 
 ```ts file=src/net/trystero.ts
-import { joinRoom, selfId, type JsonValue } from 'trystero';
+import { joinRoom as joinTorrentRoom } from '@trystero-p2p/torrent';
+import { joinRoom as joinNostrRoom, selfId, type JsonValue, type MessageAction, type Room } from 'trystero';
 import { Emitter, type MessageHandler, type PeerHandler, type Transport } from './transport';
 
 const APP_ID = 'flight13-teamingzooper-v1';
 
-/** A Trystero (WebRTC + Nostr signaling) room for one flight. */
+/** WebTorrent trackers: built for exactly this kind of WebRTC offer exchange. */
+const TRACKERS = ['wss://tracker.openwebtorrent.com', 'wss://tracker.webtorrent.dev', 'wss://open.ftorrent.com'];
+
+/**
+ * Public Nostr relays as a second, independent way to find each other. Relays that rate-limit or
+ * require a web of trust (relay.damus.io, offchain.pub) reject this traffic, so they are left out.
+ */
+const RELAYS = ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom', 'wss://relay.snort.social', 'wss://nostr-pub.wellorder.net'];
+
+const SEEN_PER_PEER = 256;
+
+/** A type alias (not an interface) so it satisfies Trystero's JSON payload index signature. */
+type Envelope = { i: number; m: JsonValue };
+
+interface Route {
+  room: Room;
+  action: MessageAction<Envelope>;
+}
+
+/**
+ * One flight's room, joined through two signaling networks at once. A peer counts as connected while
+ * either route reaches it; each message goes out once over the first live route and duplicates are dropped.
+ */
 export function trysteroTransport(code: string): Transport {
-  const room = joinRoom({ appId: APP_ID, password: `flight13:${code}` }, `flight-${code}`);
-  const action = room.makeAction<JsonValue>('m');
+  const config = { appId: APP_ID, password: `flight13:${code}` };
+  const roomId = `flight-${code}`;
+  const routes: Route[] = [
+    joinTorrentRoom({ ...config, relayConfig: { urls: TRACKERS } }, roomId),
+    joinNostrRoom({ ...config, relayConfig: { urls: RELAYS } }, roomId),
+  ].map((room) => ({ room, action: room.makeAction<Envelope>('m') }));
+
   const messages = new Emitter<[unknown, string]>();
   const joins = new Emitter<[string]>();
   const leaves = new Emitter<[string]>();
-  action.onMessage = (data, { peerId }) => messages.emit(data, peerId);
-  room.onPeerJoin = (peerId) => joins.emit(peerId);
-  room.onPeerLeave = (peerId) => leaves.emit(peerId);
+  const live = new Map<string, Set<number>>();
+  const seen = new Map<string, { order: number[]; ids: Set<number> }>();
+  let nextId = 1;
   let closed = false;
+
+  const firstSight = (peerId: string, id: number): boolean => {
+    let record = seen.get(peerId);
+    if (!record) {
+      record = { order: [], ids: new Set() };
+      seen.set(peerId, record);
+    }
+    if (record.ids.has(id)) return false;
+    record.ids.add(id);
+    record.order.push(id);
+    if (record.order.length > SEEN_PER_PEER) record.ids.delete(record.order.shift()!);
+    return true;
+  };
+
+  routes.forEach((route, index) => {
+    route.room.onPeerJoin = (peerId) => {
+      const via = live.get(peerId) ?? new Set<number>();
+      const isNew = via.size === 0;
+      via.add(index);
+      live.set(peerId, via);
+      if (isNew) joins.emit(peerId);
+    };
+    route.room.onPeerLeave = (peerId) => {
+      const via = live.get(peerId);
+      if (!via) return;
+      via.delete(index);
+      if (via.size > 0) return;
+      live.delete(peerId);
+      seen.delete(peerId);
+      leaves.emit(peerId);
+    };
+    route.action.onMessage = (data, { peerId }) => {
+      if (data && typeof data === 'object' && typeof data.i === 'number' && firstSight(peerId, data.i)) messages.emit(data.m, peerId);
+    };
+  });
+
   return {
     selfId,
     send(peerId, msg) {
-      if (closed) return;
-      action.send(msg as JsonValue, { target: peerId }).catch(() => {
-        // The peer went away mid-send; the leave event handles clean-up.
+      const via = live.get(peerId);
+      if (closed || !via || via.size === 0) return;
+      const route = routes[Math.min(...via)];
+      route.action.send({ i: nextId++, m: msg as JsonValue }, { target: peerId }).catch(() => {
+        // The peer dropped mid-send; the leave event handles clean-up.
       });
     },
     onMessage: (fn: MessageHandler) => messages.on(fn),
@@ -1340,7 +1412,7 @@ export function trysteroTransport(code: string): Transport {
       messages.clear();
       joins.clear();
       leaves.clear();
-      void room.leave();
+      for (const route of routes) void route.room.leave();
     },
   };
 }
@@ -2791,6 +2863,9 @@ export type ActiveFlight = OpenFlight | { kind: 'blocked'; code: string };
 
 let active: { flight: ActiveFlight; stop: () => void } | null = null;
 
+// Live sessions hold WebRTC connections that hot updates cannot migrate: reload the page instead.
+import.meta.hot?.accept(() => location.reload());
+
 /** Create a new flight hosted by this browser and return its flight number. */
 export function bookFlight(settings: Settings, controlTower: boolean): string {
   const profile = loadProfile();
@@ -2834,6 +2909,7 @@ export function openFlight(code: string): ActiveFlight {
       tower: saved.controlTower,
     });
     const flight: OpenFlight = { kind: 'ok', code, client, host };
+    exposeForDev(flight);
     active = {
       flight,
       stop: () => {
@@ -2848,8 +2924,14 @@ export function openFlight(code: string): ActiveFlight {
 
   const client = new ClientSession({ transport: trysteroTransport(code), code, token: profile.token, name: profile.name, look: profile.look });
   const flight: OpenFlight = { kind: 'ok', code, client, host: null };
+  exposeForDev(flight);
   active = { flight, stop: () => client.close() };
   return flight;
+}
+
+/** Development only: expose the open flight so tests in the browser can drive it. */
+function exposeForDev(flight: ActiveFlight): void {
+  if (import.meta.env.DEV) (globalThis as { f13?: ActiveFlight }).f13 = flight;
 }
 
 export function closeFlight(code: string): void {
@@ -4775,6 +4857,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
     if (ok) setText('');
   };
 
+  const ready = game.mine?.ready ?? false;
   return (
     <div class="tab chat-tab">
       <div class="chips">
@@ -4783,6 +4866,11 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
             {LABEL[c]}
           </button>
         ))}
+        {alive && kind === 'day_discuss' && (
+          <button class={`chip ready-chip${ready ? ' on' : ''}`} disabled={ready} onClick={() => void send({ kind: 'ready' })}>
+            {ready ? 'Ready ✓ waiting for the others' : 'Ready to vote'}
+          </button>
+        )}
       </div>
       {channel === 'whisper' && whisperTargets.length > 0 && (
         <div class="chips whisper-to">
@@ -6403,6 +6491,15 @@ function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => voi
     font-size: 10px;
     letter-spacing: 0.08em;
   }
+}
+
+.ready-chip {
+  margin-left: auto;
+}
+
+.ready-chip.on:disabled {
+  opacity: 1;
+  cursor: default;
 }
 ```
 
