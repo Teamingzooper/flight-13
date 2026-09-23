@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+import { defaultSettings } from '../engine';
+import { cleanLook, cleanName, cleanSettings, parseClientMessage } from './protocol';
+
+describe('protocol sanitising', () => {
+  it('cleans names', () => {
+    expect(cleanName('  Ann   Marie  ')).toBe('Ann Marie');
+    expect(cleanName('x'.repeat(40))).toHaveLength(16);
+    expect(cleanName('')).toBe('Passenger');
+    expect(cleanName(42)).toBe('Passenger');
+  });
+
+  it('clamps looks to the known palettes', () => {
+    expect(cleanLook({ body: 2, skin: 99, hair: -1, hairColor: 1.5, top: 3 })).toEqual({
+      body: 2,
+      skin: 0,
+      hair: 0,
+      hairColor: 0,
+      top: 3,
+      bottom: 0,
+    });
+  });
+
+  it('rebuilds valid settings and rejects junk', () => {
+    const s = defaultSettings();
+    expect(cleanSettings(JSON.parse(JSON.stringify(s)))).toEqual(s);
+    expect(cleanSettings({ ...s, extra: 'ignored' })).toEqual(s);
+    expect(cleanSettings({ ...s, destination: 'XXX' })).toBeNull();
+    expect(cleanSettings({ ...s, cards: { ...s.cards, bomber: 'lots' } })).toBeNull();
+  });
+
+  it('parses client messages defensively', () => {
+    expect(parseClientMessage({ t: 'join', v: 1, token: 'abcdefgh12', name: ' Ann ', look: {}, tower: 'yes' })).toEqual({
+      t: 'join',
+      v: 1,
+      token: 'abcdefgh12',
+      name: 'Ann',
+      look: { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, bottom: 0 },
+      tower: false,
+    });
+    expect(parseClientMessage({ t: 'join', v: 1, token: 'short' })).toBeNull();
+    expect(parseClientMessage({ t: 'intent', seq: 3, intent: { kind: 'ready' } })).toEqual({ t: 'intent', seq: 3, intent: { kind: 'ready' } });
+    expect(parseClientMessage({ t: 'intent', seq: 'x', intent: {} })).toBeNull();
+    expect(parseClientMessage('hello')).toBeNull();
+    expect(parseClientMessage({ t: 'nope' })).toBeNull();
+  });
+});
