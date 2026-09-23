@@ -1,0 +1,145 @@
+import type { VNode } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { useNow, useToast } from '../app/hooks';
+import { navigate } from '../app/router';
+import { endFlight, type OpenFlight } from '../app/sessions';
+import { isNightPhase, type Intent, type PhaseKind, type PlayerView } from '../engine';
+import { msLeft, type ClientSnapshot } from '../net/client';
+import type { ClientState } from '../net/protocol';
+import { ActionTab } from './ActionTab';
+import { ChatTab } from './ChatTab';
+import type { TVContext } from './context';
+import { FlightTab } from './FlightTab';
+import { Header } from './Header';
+import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
+import { MapTab } from './MapTab';
+import { PhaseOverlay } from './Overlays';
+import { VoteTab } from './VoteTab';
+
+export type TabId = 'map' | 'action' | 'chat' | 'vote' | 'flight';
+
+const TABS: { id: TabId; label: string; Icon: () => VNode }[] = [
+  { id: 'map', label: 'Map', Icon: IconMap },
+  { id: 'action', label: 'Action', Icon: IconBolt },
+  { id: 'chat', label: 'Chat', Icon: IconChat },
+  { id: 'vote', label: 'Vote', Icon: IconVote },
+  { id: 'flight', label: 'Flight', Icon: IconPlane },
+];
+
+const AUTO_TAB: Partial<Record<PhaseKind, TabId>> = { night_move: 'action', night_act: 'action', day_discuss: 'chat', day_vote: 'vote' };
+
+export function TV({ flight, snap, state }: { flight: OpenFlight; snap: ClientSnapshot; state: ClientState }) {
+  const game = state.game!;
+  const now = useNow(250);
+  const [toast, showToast] = useToast();
+  const [tab, setTab] = useState<TabId>(() => AUTO_TAB[game.phase.kind] ?? 'action');
+  const [leaving, setLeaving] = useState(false);
+  const phaseKey = `${game.phase.kind}:${game.phase.night}`;
+  const lastPhase = useRef(phaseKey);
+  useEffect(() => {
+    if (lastPhase.current === phaseKey) return;
+    lastPhase.current = phaseKey;
+    const next = AUTO_TAB[game.phase.kind];
+    if (next) setTab(next);
+  }, [phaseKey]);
+  const unread = useUnread(game, tab === 'chat');
+
+  const send = async (intent: Intent) => {
+    const result = await flight.client.sendIntent(intent);
+    if (!result.ok) showToast(result.error);
+    return result.ok;
+  };
+  const ctx: TVContext = { flight, state, game, snap, left: msLeft(snap, now), send, toast: showToast };
+
+  const you = game.you;
+  const acting = !!you && you.status === 'alive' && !you.buckled;
+  const pendingAction =
+    acting &&
+    ((game.phase.kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
+      (game.phase.kind === 'night_act' && !game.mine?.acted));
+  const pendingVote = game.phase.kind === 'day_vote' && game.options !== null && game.mine?.vote === null;
+  const badges: Partial<Record<TabId, string>> = {
+    action: pendingAction ? '!' : undefined,
+    vote: pendingVote ? '!' : undefined,
+    chat: unread > 0 ? String(Math.min(unread, 99)) : undefined,
+  };
+
+  return (
+    <div class={`tv ${isNightPhase(game.phase.kind) ? 'night' : 'day'}`}>
+      <div class="tv-bezel">
+        <div class="tv-screen">
+          <Header ctx={ctx} onLeave={() => setLeaving(true)} />
+          <main class="tv-body">
+            {tab === 'map' && <MapTab ctx={ctx} />}
+            {tab === 'action' && <ActionTab ctx={ctx} />}
+            {tab === 'chat' && <ChatTab ctx={ctx} />}
+            {tab === 'vote' && <VoteTab ctx={ctx} />}
+            {tab === 'flight' && <FlightTab ctx={ctx} />}
+          </main>
+          <nav class="tv-tabs" aria-label="Seatback menu">
+            {TABS.map(({ id, label, Icon }) => (
+              <button key={id} class={`tv-tab${tab === id ? ' on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+                <Icon />
+                <span>{label}</span>
+                {badges[id] && <em class="tv-badge">{badges[id]}</em>}
+              </button>
+            ))}
+          </nav>
+          <PhaseOverlay ctx={ctx} onLeave={() => setLeaving(true)} />
+          {leaving && <LeaveDialog flight={flight} onStay={() => setLeaving(false)} />}
+          {toast && (
+            <div class="tv-toast" role="alert">
+              {toast}
+            </div>
+          )}
+        </div>
+        <div class="tv-brand">Flight 13 · In-flight system</div>
+      </div>
+    </div>
+  );
+}
+
+function useUnread(game: PlayerView, reading: boolean): number {
+  const latest = game.chat.at(-1)?.id ?? 0;
+  const lastSeen = useRef(latest);
+  useEffect(() => {
+    if (reading) lastSeen.current = latest;
+  }, [reading, latest]);
+  if (reading) return 0;
+  return game.chat.filter((m) => m.id > lastSeen.current && m.from !== game.you?.id).length;
+}
+
+function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => void }) {
+  const hosting = flight.host !== null;
+  return (
+    <div class="tv-overlay" role="dialog" aria-modal="true">
+      <div class="tv-card">
+        <h2>Leave the flight?</h2>
+        <p>
+          {hosting
+            ? 'You are the host. If you leave, the flight pauses for everyone until you come back to this page.'
+            : 'You can come back with the same link and take your seat again.'}
+        </p>
+        <div class="row">
+          <button class="btn primary" onClick={onStay}>
+            Stay aboard
+          </button>
+          <button class="btn ghost" onClick={() => navigate('/')}>
+            Leave
+          </button>
+          {hosting && (
+            <button
+              class="btn danger"
+              onClick={() => {
+                endFlight(flight.code);
+                navigate('/');
+              }}
+            >
+              End flight for everyone
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
