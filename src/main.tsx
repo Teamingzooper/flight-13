@@ -8,6 +8,7 @@ import '@fontsource/inter/600.css';
 import './styles/base.css';
 import './styles/pages.css';
 import './styles/tv.css';
+import './styles/world.css';
 import { App } from './app/App';
 
 render(<App />, document.getElementById('app')!);

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import type { ClientSnapshot } from '../../net/client';
 import { formatCode, normalizeCode } from '../../net/code';
+import type { ClientState } from '../../net/protocol';
 import { TV } from '../../tv/TV';
 import { useClientSnapshot } from '../hooks';
 import { Notice, Searching } from '../Notice';
@@ -68,8 +70,72 @@ function FlightSession({ code }: { code: string }) {
   return <Connected flight={flight} />;
 }
 
+type ViewMode = '3d' | '2d';
+const VIEW_KEY = 'flight13.view';
+let webgl2Cache: boolean | null = null;
+
+function hasWebGL2(): boolean {
+  if (webgl2Cache === null) {
+    try {
+      webgl2Cache = !!document.createElement('canvas').getContext('webgl2');
+    } catch {
+      webgl2Cache = false;
+    }
+  }
+  return webgl2Cache;
+}
+
+/** 3D by default where WebGL2 works; the choice is remembered per browser. */
+function useViewMode(): [ViewMode, (mode: ViewMode) => void] {
+  const [mode, setMode] = useState<ViewMode>(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(VIEW_KEY);
+    } catch {
+      saved = null;
+    }
+    if (!hasWebGL2()) return '2d';
+    return saved === '2d' ? '2d' : '3d';
+  });
+  const choose = (next: ViewMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+  return [mode, choose];
+}
+
+type WorldComponent = typeof import('../../world/World').World;
+
+/** Loads the Three.js cabin on demand so the terminal and gate stay light. */
+function World3D(props: { flight: OpenFlight; snap: ClientSnapshot; state: ClientState; onUse2D: () => void }) {
+  const [World, setWorld] = useState<WorldComponent | null>(null);
+  useEffect(() => {
+    let alive = true;
+    import('../../world/World').then((module) => {
+      if (alive) setWorld(() => module.World);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!World) {
+    return (
+      <div class="world-loading">
+        <div class="spinner" aria-hidden="true" />
+        <p>Boarding the cabin…</p>
+      </div>
+    );
+  }
+  return <World {...props} />;
+}
+
 function Connected({ flight }: { flight: OpenFlight }) {
   const snap = useClientSnapshot(flight.client);
+  const [view, setView] = useViewMode();
   const { state } = snap;
   if (snap.status === 'refused') {
     return (
@@ -86,7 +152,13 @@ function Connected({ flight }: { flight: OpenFlight }) {
           Lost contact with the captain. Reconnecting…
         </div>
       )}
-      {state.game ? <TV flight={flight} snap={snap} state={state} /> : <Boarding flight={flight} state={state} />}
+      {!state.game ? (
+        <Boarding flight={flight} state={state} />
+      ) : view === '3d' ? (
+        <World3D flight={flight} snap={snap} state={state} onUse2D={() => setView('2d')} />
+      ) : (
+        <TV flight={flight} snap={snap} state={state} onUse3D={hasWebGL2() ? () => setView('3d') : undefined} />
+      )}
     </>
   );
 }

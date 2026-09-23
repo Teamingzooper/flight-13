@@ -3,7 +3,17 @@ import { formatCode } from '../net/code';
 import type { TVContext } from './context';
 import { clock, phaseHint, phaseTitle } from './format';
 
-export function Header({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
+export function Header({
+  ctx,
+  onLeave,
+  closeLabel = 'Leave the flight',
+  onUse3D,
+}: {
+  ctx: TVContext;
+  onLeave: () => void;
+  closeLabel?: string;
+  onUse3D?: () => void;
+}) {
   const { game, state, left } = ctx;
   const d = DESTINATIONS[game.settings.destination];
   const ended = game.phase.kind === 'ended';
@@ -25,8 +35,15 @@ export function Header({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }
         {!ended && <div class={`tv-time${left < 10_000 ? ' urgent' : ''}`}>{clock(left)}</div>}
         <div class="label">{game.phase.night > 0 ? `Night ${game.phase.night} of ${game.phase.nights}` : 'Climbing'}</div>
       </div>
-      <button class="tv-leave" onClick={onLeave} aria-label="Leave the flight" title="Leave the flight">
-        ✕
+      {onUse3D ? (
+        <button class="tv-view" onClick={onUse3D} title="Switch to the 3D cabin">
+          3D
+        </button>
+      ) : (
+        <span />
+      )}
+      <button class="tv-leave" onClick={onLeave} aria-label={closeLabel} title={closeLabel}>
+        {closeLabel.startsWith('Back') ? '↩' : '✕'}
       </button>
     </header>
   );

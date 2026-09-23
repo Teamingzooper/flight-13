@@ -1,15 +1,35 @@
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { Avatar } from '../app/Avatar';
 import { DESTINATIONS, ROLES, type PlayerView } from '../engine';
 import type { TVContext } from './context';
 import { morningReport, roleName, teamName, whenLabel } from './format';
 import { Tally } from './VoteTab';
 
+/** Which phase overlay was dismissed, shared by the 3D view and the TV so it only shows once. */
+let dismissed: string | null = null;
+const dismissListeners = new Set<() => void>();
+
+function useDismissed(): [string | null, (key: string) => void] {
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const fn = () => rerender((n) => n + 1);
+    dismissListeners.add(fn);
+    return () => void dismissListeners.delete(fn);
+  }, []);
+  return [
+    dismissed,
+    (key) => {
+      dismissed = key;
+      for (const fn of [...dismissListeners]) fn();
+    },
+  ];
+}
+
 export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
   const { game } = ctx;
   const key = `${game.phase.kind}:${game.phase.night}`;
-  const [closed, setClosed] = useState<string | null>(null);
+  const [closed, setClosed] = useDismissed();
   if (closed === key) return null;
   const close = () => setClosed(key);
   switch (game.phase.kind) {

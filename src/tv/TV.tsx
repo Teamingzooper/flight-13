@@ -28,10 +28,36 @@ const TABS: { id: TabId; label: string; Icon: () => VNode }[] = [
 
 const AUTO_TAB: Partial<Record<PhaseKind, TabId>> = { night_move: 'action', night_act: 'action', day_discuss: 'chat', day_vote: 'vote' };
 
-export function TV({ flight, snap, state }: { flight: OpenFlight; snap: ClientSnapshot; state: ClientState }) {
-  const game = state.game!;
+/** Everything the TV and the 3D HUD need to talk to the flight. */
+export function useTVContext(flight: OpenFlight, snap: ClientSnapshot, state: ClientState): { ctx: TVContext; toast: string | null } {
   const now = useNow(250);
   const [toast, showToast] = useToast();
+  const send = async (intent: Intent) => {
+    const result = await flight.client.sendIntent(intent);
+    if (!result.ok) showToast(result.error);
+    return result.ok;
+  };
+  return { ctx: { flight, state, game: state.game!, snap, left: msLeft(snap, now), send, toast: showToast }, toast };
+}
+
+export function TV({
+  flight,
+  snap,
+  state,
+  embedded = false,
+  onClose,
+  onUse3D,
+}: {
+  flight: OpenFlight;
+  snap: ClientSnapshot;
+  state: ClientState;
+  /** Drawn inside the 3D seatback screen (no bezel; the close button sits you back). */
+  embedded?: boolean;
+  onClose?: () => void;
+  onUse3D?: () => void;
+}) {
+  const game = state.game!;
+  const { ctx, toast } = useTVContext(flight, snap, state);
   const [tab, setTab] = useState<TabId>(() => AUTO_TAB[game.phase.kind] ?? 'action');
   const [leaving, setLeaving] = useState(false);
   const phaseKey = `${game.phase.kind}:${game.phase.night}`;
@@ -43,13 +69,6 @@ export function TV({ flight, snap, state }: { flight: OpenFlight; snap: ClientSn
     if (next) setTab(next);
   }, [phaseKey]);
   const unread = useUnread(game, tab === 'chat');
-
-  const send = async (intent: Intent) => {
-    const result = await flight.client.sendIntent(intent);
-    if (!result.ok) showToast(result.error);
-    return result.ok;
-  };
-  const ctx: TVContext = { flight, state, game, snap, left: msLeft(snap, now), send, toast: showToast };
 
   const you = game.you;
   const acting = !!you && you.status === 'alive' && !you.buckled;
@@ -65,10 +84,15 @@ export function TV({ flight, snap, state }: { flight: OpenFlight; snap: ClientSn
   };
 
   return (
-    <div class={`tv ${isNightPhase(game.phase.kind) ? 'night' : 'day'}`}>
+    <div class={`tv ${isNightPhase(game.phase.kind) ? 'night' : 'day'}${embedded ? ' embedded' : ''}`}>
       <div class="tv-bezel">
         <div class="tv-screen">
-          <Header ctx={ctx} onLeave={() => setLeaving(true)} />
+          <Header
+            ctx={ctx}
+            onLeave={embedded && onClose ? onClose : () => setLeaving(true)}
+            closeLabel={embedded ? 'Back to your seat (Esc)' : 'Leave the flight'}
+            onUse3D={onUse3D}
+          />
           <main class="tv-body">
             {tab === 'map' && <MapTab ctx={ctx} />}
             {tab === 'action' && <ActionTab ctx={ctx} />}
@@ -109,7 +133,7 @@ function useUnread(game: PlayerView, reading: boolean): number {
   return game.chat.filter((m) => m.id > lastSeen.current && m.from !== game.you?.id).length;
 }
 
-function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => void }) {
+export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => void }) {
   const hosting = flight.host !== null;
   return (
     <div class="tv-overlay" role="dialog" aria-modal="true">

@@ -1,0 +1,237 @@
+/* ---------- 3D cabin ---------- */
+.world {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.world-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.world-gl {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.world-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud-top {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 230, 0.18);
+  background: rgba(4, 8, 16, 0.55);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+}
+
+.hud-title {
+  font: 700 18px var(--display);
+  letter-spacing: 0.03em;
+}
+
+.hud-clock {
+  font: 700 24px/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-clock.urgent {
+  color: var(--amber);
+}
+
+.hud-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hud-button {
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hud-button:hover {
+  border-color: rgba(255, 181, 71, 0.6);
+}
+
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+}
+
+.crosshair.on {
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid var(--amber);
+  background: transparent;
+  box-shadow: 0 0 12px rgba(255, 181, 71, 0.6);
+}
+
+.hud-hint {
+  position: absolute;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  max-width: calc(100% - 32px);
+  padding: 8px 16px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 170, 230, 0.16);
+  background: rgba(4, 8, 16, 0.55);
+  color: #c6d3ec;
+  font-size: 13px;
+  text-align: center;
+}
+
+.hud-hint.urgent {
+  border-color: var(--amber);
+  background: var(--amber);
+  color: var(--amber-ink);
+  font-weight: 600;
+  animation: hint-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 181, 71, 0.18);
+  }
+}
+
+.hud-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.hud-overlay:empty {
+  display: none;
+}
+
+.world-tv {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(12px, 3vmin);
+  animation: world-tv-in 0.45s ease 0.35s both;
+}
+
+@keyframes world-tv-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.world-loading,
+.world-failed {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: #05070c;
+  color: var(--dim);
+  text-align: center;
+  padding: 24px;
+}
+
+/* The TV inside the 3D seatback screen. */
+.tv.embedded {
+  width: min(100%, 1150px);
+  height: min(100%, 780px);
+  min-height: 0;
+  padding: 0;
+  background: none;
+}
+
+.tv.embedded .tv-bezel {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 14px;
+  background: none;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+}
+
+.tv.embedded .tv-screen {
+  border-radius: 14px;
+}
+
+.tv.embedded .tv-brand {
+  display: none;
+}
+
+.tv-view {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--dim);
+  font: 700 12px var(--display);
+  letter-spacing: 0.06em;
+}
+
+.tv-view:hover {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+@media (max-width: 760px), (max-height: 520px) {
+  .world-tv {
+    padding: 0;
+  }
+
+  .tv.embedded {
+    width: 100%;
+    height: 100%;
+  }
+
+  .tv.embedded .tv-bezel,
+  .tv.embedded .tv-screen {
+    border-radius: 0;
+  }
+
+  .hud-title {
+    font-size: 15px;
+  }
+}

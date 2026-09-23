@@ -5,8 +5,8 @@ export const PITCH = 0.82;
 export const SEAT_WIDTH = 0.46;
 export const AISLE_WIDTH = 0.5;
 export const CABIN_HALF_WIDTH = 1.82;
-export const EYE_HEIGHT = 1.12;
-export const SCREEN_HEIGHT = 0.98;
+export const EYE_HEIGHT = 1.2;
+export const SCREEN_HEIGHT = 0.9;
 /** Galley bulkhead in front of row 1. */
 export const BULKHEAD_Z = -0.62;
 
