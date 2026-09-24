@@ -3,11 +3,31 @@ import type { OpenFlight } from '../app/sessions';
 import type { ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { clock, phaseTitle } from '../tv/format';
+import { IconSound } from '../tv/icons';
 import { PhaseOverlay } from '../tv/Overlays';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
+import { cabinAudio } from './audio';
 import { Cabin3D } from './Cabin3D';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const CAPTION_MS = 5200;
+
+/** True for `ms` after `key` first shows up (0 = never held). */
+function useHold(key: string, ms: number): boolean {
+  const [released, setReleased] = useState<string | null>(null);
+  useEffect(() => {
+    if (ms <= 0) return undefined;
+    const id = setTimeout(() => setReleased(key), ms);
+    return () => clearTimeout(id);
+  }, [key, ms]);
+  return ms > 0 && released !== key;
+}
+
+function useMuted(): [boolean, () => void] {
+  const [muted, setMuted] = useState(cabinAudio.muted);
+  useEffect(() => cabinAudio.subscribe(() => setMuted(cabinAudio.muted)), []);
+  return [muted, () => cabinAudio.setMuted(!cabinAudio.muted)];
+}
 
 /** The 3D cabin with a minimal HUD; lean into the seatback screen to use the TV. */
 export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; snap: ClientSnapshot; state: ClientState; onUse2D: () => void }) {
@@ -18,6 +38,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [aim, setAim] = useState(false);
   const [leavingOpen, setLeavingOpen] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  const [caption, setCaption] = useState<{ text: string; id: number } | null>(null);
+  const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
 
@@ -28,6 +50,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         onLockChange: setLocked,
         onAimChange: setAim,
         onPose: (pose) => flight.client.sendPose(pose),
+        onCaption: (text) => setCaption({ text, id: Date.now() }),
       });
       c.setPoseSource(flight.client.poses);
       cabin.current = c;
@@ -50,6 +73,12 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   useEffect(() => {
     cabin.current?.setLeaning(leaning);
   }, [leaning]);
+
+  useEffect(() => {
+    if (!caption) return undefined;
+    const id = setTimeout(() => setCaption(null), CAPTION_MS);
+    return () => clearTimeout(id);
+  }, [caption]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,6 +108,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
 
   const you = game.you;
   const kind = game.phase.kind;
+  // Let the lights come up (and a blast play out) before the morning report covers the cabin.
+  const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
+  const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 3800 : 1500) : 0);
   const needsInput =
     !!you &&
     you.status === 'alive' &&
@@ -86,14 +118,15 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     ((kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
-  const useIt = TOUCH ? 'tap your screen' : 'click your screen or press E';
+  const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
   const hint = needsInput
     ? `Your move: ${useIt}`
     : TOUCH
-      ? 'Drag to look around · tap your screen to use it'
+      ? 'Use screen · drag to look around'
       : locked
         ? 'Aim at your screen and click to use it · Esc frees the mouse'
         : 'Click to look around · click your screen (or press E) to use it';
+  const hasScreen = !!you?.seat;
 
   return (
     <div class={`world${leaning ? ' leaning' : ''}`}>
@@ -106,6 +139,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               {kind !== 'ended' && <span class={`hud-clock${ctx.left < 10_000 ? ' urgent' : ''}`}>{clock(ctx.left)}</span>}
             </div>
             <div class="hud-actions">
+              <button class="hud-chip hud-button hud-icon" onClick={toggleMute} aria-label={muted ? 'Sound off' : 'Sound on'} title={muted ? 'Sound off' : 'Sound on'}>
+                <IconSound muted={muted} />
+              </button>
               <button class="hud-chip hud-button" onClick={onUse2D}>
                 2D screen
               </button>
@@ -115,10 +151,24 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             </div>
           </div>
           {!TOUCH && <div class={`crosshair${aim ? ' on' : ''}`} />}
-          <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
-          <div class="hud-overlay">
-            <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
-          </div>
+          {caption && (
+            <div class="hud-caption" key={caption.id} role="status">
+              <span class="who">Captain</span>
+              {caption.text}
+            </div>
+          )}
+          {TOUCH && hasScreen ? (
+            <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={() => setLeaning(true)}>
+              {hint}
+            </button>
+          ) : (
+            <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
+          )}
+          {!holdReport && (
+            <div class="hud-overlay">
+              <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
+            </div>
+          )}
           {leavingOpen && (
             <div class="hud-overlay">
               <LeaveDialog flight={flight} onStay={() => setLeavingOpen(false)} />

@@ -134,6 +134,66 @@
   }
 }
 
+/* A blast whites out the view for a moment. */
+.world-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 55%, #fffbe8 0%, #ffd58a 35%, rgba(255, 140, 60, 0.65) 70%, rgba(90, 24, 0, 0.45) 100%);
+  mix-blend-mode: screen;
+}
+
+.hud-icon {
+  padding: 8px 10px;
+}
+
+/* Captain announcements. */
+.hud-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 50px);
+  width: max-content;
+  max-width: min(620px, calc(100% - 32px));
+  padding: 9px 16px 10px;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  border: 1px solid rgba(140, 170, 230, 0.18);
+  background: rgba(4, 8, 16, 0.74);
+  backdrop-filter: blur(8px);
+  color: #e8eefb;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+  animation: caption-in 0.35s ease-out;
+}
+
+.hud-caption .who {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--amber);
+  font: 700 11px var(--display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+@keyframes caption-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+/* On touch screens the hint is the button that opens your screen. */
+.hud-use {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 20px;
+}
+
 .hud-overlay {
   position: absolute;
   inset: 0;

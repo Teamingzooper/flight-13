@@ -18,6 +18,8 @@ export interface SeatParts {
   screenMatrix(seat: SeatId): THREE.Matrix4;
   /** Hide one seat's idle screen (a live screen is drawn there instead). */
   hideScreen(seat: SeatId | null): void;
+  /** Darken a seat (1 = as new, lower = scorched). */
+  tint(seat: SeatId, shade: number): void;
 }
 
 const tmp = new THREE.Object3D();
@@ -102,11 +104,16 @@ export function buildSeats(rows: number): SeatParts {
     return mesh;
   };
 
-  instanced(new RoundedBoxGeometry(0.43, 0.11, 0.46, 3, 0.045), fabric, cushions);
-  instanced(new RoundedBoxGeometry(0.43, 0.66, 0.09, 3, 0.04), fabric, backs);
-  instanced(new RoundedBoxGeometry(0.44, 0.64, 0.03, 2, 0.012), shell, shells);
-  instanced(new RoundedBoxGeometry(0.3, 0.16, 0.012, 2, 0.005), headrest, headrests, false);
-  instanced(new RoundedBoxGeometry(0.38, 0.28, 0.014, 2, 0.006), shell, trays, false);
+  // One instance per seat, in seat order, so a seat can be darkened after a blast.
+  const perSeat = [
+    instanced(new RoundedBoxGeometry(0.43, 0.11, 0.46, 3, 0.045), fabric, cushions),
+    instanced(new RoundedBoxGeometry(0.43, 0.66, 0.09, 3, 0.04), fabric, backs),
+    instanced(new RoundedBoxGeometry(0.44, 0.64, 0.03, 2, 0.012), shell, shells),
+    instanced(new RoundedBoxGeometry(0.3, 0.16, 0.012, 2, 0.005), headrest, headrests, false),
+    instanced(new RoundedBoxGeometry(0.38, 0.28, 0.014, 2, 0.006), shell, trays, false),
+  ];
+  const seatIndex = new Map(seats.map((seat, i) => [seat, i]));
+  const shade = new THREE.Color();
   instanced(new RoundedBoxGeometry(0.05, 0.05, 0.42, 2, 0.02), armMat, arms);
   instanced(new THREE.BoxGeometry(0.035, 0.4, 0.035), metal, legs, false);
   instanced(new RoundedBoxGeometry(SCREEN_W + 0.03, SCREEN_H + 0.03, 0.012, 2, 0.006), shell, bezels, false);
@@ -125,6 +132,15 @@ export function buildSeats(rows: number): SeatParts {
       hidden = seat;
       if (seat && screenIndex.has(seat)) screenMesh.setMatrixAt(screenIndex.get(seat)!, zero);
       screenMesh.instanceMatrix.needsUpdate = true;
+    },
+    tint(seat, amount) {
+      const i = seatIndex.get(seat);
+      if (i === undefined) return;
+      shade.setScalar(amount);
+      for (const mesh of perSeat) {
+        mesh.setColorAt(i, shade);
+        mesh.instanceColor!.needsUpdate = true;
+      }
     },
   };
 }

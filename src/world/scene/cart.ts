@@ -8,6 +8,8 @@ export class Cart {
   private z = 0;
   private targetZ = 0;
   private placed = false;
+  /** Metres per second: walking pace, or careering down the aisle when it breaks loose. */
+  private speed = 0.9;
 
   constructor() {
     this.group.name = 'cart';
@@ -41,8 +43,9 @@ export class Cart {
     });
   }
 
-  setRow(row: number, destroyed: boolean): void {
+  setRow(row: number, destroyed: boolean, runaway = false): void {
     this.group.visible = !destroyed;
+    if (rowZ(row) !== this.targetZ) this.speed = runaway ? 3.2 : 0.9;
     this.targetZ = rowZ(row);
     if (!this.placed) {
       this.z = this.targetZ;
@@ -50,11 +53,13 @@ export class Cart {
     }
   }
 
-  update(dt: number): void {
+  update(dt: number, time: number): void {
     const diff = this.targetZ - this.z;
-    // Roll at walking pace rather than snapping.
-    const step = Math.sign(diff) * Math.min(Math.abs(diff), dt * 0.9);
+    // Roll rather than snap; a runaway cart wobbles as it goes.
+    const step = Math.sign(diff) * Math.min(Math.abs(diff), dt * this.speed);
     this.z += step;
+    const wobble = this.speed > 1 && Math.abs(diff) > 0.01 ? Math.sin(time * 23) * 0.04 : 0;
     this.group.position.set(0, 0, this.z);
+    this.group.rotation.set(0, wobble, wobble * 0.3);
   }
 }

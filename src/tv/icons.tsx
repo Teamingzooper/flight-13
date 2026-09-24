@@ -70,3 +70,12 @@ export function IconCart({ size = 18 }: { size?: number }) {
     </svg>
   );
 }
+
+export function IconSound({ muted }: { muted: boolean }) {
+  return (
+    <Icon size={18}>
+      <path d="M4 9h4l5-4v14l-5-4H4z" />
+      {muted ? <path d="m16 9 5 6M21 9l-5 6" /> : <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />}
+    </Icon>
+  );
+}
