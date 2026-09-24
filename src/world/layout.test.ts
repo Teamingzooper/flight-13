@@ -26,4 +26,15 @@ describe('cabin layout', () => {
       expect(screen.y).toBeLessThan(eye.y);
     }
   });
+
+  it('stands the Stewardess behind the cart, looking down at its tablet', () => {
+    const eye = eyePosition('Aisle 4');
+    const screen = screenPose('Aisle 4');
+    expect(eye.x).toBe(0);
+    expect(eye.y).toBeGreaterThan(1.5);
+    expect(eye.z).toBeGreaterThan(rowZ(4) + 0.4);
+    expect(screen.z).toBeGreaterThan(rowZ(4));
+    expect(screen.z).toBeLessThan(eye.z - 0.2);
+    expect(screen.y).toBeLessThan(eye.y - 0.3);
+  });
 });

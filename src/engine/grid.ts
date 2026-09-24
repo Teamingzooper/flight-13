@@ -95,6 +95,12 @@ export function seatsWithin(centers: readonly Cell[], radius: number, rows: numb
   return allSeats(rows).filter((id) => distanceToAny(parseSeat(id)!, centers) <= radius);
 }
 
+/** Seats and aisle spots within `radius` of any of `centers` (who a blast would reach, crew included). */
+export function placesWithin(centers: readonly Cell[], radius: number, rows: number): SeatId[] {
+  const aisle = Array.from({ length: rows }, (_, i) => aisleSpot(i + 1)).filter((id) => distanceToAny(parsePlace(id)!, centers) <= radius);
+  return [...seatsWithin(centers, radius, rows), ...aisle];
+}
+
 export function isAisleSeat(id: SeatId): boolean {
   const cell = parseSeat(id);
   return cell !== null && (cell.col === 2 || cell.col === 4);

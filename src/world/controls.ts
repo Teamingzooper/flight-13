@@ -196,11 +196,61 @@ export function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: numb
 }
 
 /**
+ * Crew walk the aisle: turn to face the way you go, walk straight along it, and turn back to face
+ * forward over the cart.
+ */
+export function aisleScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number, fromPitch: number, restYaw: number): Script {
+  const dir = Math.sign(to.z - from.z) || 1;
+  const points = [from.clone(), new THREE.Vector3(0, STAND_EYE, (from.z + to.z) / 2), to.clone()];
+  return pathScript(
+    points,
+    (_d, _at, length) => {
+      const heading = fromYaw + wrap((dir > 0 ? Math.PI : 0) - fromYaw);
+      const end = heading + wrap(restYaw - heading);
+      const turn = Math.min(0.5, length * 0.3);
+      return {
+        yaw: [
+          [0, fromYaw],
+          [turn, heading],
+          [length - turn, heading],
+          [length, end],
+        ],
+        pitch: [
+          [0, fromPitch],
+          [turn, -0.1],
+          [length, REST_PITCH],
+        ],
+      };
+    },
+    { rampIn: 0.5, rampOut: 0.6 },
+  );
+}
+
+/**
  * Boarding: in at the front of the cabin already walking, down the aisle past everyone already sitting
  * there, into your row, and down into your seat facing forward. Walks faster if it has to fit `seconds`.
  */
 export function boardScript(from: THREE.Vector3, to: THREE.Vector3, restYaw: number, seconds: number): Script {
   const dir = Math.sign(to.z - from.z) || 1;
+  if (Math.abs(to.x) < 0.05) {
+    // Crew: straight down the aisle to the cart, then turn to face forward over it.
+    const walk = dir > 0 ? Math.PI : 0;
+    return pathScript(
+      [from.clone(), new THREE.Vector3(0, STAND_EYE, (from.z + to.z) / 2), to.clone()],
+      (_d, _at, length) => ({
+        yaw: [
+          [0, walk],
+          [Math.max(0.1, length - 0.9), walk],
+          [length, walk + wrap(restYaw - walk)],
+        ],
+        pitch: [
+          [0, -0.08],
+          [length, REST_PITCH],
+        ],
+      }),
+      { rampIn: 0.35, rampOut: 0.8, seconds },
+    );
+  }
   // Straight in, then along the aisle to the row (a front row needs no stretch of aisle).
   const aisleEnd = to.z - dir * 0.2;
   const points = [
@@ -443,9 +493,10 @@ export class SeatControls {
 
   /**
    * Sit in a new place. `screen` is the world matrix of the screen you use (null when standing aside).
-   * When `animate` is set you stand up, walk the aisle and sit down again.
+   * When `animate` is set you stand up, walk the aisle and sit down again (or, for crew in the `aisle`,
+   * just walk along it).
    */
-  setSeat(eye: THREE.Vector3, screen: THREE.Matrix4 | null, animate: boolean, restYaw = 0): void {
+  setSeat(eye: THREE.Vector3, screen: THREE.Matrix4 | null, animate: boolean, restYaw = 0, aisle = false): void {
     const leaning = this.lean > 0.01;
     // Set off from exactly where the head is (leaning in to the screen, or sitting back).
     const from = leaning ? this.camera.position.clone() : this.base.clone();
@@ -469,7 +520,7 @@ export class SeatControls {
       this.leanQuaternion.setFromRotationMatrix(look);
     }
     if (animate) {
-      this.startScript(walkScript(from, eye, this.yaw, this.pitch, restYaw));
+      this.startScript(aisle ? aisleScript(from, eye, this.yaw, this.pitch, restYaw) : walkScript(from, eye, this.yaw, this.pitch, restYaw));
       this.events.onRustle?.();
     } else {
       this.endScript();
@@ -512,6 +563,40 @@ export class SeatControls {
       { t: 0.8, fn: () => this.events.onFlashlight?.(true) },
       { t: 4.2, fn: () => this.events.onFlashlight?.(false) },
       { t: 4.5, fn: () => this.events.onRustle?.() },
+    );
+    this.lean = this.leanTarget = this.leanVel = 0;
+    this.startScript(script);
+    return script.duration;
+  }
+
+  /**
+   * Search a small room you are standing in (the lavatory): crouch where you stand, check under the sink
+   * ahead with the flashlight, look round behind the toilet on your right, and stand up again.
+   */
+  searchRoom(): number {
+    const e = this.eye;
+    const yaw = this.restYaw;
+    // Straight ahead, and to the right, of the way you face (yaw 0 faces -z; -PI/2 faces +x).
+    const ahead = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const low = e.clone().setY(0.62).addScaledVector(ahead, 0.18);
+    const under = e.clone().setY(0.42).addScaledVector(ahead, 0.3);
+    const script = keyScript(
+      'search',
+      [
+        { t: 0, pos: e.clone(), yaw, pitch: REST_PITCH },
+        { t: 0.8, pos: low, yaw, pitch: -0.95 },
+        { t: 1.7, pos: under, yaw, pitch: -0.35 },
+        { t: 2.9, pos: under.clone().addScaledVector(right, 0.08), yaw: yaw - 0.95, pitch: -0.45 },
+        { t: 3.8, pos: low.clone().addScaledVector(right, 0.05), yaw: yaw - 0.6, pitch: -0.8 },
+        { t: 4.7, pos: e.clone(), yaw, pitch: REST_PITCH },
+      ],
+      [0.35, 0.25],
+    );
+    script.marks.push(
+      { t: 0.05, fn: () => this.events.onRustle?.() },
+      { t: 0.7, fn: () => this.events.onFlashlight?.(true) },
+      { t: 3.9, fn: () => this.events.onFlashlight?.(false) },
     );
     this.lean = this.leanTarget = this.leanVel = 0;
     this.startScript(script);

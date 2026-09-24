@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { grid, type SeatId } from '../../engine';
 import { BULKHEAD_Z, CABIN_HALF_WIDTH, rowZ } from '../layout';
 import { carpetTexture, seatbeltSignTexture, signTexture, skyTexture } from '../textures';
+import type { LavatoryBox } from './lavatory';
 
 const WALL_X = CABIN_HALF_WIDTH - 0.02;
 const WINDOW_Y = 1.14;
@@ -32,6 +33,8 @@ export interface CabinParts {
   /** Light the seatbelt sign above one row side ("12L" / "12R"), or none. */
   lightSeatbelt(key: string | null): void;
   lavatoryDoor: THREE.Mesh;
+  /** The lavatory's box (its inside is built separately, for nights spent in there). */
+  lavatory: LavatoryBox;
   frontZ: number;
   rearZ: number;
 }
@@ -322,6 +325,7 @@ export function buildCabin(rows: number): CabinParts {
       litSign.matrixWorldNeedsUpdate = true;
     },
     lavatoryDoor,
+    lavatory: { minX: -(0.3 + lavWidth), maxX: -0.3, frontZ: lavFront, backZ: lavFront + REAR_ZONE - 0.1, height: CEILING_Y - 0.02 },
     frontZ,
     rearZ,
   };

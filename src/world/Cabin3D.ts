@@ -23,6 +23,7 @@ import { Lighting, type LightMode } from './lighting';
 import { buildCabin, type CabinParts } from './scene/cabin';
 import { Cart } from './scene/cart';
 import { Effects } from './scene/effects';
+import { buildLavatory, type LavatoryInterior } from './scene/lavatory';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
 import { BOARDING_SHOTS, FADE, boardingMoment } from './boarding';
@@ -56,6 +57,7 @@ interface Built {
   rows: number;
   cabin: CabinParts;
   seats: SeatParts;
+  lavatory: LavatoryInterior;
   lighting: Lighting;
   windows: WindowView;
   effects: Effects;
@@ -113,6 +115,8 @@ export class Cabin3D {
   private readonly resizeObserver: ResizeObserver;
   private built: Built | null = null;
   private seatKey: string | null = null;
+  /** You work the aisle and the cart is at your row: your tablet screen rolls with it. */
+  private tabletFollows = false;
   private state: ClientState | null = null;
   private snap: ClientSnapshot | null = null;
   private aimOnScreen = false;
@@ -203,7 +207,8 @@ export class Cabin3D {
       onStep: () => cabinAudio.step(),
       onRustle: () => cabinAudio.rustle(),
       onFlashlight: (on) => {
-        this.flashlight.intensity = on ? 9 : 0;
+        // (The lit lavatory is tiny: a dimmer beam there.)
+        this.flashlight.intensity = on ? (this.seatKey?.startsWith('wc:') ? 1.6 : 9) : 0;
         cabinAudio.click();
       },
       onScript: (kind, active) => {
@@ -300,23 +305,34 @@ export class Cabin3D {
     );
 
     const seat = game.you?.seat ?? null;
-    const key = seat ?? (game.you ? 'aft' : 'tower');
+    const washroom = !!game.you?.inWashroom && game.you.status === 'alive';
+    const key = seat ? (washroom ? `wc:${seat}` : seat) : game.you ? 'aft' : 'tower';
     if (key !== this.seatKey) {
-      const animate = this.seatKey !== null && seat !== null && this.seatKey !== 'aft' && this.seatKey !== 'tower';
+      const fromWashroom = this.seatKey?.startsWith('wc:') ?? false;
+      const first = this.seatKey === null;
+      const animate = !first && !washroom && !fromWashroom && seat !== null && this.seatKey !== 'aft' && this.seatKey !== 'tower';
       this.seatKey = key;
-      this.placeCamera(seat, animate);
+      if ((washroom || fromWashroom) && !first) {
+        // Into the lavatory for the night (or back to your seat at dawn) behind a quick fade.
+        this.fade(1, 0.45, washroom ? 'You slip into the lavatory and lock the door.' : '');
+        this.later(washroom ? 1.2 : 0.5, () => {
+          if (this.seatKey !== key) return;
+          this.placeCamera(seat, false, washroom);
+          this.fade(0, 0.7);
+        });
+      } else {
+        this.placeCamera(seat, animate, washroom);
+      }
     }
+    const crewRow = seat && !washroom ? grid.aisleRow(seat) : null;
+    this.tabletFollows = crewRow !== null && !game.cabin.cartDestroyed && game.cabin.cartRow === crewRow;
     const runaway = cues.some((c) => c.kind === 'cartRoll' && c.runaway);
     this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed, runaway);
     cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
 
-    // Only your own seatbelt sign lights up for you (who else is buckled stays secret).
-    if (seat && game.you?.buckled) {
-      const cell = grid.parseSeat(seat)!;
-      cabin.lightSeatbelt(`${cell.row}${cell.col < grid.AISLE_COL ? 'L' : 'R'}`);
-    } else {
-      cabin.lightSeatbelt(null);
-    }
+    // Only your own seatbelt sign lights up for you (who else is buckled stays secret; crew have none).
+    const buckledSeat = seat && game.you?.buckled ? grid.parseSeat(seat) : null;
+    cabin.lightSeatbelt(buckledSeat ? `${buckledSeat.row}${buckledSeat.col < grid.AISLE_COL ? 'L' : 'R'}` : null);
 
     // The ending tells its own story: no end-of-flight announcements over it.
     const narrated = kind === 'ended' && !!prev && !this.endingSettled;
@@ -329,7 +345,10 @@ export class Cabin3D {
     if (kind !== 'ended') this.endingSettled = false;
     if (prev && game.you && seat) {
       // You just looked under your seat: crouch down and see for yourself.
-      if (game.you.searched && !prev.you?.searched) this.controls.search();
+      if (game.you.searched && !prev.you?.searched) {
+        if (game.you.inWashroom) this.controls.searchRoom();
+        else this.controls.search();
+      }
     }
     if (prev?.you?.status === 'alive' && game.you?.status === 'dead' && !this.holdAlive.has(game.you.id)) this.dieOnScreen();
     // Lasting damage comes from the state, so a reload shows the same cabin.
@@ -483,25 +502,38 @@ export class Cabin3D {
     const windows = new WindowView(cabin.windowGlass, skies.day);
     const lav = cabin.lavatoryDoor.position;
     const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7));
-    group.add(cabin.group, seats.group, effects.group);
+    const lavatory = buildLavatory(cabin.lavatory);
+    group.add(cabin.group, seats.group, effects.group, lavatory.group);
     this.scene.add(group);
     const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
-    this.built = { rows, cabin, seats, lighting, windows, effects, skies, group };
+    this.built = { rows, cabin, seats, lavatory, lighting, windows, effects, skies, group };
     this.seatKey = null;
   }
 
-  private placeCamera(seat: SeatId | null, animate: boolean): void {
-    const { seats, lighting, cabin } = this.built!;
-    seats.hideScreen(seat);
-    if (seat) {
-      const e = eyePosition(seat);
-      const screen = seats.screenMatrix(seat);
-      this.controls.setSeat(new THREE.Vector3(e.x, e.y, e.z), screen, animate);
+  private placeCamera(seat: SeatId | null, animate: boolean, washroom = false): void {
+    const { seats, lighting, cabin, lavatory } = this.built!;
+    seats.hideScreen(washroom ? null : seat);
+    // The lavatory's inside is only drawn while you are in it.
+    lavatory.group.visible = washroom;
+    const useScreen = (screen: THREE.Matrix4) => {
       this.liveMesh.matrix.copy(screen);
       this.liveMesh.matrixWorldNeedsUpdate = true;
       this.liveMesh.visible = true;
-      const glow = new THREE.Vector3(0, 0, 0.25).applyMatrix4(screen);
-      lighting.placeScreenGlow(glow);
+      lighting.placeScreenGlow(new THREE.Vector3(0, 0, 0.25).applyMatrix4(screen));
+    };
+    if (seat && washroom) {
+      // A night locked in the lavatory: at the mirror, with a little screen beside it.
+      this.controls.setSeat(lavatory.eye.clone(), lavatory.screen, false, lavatory.restYaw);
+      useScreen(lavatory.screen);
+      return;
+    }
+    if (seat) {
+      const e = eyePosition(seat);
+      // Crew stand behind the drink cart and use the tablet on it.
+      const row = grid.aisleRow(seat);
+      const screen = row === null ? seats.screenMatrix(seat) : Cart.tabletAt(row);
+      this.controls.setSeat(new THREE.Vector3(e.x, e.y, e.z), screen, animate, 0, row !== null);
+      useScreen(screen);
       return;
     }
     // Restrained passengers watch from where they stand in the rear galley; the control tower from the front.
@@ -701,6 +733,10 @@ export class Cabin3D {
       me.hidden = this.searching;
     }
     this.cart.update(dt, time);
+    if (this.tabletFollows && this.liveMesh.visible) {
+      this.cart.tabletMatrix(this.liveMesh.matrix);
+      this.liveMesh.matrixWorldNeedsUpdate = true;
+    }
     this.applyPoses(time);
     this.people.update(dt, time);
     this.drawScreen(time);
@@ -878,7 +914,8 @@ export class Cabin3D {
     const players = this.holdAlive.size
       ? game.players.map((p) => (this.holdAlive.has(p.id) ? { ...p, status: 'alive' as const, cause: null } : p))
       : game.players;
-    this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource);
+    const door = this.built?.lavatory.door;
+    this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, game.washroom && door ? { id: game.washroom, door } : null);
   }
 
   private later(seconds: number, fn: () => void): void {

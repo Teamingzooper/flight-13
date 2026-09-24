@@ -83,6 +83,20 @@ export class LiveScreen {
             g.fillStyle = '#d7dfee';
             g.fillRect(x + cellW / 2 - 9, y + 5, 16, cellH - 10);
           }
+          // The Stewardess, standing in the aisle.
+          const crew = bySeat.get(grid.aisleSpot(r));
+          if (crew) {
+            const you = crew.id === game.you?.id;
+            g.fillStyle = crew.status === 'dead' ? '#5a2027' : TOP[crew.look.top] ?? '#8aa';
+            g.beginPath();
+            g.arc(x + cellW / 2 - 4, y + cellH / 2, 7, 0, Math.PI * 2);
+            g.fill();
+            if (you) {
+              g.strokeStyle = '#4fd1c5';
+              g.lineWidth = 3;
+              g.stroke();
+            }
+          }
           continue;
         }
         const p = bySeat.get(grid.seatId({ row: r, col: c }));

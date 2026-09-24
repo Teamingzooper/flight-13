@@ -1,4 +1,4 @@
-import { ROLES, describeLocation, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
+import { ROLES, describeLocation, grid, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
 
 export function clock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -19,7 +19,13 @@ export function nameOf(game: PlayerView, id: string | null | undefined): string 
 export function nameWithSeat(game: PlayerView, id: string): string {
   const p = playerById(game, id);
   if (!p) return 'someone';
-  return p.seat ? `${p.name} (${p.seat})` : p.name;
+  return p.seat ? `${p.name} (${placeLabel(p.seat)})` : p.name;
+}
+
+/** A seat, or where the Stewardess is working ("crew, row 5"). */
+export function placeLabel(seat: string): string {
+  const row = grid.aisleRow(seat);
+  return row === null ? seat : `crew, row ${row}`;
 }
 
 export function shortName(name: string): string {
