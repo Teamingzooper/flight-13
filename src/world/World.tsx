@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OpenFlight } from '../app/sessions';
 import { grid } from '../engine';
 import type { ClientSnapshot } from '../net/client';
+import { EMOTES, canEmote } from '../net/emotes';
 import type { ClientState } from '../net/protocol';
 import { clock, phaseTitle } from '../tv/format';
 import { IconSound } from '../tv/icons';
@@ -89,6 +90,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       });
       c.setPoseSource(flight.client.poses);
       c.setFaceSource(flight.client.faces);
+      c.setEmoteSource(flight.client.emotes);
       cabin.current = c;
       if (import.meta.env.DEV) (globalThis as { cabin3d?: Cabin3D }).cabin3d = c;
       return () => {
@@ -191,6 +193,21 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     return () => removeEventListener('keydown', onKey);
   }, [leaning, preflight]);
 
+  // Gestures by day: the bar at the bottom, or keys 1 to 5.
+  const emoting = !!game.you && canEmote(kind, game.you.status) && !leaning && !scene && !ending && !cardOpen && !leavingOpen;
+  useEffect(() => {
+    if (!emoting) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const emote = EMOTES.find((x) => x.key === e.key);
+      if (typing || !emote || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      flight.client.sendEmote(emote.id);
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [emoting]);
+
   if (failed) {
     return (
       <div class="world-failed">
@@ -270,6 +287,16 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             <div class="hud-caption" key={caption.id} role="status">
               <span class="who">{caption.who}</span>
               {caption.text}
+            </div>
+          )}
+          {emoting && (
+            <div class="emote-bar" role="toolbar" aria-label="Gestures">
+              {EMOTES.map((e) => (
+                <button key={e.id} type="button" title={`${e.name}${TOUCH ? '' : ` (${e.key})`}`} aria-label={e.name} onClick={() => flight.client.sendEmote(e.id)}>
+                  {e.icon}
+                  {!TOUCH && <kbd>{e.key}</kbd>}
+                </button>
+              ))}
             </div>
           )}
           {preflight || ending ? null : TOUCH && hasScreen ? (

@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { DESTINATIONS, grid, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
+import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { ClientState, Pose } from '../net/protocol';
 import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
@@ -107,6 +108,12 @@ export class Cabin3D {
   private readonly people = new People();
   private poseSource: Map<string, Pose> | null = null;
   private faceSource: ReadonlyMap<string, string> | null = null;
+  /** Everyone's latest gesture (the client's live map), and the last one played for each. */
+  private emoteSource: ReadonlyMap<string, { emote: EmoteId; seq: number }> | null = null;
+  private readonly emoteSeen = new Map<string, number>();
+  /** Emoji bubbles over the heads of people gesturing. */
+  private readonly bubbles = document.createElement('div');
+  private readonly bubbleEls = new Map<string, { el: HTMLDivElement; until: number }>();
   private lastPose: Pose | null = null;
   private lastPoseAt = 0;
   private youId: string | null = null;
@@ -225,6 +232,8 @@ export class Cabin3D {
     this.fadeEl.className = 'world-fade';
     this.fadeText.className = 'world-fade-text';
     this.fadeEl.appendChild(this.fadeText);
+    this.bubbles.className = 'world-emotes';
+    container.appendChild(this.bubbles);
     container.appendChild(this.fadeEl);
     cabinAudio.start();
     addEventListener('pointerdown', this.unlockAudio);
@@ -446,6 +455,12 @@ export class Cabin3D {
     this.poseSource = poses;
   }
 
+  /** Where gestures come from (the client's emote map). Gestures made before now are not replayed. */
+  setEmoteSource(emotes: ReadonlyMap<string, { emote: EmoteId; seq: number }>): void {
+    this.emoteSource = emotes;
+    for (const [id, e] of emotes) this.emoteSeen.set(id, e.seq);
+  }
+
   /** Where painted faces come from (the client's face map). */
   setFaceSource(faces: ReadonlyMap<string, string>): void {
     this.faceSource = faces;
@@ -466,6 +481,7 @@ export class Cabin3D {
     removeEventListener('keydown', this.unlockAudio);
     this.flashEl.remove();
     this.fadeEl.remove();
+    this.bubbles.remove();
     this.hotel?.dispose();
     this.gate?.dispose();
     this.ending?.dispose();
@@ -738,7 +754,9 @@ export class Cabin3D {
       this.liveMesh.matrixWorldNeedsUpdate = true;
     }
     this.applyPoses(time);
+    this.playEmotes(time);
     this.people.update(dt, time);
+    this.placeBubbles(time);
     this.drawScreen(time);
     const aim = this.controls.locked && this.hitsScreen(new THREE.Vector2(0, 0));
     if (aim !== this.aimOnScreen) {
@@ -746,6 +764,55 @@ export class Cabin3D {
       this.opts.onAimChange?.(aim);
     }
     this.composer.render(dt);
+  }
+
+  /** Start any new gestures, with a bubble over the head (yours shows above the gesture bar). */
+  private playEmotes(time: number): void {
+    if (!this.emoteSource) return;
+    for (const [id, { emote, seq }] of this.emoteSource) {
+      if ((this.emoteSeen.get(id) ?? 0) >= seq) continue;
+      this.emoteSeen.set(id, seq);
+      const actor = this.people.actor(id);
+      if (!actor) continue;
+      const info = EMOTE_BY_ID[emote];
+      actor.playEmote(emote, time);
+      let bubble = this.bubbleEls.get(id);
+      if (!bubble) {
+        bubble = { el: document.createElement('div'), until: 0 };
+        bubble.el.className = 'emote-bubble';
+        this.bubbles.appendChild(bubble.el);
+        this.bubbleEls.set(id, bubble);
+      }
+      bubble.el.textContent = info.icon;
+      bubble.el.title = info.name;
+      bubble.until = time + info.seconds;
+    }
+  }
+
+  /** Keep each bubble over its head, and drop it when the gesture is done. */
+  private placeBubbles(time: number): void {
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    const at = new THREE.Vector3();
+    for (const [id, bubble] of this.bubbleEls) {
+      const actor = this.people.actor(id);
+      if (!actor || time > bubble.until) {
+        bubble.el.remove();
+        this.bubbleEls.delete(id);
+        continue;
+      }
+      if (id === this.youId) {
+        // Your own arms are mostly out of view: show what you did just above the gesture bar.
+        bubble.el.hidden = this.dark;
+        bubble.el.style.transform = `translate(${width / 2}px, ${height - 118}px) translate(-50%, -100%)`;
+        continue;
+      }
+      actor.joints.head.getWorldPosition(at).add(new THREE.Vector3(0, 0.36, 0));
+      const p = at.project(this.camera);
+      const visible = !actor.hidden && !this.dark && p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
+      bubble.el.hidden = !visible;
+      if (visible) bubble.el.style.transform = `translate(${((p.x + 1) / 2) * width}px, ${((1 - p.y) / 2) * height}px) translate(-50%, -100%)`;
+    }
   }
 
   /** During a public vote, each voter points at the passenger they picked. */
