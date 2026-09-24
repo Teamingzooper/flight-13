@@ -1,5 +1,6 @@
 import { Avatar } from '../app/Avatar';
 import type { PlayerView } from '../engine';
+import { ItemIcon } from '../meta/ItemIcon';
 import type { TVContext } from './context';
 import { clock, nameOf } from './format';
 
@@ -30,6 +31,15 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
         Who should be restrained?
         <span class="muted">They need more votes than Skip. Not voting counts as Skip. {clock(left)} left.</span>
       </div>
+      {game.options?.items.some((u) => u.item === 'ffcard') && (
+        <div class="callout ffcard">
+          <ItemIcon item="ffcard" size={22} />
+          <span>Your frequent-flyer card makes your vote count twice today. Everyone will see you flash it.</span>
+          <button class="btn primary small" onClick={() => void send({ kind: 'use', item: 'ffcard' })}>
+            Flash it
+          </button>
+        </div>
+      )}
       <div class="vote-grid">
         {candidates.map((p) => (
           <button key={p.id} class={`vote-card${mine === p.id ? ' on' : ''}`} disabled={!canVote.has(p.id)} onClick={() => void send({ kind: 'vote', target: p.id })}>

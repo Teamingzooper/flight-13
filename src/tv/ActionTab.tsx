@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, type NightAction, type PlayerView } from '../engine';
+import { CarryOn } from './CarryOn';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, roleName, teamName, whenLabel } from './format';
 import { SeatMap, type Spot } from './SeatMap';
@@ -32,6 +33,7 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
       <BlackBoxNote ctx={ctx} />
       {kind === 'night_move' && (you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
       {kind === 'night_act' && (you.buckled ? <Buckled game={game} /> : <AbilityPanel ctx={ctx} />)}
+      <CarryOn ctx={ctx} />
       {kind !== 'night_move' && kind !== 'night_act' && <Notes game={game} />}
     </div>
   );
@@ -70,6 +72,7 @@ function Buckled({ game }: { game: PlayerView }) {
     <div class="callout amber">
       <b>Ding.</b> The seatbelt sign is on over your seat{game.you!.buckled === 'turbulence' ? ' because of turbulence' : ''}. You cannot move
       or use an ability tonight.
+      {game.you!.items.includes('extender') && ' Your seatbelt extender can free you: see your carry-on below.'}
     </div>
   );
 }

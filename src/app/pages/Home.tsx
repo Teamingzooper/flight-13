@@ -1,14 +1,17 @@
 import { useState } from 'preact/hooks';
+import { useBag } from '../../meta/store';
 import { formatCode, normalizeCode } from '../../net/code';
 import { lastFlight, loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
 import { navigate } from '../router';
+import { Credits } from '../../meta/Credits';
 
 export function Home() {
   const [profile, setProfile] = useState(loadProfile);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const previous = lastFlight();
+  const bag = useBag();
 
   const update = (next: Profile) => {
     setProfile(next);
@@ -73,6 +76,10 @@ export function Home() {
                 Last flight: <a href={`#/f/${previous}`}>{formatCode(previous)}</a>
               </p>
             )}
+            <a class="duty-free-link" href="#/duty-free">
+              <span>Duty Free</span>
+              <Credits amount={bag.credits} />
+            </a>
             {error && <p class="error-text">{error}</p>}
           </div>
         </div>

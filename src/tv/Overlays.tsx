@@ -1,7 +1,12 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Avatar } from '../app/Avatar';
-import { DESTINATIONS, ROLES, type PlayerView } from '../engine';
+import { Credits } from '../meta/Credits';
+import { DESTINATIONS, ITEMS, ROLES, type PlayerView } from '../engine';
+import { ACHIEVEMENTS } from '../meta/achievements';
+import { settlementFor } from '../meta/bag';
+import { ItemIcon } from '../meta/ItemIcon';
+import { useBag } from '../meta/store';
 import type { TVContext } from './context';
 import { morningReport, roleName, teamName, whenLabel } from './format';
 import { Tally } from './VoteTab';
@@ -32,7 +37,7 @@ const overlayKey = (game: PlayerView) => `${game.phase.kind}:${game.phase.night}
 function cardShowing(game: PlayerView, closed: string | null): boolean {
   if (closed === overlayKey(game)) return false;
   switch (game.phase.kind) {
-    case 'takeoff':
+    case 'packing':
       return !!game.you;
     case 'dawn':
     case 'verdict':
@@ -55,7 +60,7 @@ export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => 
   if (!cardShowing(game, closed)) return null;
   const close = () => setClosed(overlayKey(game));
   switch (game.phase.kind) {
-    case 'takeoff':
+    case 'packing':
       return <BoardingPass game={game} onClose={close} />;
     case 'dawn':
       return <MorningReport game={game} onClose={close} />;
@@ -187,6 +192,56 @@ function VerdictCard({ game, faces, onClose }: { game: PlayerView; faces: Readon
   );
 }
 
+/** What this flight paid you: credits, a souvenir, achievements, and the items you used. */
+function Earnings({ game }: { game: PlayerView }) {
+  const bag = useBag();
+  const paid = settlementFor(bag, game.gameId);
+  const used = game.you?.usedItems ?? [];
+  if (!paid) return null;
+  const unlocked = ACHIEVEMENTS.filter((a) => paid.achievements.includes(a.id));
+  return (
+    <div class="earnings">
+      <div class="earnings-head">
+        <span class="label">Flight credits</span>
+        <Credits amount={paid.credits} />
+      </div>
+      {paid.lines.length > 0 ? (
+        <ul class="earnings-lines">
+          {paid.lines.map((l) => (
+            <li key={l.label}>
+              <span>{l.label}</span>
+              <span>+{l.credits}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="muted">No credits this time.</p>
+      )}
+      {(paid.souvenir || unlocked.length > 0) && (
+        <ul class="earnings-gifts">
+          {paid.souvenir && (
+            <li>
+              <ItemIcon item={paid.souvenir} size={22} />
+              <span>
+                Souvenir for winning: <b>{ITEMS[paid.souvenir].name}</b>
+              </span>
+            </li>
+          )}
+          {unlocked.map((a) => (
+            <li key={a.id}>
+              <ItemIcon item={a.reward} size={22} />
+              <span>
+                Achievement <b>{a.name}</b>: {ITEMS[a.reward].name}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {used.length > 0 && <p class="muted">Used from your bag: {used.map((id) => ITEMS[id].name).join(', ')}</p>}
+    </div>
+  );
+}
+
 function EndScreen({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
   const { game, state, flight } = ctx;
   const [view, setView] = useState<'roles' | 'blackbox'>('roles');
@@ -202,6 +257,7 @@ function EndScreen({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
         <h2 class={`end-title ${r?.winner ?? ''}`}>{r ? (r.winner === 'draw' ? 'No survivors' : `${teamName(r.winner)} win`) : 'Flight over'}</h2>
         {game.you && r && r.winner !== 'draw' && <p class="end-you">{r.winner === game.you.team ? 'Your team won' : 'Your team lost'}</p>}
         <p>{summary}</p>
+        {game.you && <Earnings game={game} />}
         <div class="segmented">
           <button class={view === 'roles' ? 'on' : ''} onClick={() => setView('roles')}>
             Everyone's roles

@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import type { PlayerView } from '../../engine';
+import { settleGame, spendUsed } from '../../meta/bag';
+import { updateBag } from '../../meta/store';
 import type { ClientSnapshot } from '../../net/client';
 import { formatCode, normalizeCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
@@ -155,9 +158,22 @@ function World3D(props: { flight: OpenFlight; snap: ClientSnapshot; state: Clien
   return <World {...props} />;
 }
 
+/** Keep your bag in step with the flight: items leave it as you use them, and the flight pays out once it is over. */
+function useBagSync(game: PlayerView | null | undefined): void {
+  const used = game?.you?.usedItems.length ?? 0;
+  useEffect(() => {
+    if (game?.you) updateBag((bag) => spendUsed(bag, game.gameId, game.you!.usedItems));
+  }, [game?.gameId, used]);
+  const ended = game?.phase.kind === 'ended';
+  useEffect(() => {
+    if (game && ended) updateBag((bag) => settleGame(bag, game, Math.random));
+  }, [game?.gameId, ended]);
+}
+
 function Connected({ flight }: { flight: OpenFlight }) {
   const snap = useClientSnapshot(flight.client);
   const [view, setView] = useViewMode();
+  useBagSync(snap.state?.game);
   const { state } = snap;
   if (snap.status === 'refused') {
     return (
