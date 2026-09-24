@@ -101,7 +101,8 @@ describe('viewFor options', () => {
     expect(pilot.actions).toEqual([]);
     advanceTo(s, 'night_act', 1);
     expect(viewFor(s, 'inv', 0).options!.actions).toContainEqual({ kind: 'sweep' });
-    expect(viewFor(s, 'p2', 0).options!.actions).toEqual([]);
+    // Plain passengers can still look under their own seat.
+    expect(viewFor(s, 'p2', 0).options!.actions).toEqual([{ kind: 'search' }]);
     advanceTo(s, 'day_vote', 1);
     const voter = viewFor(s, 'p2', 0).options!;
     expect(voter.vote).not.toContain('p2');

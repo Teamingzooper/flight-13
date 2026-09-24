@@ -57,6 +57,11 @@ export interface YouView {
   bombUsed: boolean;
   selfTreatUsed: boolean;
   lastSeatbeltTarget: string | null;
+  /** Your black box note (read out if you die or are restrained). */
+  note: string;
+  cuffsUsed: boolean;
+  /** You looked under your seat tonight. */
+  searched: boolean;
 }
 
 export interface MineView {
@@ -193,6 +198,9 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     bombUsed: me.bombUsed,
     selfTreatUsed: me.selfTreatUsed,
     lastSeatbeltTarget: me.lastSeatbeltTarget,
+    note: me.note ?? '',
+    cuffsUsed: me.cuffsUsed ?? false,
+    searched: isNightPhase(s.phase.kind) && s.night.searched?.[me.id] === true,
   };
 
   const mine: MineView | null = me && {

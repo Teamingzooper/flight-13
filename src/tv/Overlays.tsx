@@ -115,6 +115,16 @@ function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void
         </div>
         <p class="pass-blurb">{info.blurb}</p>
         <p>{info.howTo}</p>
+        {game.settings.pilotMustFly && (
+          <p class="pass-rule">
+            <b>Pilot must fly:</b>{' '}
+            {you.role === 'pilot'
+              ? 'if the passengers restrain you, nobody can fly the plane and the saboteurs win.'
+              : you.team === 'saboteurs'
+                ? 'get the passengers to restrain the Pilot and you win.'
+                : 'restrain the Pilot by mistake and the saboteurs win.'}
+          </p>
+        )}
         {you.team === 'saboteurs' && (
           <p class="pass-allies">
             Your allies: {allies.length ? allies.map((p) => `${p.name} (${p.role ? roleName(p.role) : '?'})`).join(', ') : 'none. You are on your own.'}
@@ -150,6 +160,7 @@ function MorningReport({ game, onClose }: { game: PlayerView; onClose: () => voi
 function VerdictCard({ game, onClose }: { game: PlayerView; onClose: () => void }) {
   const v = game.verdict;
   const restrained = v?.restrained ? game.players.find((p) => p.id === v.restrained) : undefined;
+  const note = restrained ? game.log.find((e) => e.tag === 'note' && e.data?.player === restrained.id) : undefined;
   return (
     <Overlay onClose={onClose}>
       <div class="label">Verdict · Day {game.phase.night}</div>
@@ -161,6 +172,11 @@ function VerdictCard({ game, onClose }: { game: PlayerView; onClose: () => void 
             <p>
               They were the <b>{roleName(restrained.role)}</b> ({teamName(restrained.team)}).
             </p>
+          )}
+          {note && (
+            <blockquote class="blackbox-quote">
+              “{String(note.data?.note ?? '')}”<cite>{restrained.name}’s black box note</cite>
+            </blockquote>
           )}
         </>
       ) : (

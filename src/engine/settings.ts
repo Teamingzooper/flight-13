@@ -8,6 +8,7 @@ export const EARLY_END_GRACE_MS = 3000;
 export const CHAT_MAX_LENGTH = 200;
 export const CHAT_COOLDOWN_MS = 1000;
 export const CHAT_HISTORY = 300;
+export const NOTE_MAX_LENGTH = 300;
 
 export interface TimerSet {
   night_move: number;
@@ -38,7 +39,13 @@ export function defaultSettings(): Settings {
     voteMode: 'daily',
     anonymousVotes: false,
     whispers: true,
+    pilotMustFly: false,
   };
+}
+
+/** Fill in fields that settings saved by an older version do not have. */
+export function normalizeSettings(s: Settings): Settings {
+  return { ...defaultSettings(), ...s, cards: { ...emptyCards(), ...s.cards } };
 }
 
 /** Length of a phase in milliseconds. */

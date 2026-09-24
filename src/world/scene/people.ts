@@ -158,6 +158,10 @@ export class Actor {
   hideHead = false;
   /** Where a restrained passenger stands in the rear galley. */
   restSpot: THREE.Vector3 | null = null;
+  /** Not drawn at all (your own body while the camera crouches to search). */
+  hidden = false;
+  /** Moved by your camera instead of its own path (your own walk to a new seat). */
+  private driven: { x: number; z: number; yaw: number; walk: number; phase: number } | null = null;
   /** Latest pose from the network (or your own camera). */
   pose: Pose | null = null;
   pointAt: THREE.Vector3 | null = null;
@@ -247,10 +251,38 @@ export class Actor {
     return this.path !== null;
   }
 
+  /** Follow the camera rig (or stop following it and sit where you belong). */
+  drive(d: { x: number; z: number; yaw: number; walk: number; phase: number } | null): void {
+    if (d) {
+      this.driven = d;
+      this.path = null;
+    } else if (this.driven) {
+      this.driven = null;
+      this.snapHome();
+    }
+  }
+
+  /** Straight to your seat (or your spot in the rear galley). */
+  snapHome(): void {
+    this.path = null;
+    this.root.rotation.y = 0;
+    if (this.seat) {
+      const { x, z } = seatPose(this.seat);
+      this.root.position.set(x, 0, z + 0.06);
+    } else if (this.restSpot) {
+      this.root.position.copy(this.restSpot);
+    }
+  }
+
   update(dt: number, time: number): void {
-    // Where the body is: walking a path or sitting still.
+    // Where the body is: following your camera, walking a path, or sitting still.
     let moving = false;
-    if (this.path) {
+    const d = this.driven;
+    if (d) {
+      this.root.position.set(d.x, 0, d.z);
+      this.root.rotation.y = d.yaw;
+      moving = d.walk > 0.05;
+    } else if (this.path) {
       const p = this.path;
       p.t = Math.min(1, p.t + dt / p.seconds);
       const u = p.t < 0.5 ? 2 * p.t * p.t : 1 - (-2 * p.t + 2) ** 2 / 2;
@@ -272,10 +304,12 @@ export class Actor {
       }
     }
 
-    const wantsStand = this.restrained || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
+    const wantsStand = d || this.restrained || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
     this.stand = approach(this.stand, this.dead ? 0 : wantsStand, 5, dt);
-    this.walkAmount = approach(this.walkAmount, moving ? 1 : 0, 6, dt);
-    this.walkPhase += dt * 7 * this.walkAmount;
+    this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? 1 : 0, 6, dt);
+    // Your own legs keep step with the camera's footfalls.
+    if (d) this.walkPhase = d.phase;
+    else this.walkPhase += dt * 7 * this.walkAmount;
     const wantsReach = !this.dead && !this.restrained && this.stand < 0.2 && this.pose?.lean ? 1 : 0;
     this.reach = approach(this.reach, wantsReach, 5, dt);
     this.point = approach(this.point, this.pointAt && !this.dead && !this.restrained ? 1 : 0, 4, dt);
@@ -285,9 +319,9 @@ export class Actor {
     // Head: follow the network pose, or drift idly.
     const idleYaw = Math.sin(time * 0.21 + this.idleSeed) * 0.45 + Math.sin(time * 0.53 + this.idleSeed * 2) * 0.15;
     const idlePitch = -0.12 + Math.sin(time * 0.37 + this.idleSeed) * 0.08;
-    const posed = this.pose && !this.path ? this.pose : null;
-    const targetYaw = posed ? Math.max(-1.6, Math.min(1.6, posed.yaw)) : this.path ? 0 : idleYaw;
-    const targetPitch = posed ? posed.pitch : this.path ? -0.08 : idlePitch;
+    const posed = this.pose && !this.path && !d ? this.pose : null;
+    const targetYaw = posed ? Math.max(-1.6, Math.min(1.6, posed.yaw)) : this.path || d ? 0 : idleYaw;
+    const targetPitch = posed ? posed.pitch : this.path || d ? -0.08 : idlePitch;
     this.yaw = approach(this.yaw, targetYaw, 10, dt);
     this.pitch = approach(this.pitch, targetPitch, 10, dt);
 
@@ -451,8 +485,8 @@ export class People {
 
   private write(id: string, actor: Actor): void {
     const slot = this.slots.get(id)!;
-    // Your camera travels on its own path, so your body only shows once you have arrived.
-    const hideBody = actor.hideHead && actor.walking;
+    // Your camera travels on its own path, so your body only shows once you have arrived (or while it follows you).
+    const hideBody = actor.hidden || (actor.hideHead && actor.walking);
     this.parts.forEach((part, index) => {
       const mesh = this.meshes[index];
       part.joints.forEach((joint, k) => {

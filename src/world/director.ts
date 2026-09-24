@@ -5,7 +5,7 @@ export type Cue =
   | { kind: 'takeoff' }
   | { kind: 'lightsOut' }
   | { kind: 'lightsOn'; afterBlast: boolean }
-  | { kind: 'explosion'; id: string; centers: Cell[]; where: 'seat' | 'cart' | 'lavatory' }
+  | { kind: 'explosion'; id: string; centers: Cell[]; where: 'seat' | 'cart' | 'lavatory'; victims: string[] }
   | { kind: 'turbulence' }
   | { kind: 'cartRoll'; from: number; to: number; runaway: boolean }
   | { kind: 'restrained'; playerId: string }
@@ -13,6 +13,8 @@ export type Cue =
   | { kind: 'pa'; text: string };
 
 const pa = (text: string): Cue => ({ kind: 'pa', text });
+const CAPTION_MAX = 160;
+const clip = (text: string) => (text.length > CAPTION_MAX ? `${text.slice(0, CAPTION_MAX - 1).trimEnd()}\u2026` : text);
 
 /**
  * Compare two consecutive views of the game and say what just happened in the cabin. Only public
@@ -39,7 +41,10 @@ export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
 
   const exploded = new Set(prev.bombs.filter((b) => b.exploded).map((b) => b.id));
   for (const b of next.bombs) {
-    if (b.exploded && !exploded.has(b.id)) cues.push({ kind: 'explosion', id: b.id, centers: b.explodedAt ?? [], where: b.location.kind });
+    if (!b.exploded || exploded.has(b.id)) continue;
+    const entry = next.log.find((e) => e.tag === 'explosion' && e.data?.bomb === b.id);
+    const victims = Array.isArray(entry?.data?.victims) ? (entry.data.victims as string[]) : [];
+    cues.push({ kind: 'explosion', id: b.id, centers: b.explodedAt ?? [], where: b.location.kind, victims });
   }
   const blast = cues.length > 0;
 
@@ -69,9 +74,15 @@ export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
   for (const p of next.players) {
     const before = prev.players.find((q) => q.id === p.id);
     if (p.status === 'restrained' && before && before.status !== 'restrained') {
-      cues.push({ kind: 'restrained', playerId: p.id }, pa(`${p.name} has been restrained and escorted to the rear galley.`));
+      const cuffed = fresh.some((e) => e.tag === 'cuff' && e.to === 'all' && e.data?.player === p.id);
+      cues.push(
+        { kind: 'restrained', playerId: p.id },
+        pa(cuffed ? `The Air Marshal has detained ${p.name}. Please stay in your seats.` : `${p.name} has been restrained and escorted to the rear galley.`),
+      );
     }
   }
+  // Black box notes are read out to the cabin.
+  for (const e of fresh) if (e.tag === 'note' && e.to === 'all') cues.push(pa(clip(e.text)));
 
   if (kind === 'ended' && prev.phase.kind !== 'ended' && next.result) {
     cues.push({ kind: 'landing', result: next.result }, pa(endingLine(next.result, city)));

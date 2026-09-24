@@ -27,7 +27,9 @@ export {
 export { DESTINATIONS, DESTINATION_ORDER, type Destination } from './destinations';
 export {
   defaultSettings,
+  normalizeSettings,
   validateSettings,
+  NOTE_MAX_LENGTH,
   phaseDurationMs,
   TIMERS,
   FIXED_TIMERS,
@@ -38,4 +40,5 @@ export {
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';
 export { describeLocation } from './night';
+export { normalizeGame } from './state';
 export * as grid from './grid';

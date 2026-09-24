@@ -1,5 +1,5 @@
-import { cartCell, distance, distanceToAny, isSeatInCabin, lavatoryCells } from './grid';
-import { canPlantBombs, isStewardess } from './roles';
+import { CUFF_RADIUS, cartCell, distance, distanceToAny, isSeatInCabin, lavatoryCells } from './grid';
+import { canCuff, canPlantBombs, isStewardess } from './roles';
 import { activePlayers, cellOf, getPlayer, isActive, occupantOf } from './state';
 import type { GameState, NightAction, PlayerState, SeatId } from './types';
 
@@ -77,6 +77,17 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
       }
       return action.where === 'seat' ? null : 'Unknown place to plant a bomb.';
     }
+    case 'search':
+      return p.seat ? null : 'You have no seat to look under.';
+    case 'cuff': {
+      if (!canCuff(p.role)) return 'Only the Air Marshal carries handcuffs.';
+      if (p.cuffsUsed) return 'You already used your handcuffs.';
+      const t = getPlayer(s, action.target);
+      if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+      if (t.id === p.id) return 'You cannot handcuff yourself.';
+      if (distance(cellOf(p), cellOf(t)) > CUFF_RADIUS) return `${t.name} is too far away. Get within ${CUFF_RADIUS} seats first.`;
+      return null;
+    }
     default:
       return 'Unknown action.';
   }
@@ -103,8 +114,13 @@ export function possibleActions(s: GameState, p: PlayerState): NightAction[] {
         for (const fuse of [1, 2] as const) candidates.push({ kind: 'plant', where, fuse });
       }
       break;
+    case 'marshal':
+      for (const t of everyone) candidates.push({ kind: 'cuff', target: t.id });
+      break;
     default:
       break;
   }
+  // Anyone can look under their own seat instead.
+  candidates.push({ kind: 'search' });
   return candidates.filter((a) => checkAction(s, p, a) === null);
 }

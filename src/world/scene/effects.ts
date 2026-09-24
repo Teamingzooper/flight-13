@@ -383,12 +383,92 @@ class OxygenMasks {
   }
 }
 
+/** Where a device sits for each kind of bomb. */
+export type DevicePlace = { kind: 'seat'; cell: Cell } | { kind: 'cart' } | { kind: 'lavatory' };
+
+/** A home-made bomb: a box, two pipes, wires and a red light that blinks faster as it gets close. */
+class Devices {
+  readonly group = new THREE.Group();
+  private readonly proto = new THREE.Group();
+  private readonly led = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 0.35, 0.25) });
+  private readonly shown = new Map<string, { node: THREE.Group; place: DevicePlace | null; urgent: boolean }>();
+
+  constructor() {
+    const dark = new THREE.MeshStandardMaterial({ color: '#23262c', roughness: 0.6 });
+    const pipe = new THREE.MeshStandardMaterial({ color: '#6e5238', roughness: 0.5, metalness: 0.3 });
+    const red = new THREE.MeshStandardMaterial({ color: '#b3261e', roughness: 0.5 });
+    const blue = new THREE.MeshStandardMaterial({ color: '#2456b3', roughness: 0.5 });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.09), dark);
+    const pipes = [-0.03, 0.03].map((z) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.19, 10), pipe);
+      m.rotation.z = Math.PI / 2;
+      m.position.set(0, 0.045, z);
+      return m;
+    });
+    const wires = [red, blue].map((material, i) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.004, 6, 12, Math.PI), material);
+      m.position.set(-0.02 + i * 0.03, 0.05, 0);
+      m.rotation.y = Math.PI / 2;
+      return m;
+    });
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), this.led);
+    light.name = 'led';
+    light.position.set(0.05, 0.03, 0.035);
+    this.proto.add(box, ...pipes, ...wires, light);
+  }
+
+  /** Show exactly these devices (the ones you know about). */
+  set(list: { id: string; place: DevicePlace }[], point: (place: DevicePlace) => THREE.Vector3 | null): void {
+    const keep = new Set(list.map((d) => d.id));
+    for (const [id, d] of this.shown) {
+      if (keep.has(id) || id === 'arming') continue;
+      d.node.removeFromParent();
+      this.shown.delete(id);
+    }
+    for (const d of list) {
+      if (this.shown.has(d.id)) continue;
+      const at = point(d.place);
+      if (!at) continue;
+      const node = this.proto.clone();
+      node.position.copy(at);
+      node.rotation.y = Math.random() * Math.PI;
+      this.group.add(node);
+      this.shown.set(d.id, { node, place: d.place, urgent: false });
+    }
+  }
+
+  /** A device about to go off at `at`, blinking frantically. */
+  arm(at: THREE.Vector3): void {
+    this.disarm();
+    const node = this.proto.clone();
+    node.position.copy(at);
+    this.group.add(node);
+    this.shown.set('arming', { node, place: null, urgent: true });
+  }
+
+  disarm(): void {
+    this.shown.get('arming')?.node.removeFromParent();
+    this.shown.delete('arming');
+  }
+
+  update(time: number, cartZ: number): void {
+    for (const d of this.shown.values()) {
+      if (d.place?.kind === 'cart') d.node.position.set(0.17, 0.16, cartZ);
+      const led = d.node.getObjectByName('led');
+      if (led) led.visible = Math.sin(time * (d.urgent ? 44 : 5)) > (d.urgent ? -0.2 : 0.6);
+    }
+  }
+}
+
 /** Every blast, cinematic or not; plus what they leave behind. */
 export class Effects {
   readonly group = new THREE.Group();
   readonly masks: OxygenMasks;
+  readonly devices = new Devices();
   private readonly lights: BlastLights = { flash: new THREE.PointLight('#ffd49a', 0, 16, 1.6), fire: new THREE.PointLight('#ff8a3c', 0, 6, 1.8) };
   private readonly blasts = new Set<Blast>();
+  /** A bomb in its last second: its light throbs red on everything around it. */
+  private arming: THREE.Vector3 | null = null;
   private readonly textures = { smoke: smokeTexture(), flame: flameTexture(), glow: glowTexture() };
   private readonly scorch = scorchTexture();
   private readonly marks = new Map<string, THREE.Mesh>();
@@ -402,7 +482,14 @@ export class Effects {
   ) {
     this.group.name = 'effects';
     this.masks = new OxygenMasks(rows);
-    this.group.add(this.masks.group, this.lights.flash, this.lights.fire);
+    this.group.add(this.masks.group, this.devices.group, this.lights.flash, this.lights.fire);
+  }
+
+  /** Where a known bomb's device sits (null: out of sight, e.g. inside the lavatory). */
+  devicePoint(place: DevicePlace): THREE.Vector3 | null {
+    if (place.kind === 'seat') return new THREE.Vector3(colX(place.cell.col), 0.12, rowZ(place.cell.row) + 0.02);
+    if (place.kind === 'cart') return new THREE.Vector3(0.17, 0.16, 0);
+    return null;
   }
 
   /** A new flight: clear smoke, debris and masks (scorch marks follow the game state). */
@@ -418,6 +505,7 @@ export class Effects {
     }
     this.debris.length = 0;
     this.masks.stow();
+    this.disarm();
   }
 
   /** Where a blast happens: under a seat, on the cart in the aisle, or inside the lavatory. */
@@ -426,7 +514,23 @@ export class Effects {
     return new THREE.Vector3(colX(center.col), where === 'cart' ? 0.8 : 0.32, rowZ(center.row));
   }
 
+  /** Show a device about to go off at `at`, blinking and throbbing red. */
+  arm(at: THREE.Vector3): void {
+    this.devices.arm(at);
+    this.arming = at.clone();
+    this.lights.fire.color.set('#ff2a1c');
+    this.lights.fire.position.copy(at).add(new THREE.Vector3(0, 0.1, 0));
+  }
+
+  disarm(): void {
+    this.devices.disarm();
+    if (this.arming) this.lights.fire.intensity = 0;
+    this.arming = null;
+    this.lights.fire.color.set('#ff8a3c');
+  }
+
   explode(at: THREE.Vector3): void {
+    this.disarm();
     const blast = new Blast(at, this.textures, this.lights);
     this.blasts.add(blast);
     this.group.add(blast.group);
@@ -474,7 +578,9 @@ export class Effects {
     }
   }
 
-  update(dt: number, time: number): void {
+  update(dt: number, time: number, cartZ = 0): void {
+    this.devices.update(time, cartZ);
+    if (this.arming) this.lights.fire.intensity = Math.sin(time * 44) > -0.2 ? 2.6 : 0.15;
     for (const blast of this.blasts) {
       blast.update(dt, time);
       if (blast.done) {

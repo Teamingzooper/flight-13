@@ -7,7 +7,7 @@ import { IconSound } from '../tv/icons';
 import { PhaseOverlay, usePhaseOverlayOpen } from '../tv/Overlays';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
 import { cabinAudio } from './audio';
-import { Cabin3D } from './Cabin3D';
+import { Cabin3D, type SceneKind } from './Cabin3D';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const CAPTION_MS = 5200;
@@ -34,8 +34,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const host = useRef<HTMLDivElement>(null);
   const cabin = useRef<Cabin3D | null>(null);
   const [leaning, setLeaning] = useState(false);
-  const [walking, setWalking] = useState(false);
-  const walkingRef = useRef(false);
+  /** A scripted moment in progress: walking to a seat, looking under it, glancing at a blast. */
+  const [scene, setScene] = useState<SceneKind | null>(null);
+  const sceneRef = useRef<SceneKind | null>(null);
   const [locked, setLocked] = useState(false);
   const [aim, setAim] = useState(false);
   const [leavingOpen, setLeavingOpen] = useState(false);
@@ -45,14 +46,14 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
   const kind = game.phase.kind;
-  /** Use the seatback screen, unless you are halfway down the aisle. */
+  /** Use the seatback screen, unless you are halfway down the aisle (or under your seat). */
   const openScreen = () => {
-    if (!walkingRef.current) setLeaning(true);
+    if (!sceneRef.current) setLeaning(true);
   };
 
   // Let the lights come up (and a blast play out) before the morning report covers the cabin.
   const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
-  const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 3800 : 1500) : 0);
+  const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 5200 : 1500) : 0);
   const cardOpen = usePhaseOverlayOpen(game) && !holdReport;
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen;
@@ -65,9 +66,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         onAimChange: setAim,
         onPose: (pose) => flight.client.sendPose(pose),
         onCaption: (text) => setCaption({ text, id: Date.now() }),
-        onWalk: (on) => {
-          walkingRef.current = on;
-          setWalking(on);
+        onScene: (kind, active) => {
+          sceneRef.current = active ? kind : null;
+          setScene(active ? kind : null);
         },
       });
       c.setPoseSource(flight.client.poses);
@@ -100,18 +101,19 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     else cabin.current?.lockPointer();
   }, [windowOpen]);
 
-  // Changing seats: put the screen away, capture the mouse and walk; on arrival, open the new screen.
+  // A scripted moment (changing seats, searching, a blast): put the screen away and capture the mouse;
+  // after a walk or a search, open the screen again where you are now.
   const reopen = useRef(false);
   useEffect(() => {
-    if (walking) {
-      reopen.current = leaning;
+    if (scene) {
+      reopen.current = leaning && scene !== 'glance';
       if (leaning) setLeaning(false);
       else if (!windowOpen) cabin.current?.lockPointer();
     } else if (reopen.current) {
       reopen.current = false;
       setLeaning(true);
     }
-  }, [walking]);
+  }, [scene]);
 
   useEffect(() => {
     if (!caption) return undefined;
@@ -147,7 +149,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
 
   const you = game.you;
   const needsInput =
-    !walking &&
+    !scene &&
     !!you &&
     you.status === 'alive' &&
     !you.buckled &&
@@ -155,16 +157,20 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
   const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
-  const hint = walking
-    ? `Walking to seat ${you?.seat ?? ''}…`
-    : needsInput
-      ? `Your move: ${useIt}`
-      : TOUCH
-        ? 'Use screen · drag to look around'
-        : locked
-          ? 'Aim at your screen and click to use it · Esc frees the mouse'
-          : 'Click to look around · click your screen (or press E) to use it';
-  const hasScreen = !!you?.seat && !walking;
+  const idleHint = TOUCH
+    ? 'Use screen · drag to look around'
+    : locked
+      ? 'Aim at your screen and click to use it · Esc frees the mouse'
+      : 'Click to look around · click your screen (or press E) to use it';
+  const hint =
+    scene === 'walk'
+      ? `Walking to seat ${you?.seat ?? ''}…`
+      : scene === 'search'
+        ? 'Looking under your seat…'
+        : needsInput
+          ? `Your move: ${useIt}`
+          : idleHint;
+  const hasScreen = !!you?.seat && !scene;
 
   return (
     <div class={`world${leaning ? ' leaning' : ''}`}>

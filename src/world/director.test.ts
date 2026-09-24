@@ -64,7 +64,7 @@ describe('director', () => {
     advanceTo(s, 'dawn', 2);
     const after = view(s);
     const cues = directorCues(before, after);
-    expect(cues).toContainEqual({ kind: 'explosion', id: after.bombs[0].id, centers: [{ row: 4, col: 1 }], where: 'seat' });
+    expect(cues).toContainEqual({ kind: 'explosion', id: after.bombs[0].id, centers: [{ row: 4, col: 1 }], where: 'seat', victims: ['near'] });
     expect(cues).toContainEqual({ kind: 'lightsOn', afterBlast: true });
     expect(captain(cues)).toContain('mask');
     expect(kinds(directorCues(after, after))).not.toContain('explosion');
@@ -100,6 +100,30 @@ describe('director', () => {
     const cues = directorCues(vote, view(s));
     expect(cues).toContainEqual({ kind: 'restrained', playerId: 'far' });
     expect(captain(cues)).toContain('far has been restrained');
+  });
+
+  it('reads black box notes out, and names who the Air Marshal detained', () => {
+    const s = makeGame(
+      [
+        { id: 'bomber', role: 'bomber', seat: '4B' },
+        { id: 'marshal', role: 'marshal', seat: '4C' },
+        { id: 'far', role: 'passenger', seat: '4E' },
+        { id: 'nurse', role: 'nurse', seat: '1F' },
+        { id: 'pilot', role: 'pilot', seat: '8F' },
+        { id: 'inv', role: 'investigator', seat: '2E' },
+        { id: 'mm', role: 'mastermind', seat: '8A' },
+      ],
+      {},
+    );
+    applyIntent(s, 'bomber', { kind: 'note', text: 'I regret nothing.' }, 0);
+    advanceTo(s, 'night_act', 1);
+    expect(applyIntent(s, 'marshal', { kind: 'act', action: { kind: 'cuff', target: 'bomber' } }, 0).ok).toBe(true);
+    const before = view(s);
+    advanceTo(s, 'dawn', 1);
+    const cues = directorCues(before, view(s));
+    expect(cues).toContainEqual({ kind: 'restrained', playerId: 'bomber' });
+    expect(captain(cues)).toContain('The Air Marshal has detained bomber');
+    expect(captain(cues)).toContain('I regret nothing.');
   });
 
   it('announces the landing', () => {

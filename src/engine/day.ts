@@ -1,5 +1,5 @@
 import { emptyDay } from './setup';
-import { activePlayers, addLog, getPlayer, label, removeFromPlay, setPhase } from './state';
+import { activePlayers, addLog, getPlayer, label, readNote, removeFromPlay, setPhase } from './state';
 import type { GameState } from './types';
 
 export function startDay(s: GameState, now: number): void {
@@ -40,6 +40,7 @@ export function resolveVote(s: GameState, now: number): void {
     addLog(s, now, 'all', 'verdict', `The passengers restrained ${label(restrained)} and walked them to the rear galley.`, {
       player: restrained.id,
     });
+    readNote(s, restrained, now);
   } else {
     addLog(s, now, 'all', 'verdict', 'No one was restrained.');
   }

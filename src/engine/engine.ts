@@ -1,10 +1,10 @@
 import { resolveVote, startDay } from './day';
 import { DESTINATIONS } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
-import { resolveMoves, resolveNight, startNight } from './night';
+import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isSaboteur } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
-import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS } from './settings';
+import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
 import { activePlayers, addLog, cellOf, getPlayer, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
 import { checkWin, landingResult, resultText } from './win';
@@ -55,12 +55,22 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
     case 'act': {
       if (s.phase.kind !== 'night_act') return fail('Abilities are used at night, after seats change.');
       if (s.night.buckled[p.id]) return fail('You are buckled in tonight.');
+      if (s.night.searched[p.id]) return fail('You already spent tonight looking under your seat.');
       if (intent.action) {
         const error = checkAction(s, p, intent.action);
         if (error) return fail(error);
       }
       s.night.actions[p.id] = intent.action ?? null;
+      // Looking under your seat is answered on the spot.
+      if (intent.action?.kind === 'search') searchSeat(s, p, now);
       break;
+    }
+    case 'note': {
+      if (typeof intent.text !== 'string') return fail('Write your note first.');
+      const text = intent.text.trim();
+      if (text.length > NOTE_MAX_LENGTH) return fail(`Keep your note under ${NOTE_MAX_LENGTH} characters.`);
+      p.note = text;
+      return OK;
     }
     case 'ready': {
       if (s.phase.kind !== 'day_discuss') return fail('Nothing to be ready for right now.');

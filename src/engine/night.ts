@@ -5,7 +5,7 @@ import { ROLES, apparentTeam } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, getPlayer, label, newId, removeFromPlay } from './state';
+import { activePlayers, addLog, cellOf, getPlayer, isActive, label, newId, readNote, removeFromPlay } from './state';
 import type { Anomaly, Bomb, BombLocation, Cell, GameState, NightAction, PlayerState, SeatId } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
@@ -91,6 +91,20 @@ export function resolveMoves(s: GameState, now: number): void {
   }
 }
 
+/** Look under your own seat. Only an earlier occupant can have left a bomb there, so the answer is final. */
+export function searchSeat(s: GameState, p: PlayerState, now: number): void {
+  const n = s.phase.night;
+  s.night.searched[p.id] = true;
+  const found = s.bombs.filter((b) => !b.exploded && b.location.kind === 'seat' && b.location.seat === p.seat);
+  for (const b of found) if (!p.knownBombIds.includes(b.id)) p.knownBombIds.push(b.id);
+  const text =
+    found.length === 0
+      ? `You looked under ${p.seat}. Nothing but crumbs and a life vest.`
+      : `You looked under ${p.seat} and found a bomb, ${fuseText(found[0], n)}. Get away from it.`;
+  addLog(s, now, [p.id], 'search', text, { bombs: found.map((b) => b.id), seat: p.seat });
+  addLog(s, now, 'end', 'search', `Night ${n}: ${p.name} looked under ${p.seat}${found.length ? ' and found a bomb' : ''}.`);
+}
+
 interface Acting {
   actor: PlayerState;
   action: NightAction;
@@ -116,6 +130,33 @@ export function resolveNight(s: GameState, now: number): void {
   }
   acts.sort((a, b) => seatOrder(a.actor.seat!) - seatOrder(b.actor.seat!));
   const playerById = (id: string) => getPlayer(s, id)!;
+
+  // 1b. Handcuffs: the Air Marshal's target is out before anyone acts, and does nothing tonight.
+  const cuffed = new Set<string>();
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'cuff' || cuffed.has(actor.id)) continue;
+    const t = playerById(action.target);
+    if (!isActive(t)) continue;
+    const seat = t.seat;
+    actor.cuffsUsed = true;
+    cuffed.add(t.id);
+    removeFromPlay(s, t, 'restrained', n);
+    s.incidentAtDawn = true;
+    addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}).`);
+    addLog(s, now, 'all', 'cuff', `The Air Marshal handcuffed ${label(t)} in ${seat} and walked them to the rear galley.`, { player: t.id });
+    addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}.`);
+    readNote(s, t, now);
+  }
+  for (let i = acts.length - 1; i >= 0; i--) {
+    const { actor, action } = acts[i];
+    if (cuffed.has(actor.id)) {
+      if (action.kind !== 'search' && action.kind !== 'cuff') addLog(s, now, [actor.id], 'fizzle', 'You were handcuffed before you could act.');
+      acts.splice(i, 1);
+    } else if ('target' in action && action.kind !== 'cuff' && cuffed.has(action.target)) {
+      addLog(s, now, [actor.id], 'fizzle', `${playerById(action.target).name} was handcuffed and led away before you got to them.`);
+      acts.splice(i, 1);
+    }
+  }
 
   // 2. Treatments.
   const treated = new Set<string>();
@@ -247,6 +288,7 @@ export function resolveNight(s: GameState, now: number): void {
       cells: centers,
       victims: victims.map((v) => v.id),
     });
+    for (const v of victims) readNote(s, v, now);
   }
 
   // 8. Poison: last night's victims die unless treated; tonight's victims feel sick.
@@ -260,6 +302,7 @@ export function resolveNight(s: GameState, now: number): void {
         removeFromPlay(s, p, 'poison', n);
         s.incidentAtDawn = true;
         addLog(s, now, 'all', 'death', `${label(p)} died of poisoning.`, { player: p.id, cause: 'poison' });
+        readNote(s, p, now);
       }
     } else {
       addLog(s, now, [p.id], 'sick', 'You feel sick. Your drink was poisoned. Unless the Nurse treats you tomorrow night, you will not survive.');
