@@ -7,6 +7,7 @@ import { isNightPhase, type Intent, type PhaseKind, type PlayerView } from '../e
 import { msLeft, type ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { ActionTab } from './ActionTab';
+import { BoardingPanel, PackingPanel } from './CarryOn';
 import { ChatTab } from './ChatTab';
 import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
@@ -14,6 +15,7 @@ import { Header } from './Header';
 import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
 import { MapTab } from './MapTab';
 import { PhaseOverlay } from './Overlays';
+import { usePacking } from './packing';
 import { VoteTab } from './VoteTab';
 
 export type TabId = 'map' | 'action' | 'chat' | 'vote' | 'flight';
@@ -77,6 +79,7 @@ export function TV({
     ((game.phase.kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
       (game.phase.kind === 'night_act' && !game.mine?.acted));
   const pendingVote = game.phase.kind === 'day_vote' && game.options !== null && game.mine?.vote === null;
+  const preflight = game.phase.kind === 'packing' || game.phase.kind === 'boarding';
   const badges: Partial<Record<TabId, string>> = {
     action: pendingAction ? '!' : undefined,
     vote: pendingVote ? '!' : undefined,
@@ -94,21 +97,35 @@ export function TV({
             onUse3D={onUse3D}
           />
           <main class="tv-body">
-            {tab === 'map' && <MapTab ctx={ctx} />}
-            {tab === 'action' && <ActionTab ctx={ctx} />}
-            {tab === 'chat' && <ChatTab ctx={ctx} />}
-            {tab === 'vote' && <VoteTab ctx={ctx} />}
-            {tab === 'flight' && <FlightTab ctx={ctx} />}
+            {game.phase.kind === 'packing' ? (
+              you ? (
+                <PackingScreen ctx={ctx} />
+              ) : (
+                <BoardingPanel />
+              )
+            ) : game.phase.kind === 'boarding' ? (
+              <BoardingPanel />
+            ) : (
+              <>
+                {tab === 'map' && <MapTab ctx={ctx} />}
+                {tab === 'action' && <ActionTab ctx={ctx} />}
+                {tab === 'chat' && <ChatTab ctx={ctx} />}
+                {tab === 'vote' && <VoteTab ctx={ctx} />}
+                {tab === 'flight' && <FlightTab ctx={ctx} />}
+              </>
+            )}
           </main>
-          <nav class="tv-tabs" aria-label="Seatback menu">
-            {TABS.map(({ id, label, Icon }) => (
-              <button key={id} class={`tv-tab${tab === id ? ' on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-                <Icon />
-                <span>{label}</span>
-                {badges[id] && <em class="tv-badge">{badges[id]}</em>}
-              </button>
-            ))}
-          </nav>
+          {!preflight && (
+            <nav class="tv-tabs" aria-label="Seatback menu">
+              {TABS.map(({ id, label, Icon }) => (
+                <button key={id} class={`tv-tab${tab === id ? ' on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+                  <Icon />
+                  <span>{label}</span>
+                  {badges[id] && <em class="tv-badge">{badges[id]}</em>}
+                </button>
+              ))}
+            </nav>
+          )}
           <PhaseOverlay ctx={ctx} onLeave={() => setLeaving(true)} />
           {leaving && <LeaveDialog flight={flight} onStay={() => setLeaving(false)} />}
           {toast && (
@@ -121,6 +138,11 @@ export function TV({
       </div>
     </div>
   );
+}
+
+function PackingScreen({ ctx }: { ctx: TVContext }) {
+  const packing = usePacking(ctx);
+  return <PackingPanel ctx={ctx} packing={packing} />;
 }
 
 function useUnread(game: PlayerView, reading: boolean): number {

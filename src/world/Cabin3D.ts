@@ -12,7 +12,7 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { grid, isNightPhase, phaseDurationMs, type Cell, type PlayerView, type SeatId } from '../engine';
+import { DESTINATIONS, grid, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import type { ClientState, Pose } from '../net/protocol';
 import { cabinAudio } from './audio';
@@ -26,6 +26,7 @@ import { Effects } from './scene/effects';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
 import { LiveScreen } from './screen';
+import { HotelSet } from './sets/hotel';
 import { auroraSkyTexture, dawnSkyTexture, runwayTexture } from './textures';
 import { WindowView } from './windows';
 
@@ -39,6 +40,9 @@ export interface Cabin3DOptions {
   onCaption?: (text: string) => void;
   /** A scripted moment started or finished: walking to a new seat, searching under it, or glancing at a blast. */
   onScene?: (kind: SceneKind, active: boolean) => void;
+  /** Packing in the hotel room: an item picked up from the bed, or taken back out of a slot. */
+  onPack?: (item: ItemId) => void;
+  onUnpack?: (slot: number) => void;
 }
 
 export type SceneKind = 'walk' | 'search' | 'glance';
@@ -132,6 +136,13 @@ export class Cabin3D {
   /** With several blasts at once, the one everyone turns to (the nearest). */
   private glanceAt: THREE.Vector3 | null = null;
   private readonly unlockAudio = () => cabinAudio.unlock();
+  /** The hotel room you pack in before the flight (only while packing and zipping up). */
+  private hotel: HotelSet | null = null;
+  private showing: 'cabin' | 'hotel' = 'cabin';
+  /** Black between scenes. */
+  private readonly fadeEl = document.createElement('div');
+  private readonly fadeText = document.createElement('div');
+  private dark = false;
 
   constructor(
     private readonly container: HTMLElement,
@@ -187,6 +198,10 @@ export class Cabin3D {
 
     this.flashEl.className = 'world-flash';
     container.appendChild(this.flashEl);
+    this.fadeEl.className = 'world-fade';
+    this.fadeText.className = 'world-fade-text';
+    this.fadeEl.appendChild(this.fadeText);
+    container.appendChild(this.fadeEl);
     cabinAudio.start();
     addEventListener('pointerdown', this.unlockAudio);
     addEventListener('keydown', this.unlockAudio);
@@ -212,6 +227,18 @@ export class Cabin3D {
     this.wantedMode = night ? 'night' : game.blackout ? 'blackout' : 'day';
     if (fresh) lighting.setMode(this.wantedMode, true);
 
+    // Before the flight: packing in the hotel room, then boarding. The control tower just waits.
+    if (kind === 'packing') {
+      if (game.you) this.enterHotel();
+      else this.fade(1, 0, 'The passengers are packing their bags');
+    } else if (kind === 'boarding') {
+      if (this.hotel) this.hotel.close();
+      else this.fade(1, 0, `Now boarding · Flight 13 to ${DESTINATIONS[game.settings.destination].city}`);
+    } else {
+      if (this.hotel) this.leaveHotel();
+      if (this.dark) this.fade(0, 1.4);
+    }
+
     const prev = this.lastView;
     const cues = game === prev ? [] : directorCues(prev, game);
     this.lastView = game;
@@ -233,8 +260,9 @@ export class Cabin3D {
     // People caught in a blast stay upright until it goes off on screen.
     for (const c of cues) if (c.kind === 'explosion') for (const id of c.victims) this.holdAlive.add(id);
     const bermuda = game.settings.destination === 'BDA';
-    const sky = kind === 'takeoff' ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
-    windows.show(sky, fresh || kind === 'takeoff' ? 0 : 1.4);
+    const grounded = kind === 'packing' || kind === 'boarding' || kind === 'takeoff';
+    const sky = grounded ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
+    windows.show(sky, fresh || grounded ? 0 : 1.4);
     if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
@@ -286,6 +314,19 @@ export class Cabin3D {
     this.controls.setLeaning(on);
   }
 
+  /** What you own and what is in the bag, while packing; `interactive` when you may pick things up. */
+  setPacking(owned: Record<ItemId, number>, packed: readonly ItemId[], interactive: boolean): void {
+    if (!this.hotel) return;
+    this.hotel.setInventory(owned);
+    this.hotel.setPacked(packed);
+    this.hotel.setInteractive(interactive);
+  }
+
+  /** Toss the bag onto the bed (once your boarding pass has been read). */
+  startPacking(): void {
+    this.hotel?.start();
+  }
+
   /** Capture the mouse for looking around (desktop only; the browser may insist on a click first). */
   lockPointer(): void {
     this.controls.requestLock();
@@ -320,6 +361,8 @@ export class Cabin3D {
     removeEventListener('pointerdown', this.unlockAudio);
     removeEventListener('keydown', this.unlockAudio);
     this.flashEl.remove();
+    this.fadeEl.remove();
+    this.hotel?.dispose();
     this.built?.windows.dispose();
     this.built?.effects.dispose();
     this.controls.dispose();
@@ -404,6 +447,47 @@ export class Cabin3D {
     this.camera.aspect = width / height;
     this.camera.fov = width < height ? 76 : 68;
     this.camera.updateProjectionMatrix();
+    this.hotel?.resize(width, height);
+  }
+
+  /** Into the hotel room: the mouse is for picking things up, not looking around. */
+  private enterHotel(): void {
+    if (!this.hotel) {
+      this.hotel = new HotelSet(this.renderer, this.renderer.domElement, this.container, {
+        onPack: (item) => this.opts.onPack?.(item),
+        onUnpack: (slot) => this.opts.onUnpack?.(slot),
+        // Bag zipped: fade to black and board.
+        onClosed: () => this.fade(1, 0.8, `Now boarding · Flight 13 to ${this.lastView ? DESTINATIONS[this.lastView.settings.destination].city : ''}`),
+      });
+      this.resize();
+    }
+    if (this.showing !== 'hotel') {
+      this.showing = 'hotel';
+      this.controls.releaseLock();
+      this.controls.suspended = true;
+      this.composer.setMainScene(this.hotel.scene);
+      this.composer.setMainCamera(this.hotel.camera);
+      cabinAudio.setEngine(0, 0.5);
+    }
+  }
+
+  /** Back to the cabin (the takeoff has started): the hotel room is packed away for good. */
+  private leaveHotel(): void {
+    if (!this.hotel) return;
+    this.showing = 'cabin';
+    this.controls.suspended = false;
+    this.composer.setMainScene(this.scene);
+    this.composer.setMainCamera(this.camera);
+    this.hotel.dispose();
+    this.hotel = null;
+  }
+
+  /** Fade the picture to black (1) or back (0) over `seconds`, with an optional line on the black. */
+  private fade(to: 0 | 1, seconds: number, text = ''): void {
+    this.dark = to === 1;
+    if (text || to === 1) this.fadeText.textContent = text;
+    this.fadeEl.style.transition = `opacity ${seconds}s ease`;
+    this.fadeEl.style.opacity = String(to);
   }
 
   private frame(): void {
@@ -415,6 +499,11 @@ export class Cabin3D {
       if (this.timers[i].at > time) continue;
       const [due] = this.timers.splice(i, 1);
       due.fn();
+    }
+    if (this.showing === 'hotel' && this.hotel) {
+      this.hotel.update(dt, time);
+      this.composer.render(dt);
+      return;
     }
     const built = this.built;
     if (built) {
@@ -486,7 +575,7 @@ export class Cabin3D {
     if (!game || !snap) return;
     const kind = game.phase.kind;
     const { windows } = built;
-    let engine = kind === 'ended' ? 0.2 : CRUISE;
+    let engine = kind === 'ended' ? 0.2 : kind === 'packing' || kind === 'boarding' ? 0 : CRUISE;
     if (kind === 'takeoff') {
       const total = phaseDurationMs(game.settings, 'takeoff');
       const p = clamp01(1 - msLeft(snap, Date.now()) / total);

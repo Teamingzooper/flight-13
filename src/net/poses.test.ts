@@ -48,9 +48,12 @@ describe('pose channel', () => {
     for (let i = 0; i < 3; i++) await captain.command({ kind: 'addBot' });
     await captain.command({ kind: 'takeoff' });
     await settle();
-    advance(13_000);
-    host.tickNow();
-    await settle();
+    // Packing, boarding and the takeoff roll run out one phase at a time.
+    for (let i = 0; i < 120 && captain.snapshot.state!.game!.phase.kind !== 'night_move'; i++) {
+      advance(1000);
+      host.tickNow();
+      await settle();
+    }
     expect(captain.snapshot.state!.game!.phase.kind).toBe('night_move');
     ann.sendPose({ yaw: 0.1, pitch: 0, lean: true });
     await settle();

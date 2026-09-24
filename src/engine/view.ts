@@ -1,9 +1,12 @@
+import { voteWeight } from './day';
 import { isNightPhase, isWhisperPhase, phaseDue } from './engine';
 import { WHISPER_RADIUS, distance } from './grid';
+import { possibleItemUses, type ItemUse } from './items';
 import { isSaboteur, teamOf } from './roles';
 import { checkSeatbelt, possibleActions } from './rules';
 import { activePlayers, cellOf, emptySeats, getPlayer, isActive } from './state';
 import type {
+  Award,
   BombLocation,
   Cabin,
   Cell,
@@ -11,11 +14,13 @@ import type {
   DeathCause,
   GameResult,
   GameState,
+  ItemId,
   LogEntry,
   Look,
   NightAction,
   PhaseKind,
   PlayerState,
+  PlayerStats,
   PlayerStatus,
   RoleId,
   SeatId,
@@ -43,6 +48,7 @@ export interface BombView {
   explodedAt: Cell[] | null;
   plantedNight: number | null;
   planterId: string | null;
+  defused: boolean;
 }
 
 export interface YouView {
@@ -62,6 +68,11 @@ export interface YouView {
   cuffsUsed: boolean;
   /** You looked under your seat tonight. */
   searched: boolean;
+  /** Your carry-on: items not used yet, and the ones used up. */
+  items: ItemId[];
+  usedItems: ItemId[];
+  /** You are done packing. */
+  packed: boolean;
 }
 
 export interface MineView {
@@ -80,6 +91,8 @@ export interface OptionsView {
   actions: NightAction[];
   whisper: string[];
   vote: string[];
+  /** Carry-on items you can use right now. */
+  items: ItemUse[];
 }
 
 export interface VotesView {
@@ -96,6 +109,8 @@ export interface PhaseView {
 }
 
 export interface PlayerView {
+  /** Unique per game. */
+  gameId: string;
   you: YouView | null;
   phase: PhaseView;
   settings: Settings;
@@ -110,6 +125,11 @@ export interface PlayerView {
   chat: ChatMessage[];
   log: LogEntry[];
   result: GameResult | null;
+  /** How many passengers are done packing. */
+  packing: { done: number; total: number } | null;
+  /** Flight credits and what everyone did, once the game is over. */
+  awards: Record<string, Award> | null;
+  stats: Record<string, PlayerStats> | null;
 }
 
 const CHAT_IN_VIEW = 150;
@@ -131,6 +151,7 @@ function optionsFor(s: GameState, me: PlayerState): OptionsView {
         ? others.filter((t) => distance(cellOf(me), cellOf(t)) <= WHISPER_RADIUS).map((t) => t.id)
         : [],
     vote: kind === 'day_vote' ? others.map((t) => t.id) : [],
+    items: possibleItemUses(s, me),
   };
 }
 
@@ -164,6 +185,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
       explodedAt: b.explodedAt,
       plantedNight: privileged ? b.plantedNight : null,
       planterId: privileged ? b.planterId : null,
+      defused: b.defused,
     }));
 
   const chat = s.chat
@@ -201,6 +223,9 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     note: me.note ?? '',
     cuffsUsed: me.cuffsUsed ?? false,
     searched: isNightPhase(s.phase.kind) && s.night.searched?.[me.id] === true,
+    items: [...me.items],
+    usedItems: [...me.usedItems],
+    packed: s.packed[me.id] === true,
   };
 
   const mine: MineView | null = me && {
@@ -215,11 +240,12 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
   let votes: VotesView | null = null;
   if (s.phase.kind === 'day_vote') {
     const counts: Record<string, number> = {};
-    for (const target of Object.values(s.day.votes)) counts[target] = (counts[target] ?? 0) + 1;
+    for (const [voter, target] of Object.entries(s.day.votes)) counts[target] = (counts[target] ?? 0) + voteWeight(s, voter);
     votes = { counts, byVoter: s.settings.anonymousVotes ? null : { ...s.day.votes } };
   }
 
   return {
+    gameId: s.id,
     you,
     phase: {
       kind: s.phase.kind,
@@ -240,5 +266,8 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     chat,
     log,
     result: ended ? s.result : null,
+    packing: s.phase.kind === 'packing' ? { done: s.players.filter((p) => s.packed[p.id]).length, total: s.players.length } : null,
+    awards: ended ? s.awards : null,
+    stats: ended ? s.stats : null,
   };
 }

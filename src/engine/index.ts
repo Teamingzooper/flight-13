@@ -39,6 +39,8 @@ export {
 } from './settings';
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';
+export { ITEMS, ITEM_ORDER, MAX_PACKED, isItemId, type ItemInfo, type ItemUse, type ItemWhen } from './items';
+export { CREDITS, planeLands } from './awards';
 export { describeLocation } from './night';
 export { normalizeGame } from './state';
 export * as grid from './grid';

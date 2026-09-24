@@ -7,13 +7,18 @@ export function startDay(s: GameState, now: number): void {
   s.day = emptyDay();
 }
 
-/** Every active player counts once; non-votes and votes for players out of play count as Skip. */
+/** How much a vote weighs today (a frequent-flyer card doubles it). */
+export function voteWeight(s: GameState, voter: string): number {
+  return s.day.doubled[voter] ? 2 : 1;
+}
+
+/** Every active player counts once (twice with a card); non-votes and votes for players out of play count as Skip. */
 export function tallyVotes(s: GameState): Record<string, number> {
   const tally: Record<string, number> = { skip: 0 };
   for (const p of activePlayers(s)) {
     const vote = s.day.votes[p.id];
     const key = vote && vote !== 'skip' && getPlayer(s, vote)?.status === 'alive' ? vote : 'skip';
-    tally[key] = (tally[key] ?? 0) + 1;
+    tally[key] = (tally[key] ?? 0) + voteWeight(s, p.id);
   }
   return tally;
 }

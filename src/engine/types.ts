@@ -38,6 +38,8 @@ export interface Settings {
 }
 
 export type PhaseKind =
+  | 'packing'
+  | 'boarding'
   | 'takeoff'
   | 'night_move'
   | 'night_act'
@@ -49,7 +51,7 @@ export type PhaseKind =
 
 export interface Phase {
   kind: PhaseKind;
-  /** Night number 1..N; day k keeps night = k. 0 during takeoff. */
+  /** Night number 1..N; day k keeps night = k. 0 while packing, boarding and taking off. */
   night: number;
   startedAt: number;
   endsAt: number;
@@ -67,6 +69,9 @@ export interface Cell {
 }
 
 export type PlayerStatus = 'alive' | 'dead' | 'restrained';
+
+/** Carry-on items (see items.ts). */
+export type ItemId = 'antidote' | 'defuser' | 'extender' | 'flashlight' | 'pills' | 'mirror' | 'ffcard' | 'pillow' | 'bobbypin';
 export type DeathCause = 'explosion' | 'poison' | 'restrained';
 
 /** Indices into the avatar palettes and styles (see app/Avatar.tsx). */
@@ -105,6 +110,12 @@ export interface PlayerState {
   note: string;
   /** The Air Marshal's one pair of handcuffs has been used. */
   cuffsUsed: boolean;
+  /** Carry-on items not used yet. */
+  items: ItemId[];
+  /** Items used up so far, in order. */
+  usedItems: ItemId[];
+  /** Who poisoned this player (credited if the poison kills them). */
+  poisonedBy: string | null;
 }
 
 export type BombLocation =
@@ -121,6 +132,8 @@ export interface Bomb {
   exploded: boolean;
   /** Cells the blast was centred on (cart bombs go off wherever the cart is). */
   explodedAt: Cell[] | null;
+  /** Someone cut the wires; it will never go off. */
+  defused: boolean;
 }
 
 export interface Cabin {
@@ -152,12 +165,24 @@ export interface NightChoices {
   anomaly: Anomaly | null;
   /** Players who already looked under their seat tonight (their action is locked). */
   searched: Record<string, true>;
+  /** Sleeping pills: player → who slipped them one. They do nothing tonight. */
+  asleep: Record<string, string>;
+  /** Players watching their compact mirror tonight. */
+  mirrors: Record<string, true>;
+  /** Pocket flashlights: player → the seat they looked under. */
+  flashlights: Record<string, SeatId>;
+  /** Seatbelt extenders: the sign cannot hold these players tonight. */
+  freed: Record<string, true>;
+  /** Bombs defused tonight: bomb id → who defused it. */
+  defused: Record<string, string>;
 }
 
 export interface DayChoices {
   ready: Record<string, true>;
   /** Voter id → target id or 'skip'. */
   votes: Record<string, string>;
+  /** Frequent-flyer cards: these votes count twice today. */
+  doubled: Record<string, true>;
 }
 
 export interface Verdict {
@@ -208,6 +233,8 @@ export type LogTag =
   | 'anomaly'
   | 'verdict'
   | 'landing'
+  | 'item'
+  | 'defused'
   | 'gameover';
 
 export interface LogEntry {
@@ -227,8 +254,27 @@ export interface GameResult {
   night: number;
 }
 
+/** What each player did that pays out at the end. */
+export interface PlayerStats {
+  /** Passengers killed by your bomb or your poison. */
+  kills: number;
+  /** People the Nurse's treatment actually saved. */
+  rescues: number;
+  /** Bombs found (looking under seats, sweeps, inspections, flashlights). */
+  found: number;
+  defused: number;
+}
+
+/** Flight credits earned in one game. */
+export interface Award {
+  credits: number;
+  lines: { label: string; credits: number }[];
+}
+
 export interface GameState {
   v: 1;
+  /** Unique per game, so rewards are paid once. */
+  id: string;
   /** PRNG state (see rng.ts). */
   rng: number;
   settings: Settings;
@@ -247,9 +293,18 @@ export interface GameState {
   nextId: number;
   lastChatAt: Record<string, number>;
   result: GameResult | null;
+  /** Players done packing. */
+  packed: Record<string, true>;
+  stats: Record<string, PlayerStats>;
+  /** Credits per player, set when the game ends. */
+  awards: Record<string, Award> | null;
 }
 
 export type Intent =
+  /** Your carry-on (at most three items); `ready` when you are done packing. */
+  | { kind: 'pack'; items: ItemId[]; ready: boolean }
+  /** Use a carry-on item (a seat for the flashlight, a neighbour for sleeping pills). */
+  | { kind: 'use'; item: ItemId; target?: string; seat?: SeatId }
   | { kind: 'move'; to: SeatId | 'stay' }
   | { kind: 'seatbelt'; target: string }
   | { kind: 'act'; action: NightAction | null }

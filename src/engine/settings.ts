@@ -24,8 +24,8 @@ export const TIMERS: Record<TimerPreset, TimerSet> = {
   relaxed: { night_move: 30, night_act: 45, day_discuss: 150, day_vote: 45 },
 };
 
-/** Seconds for the cutscene phases. */
-export const FIXED_TIMERS = { takeoff: 12, dawn: 10, verdict: 8 } as const;
+/** Seconds for packing and the cutscene phases (packing ends early once everyone is packed). */
+export const FIXED_TIMERS = { packing: 50, boarding: 6, takeoff: 12, dawn: 10, verdict: 8 } as const;
 
 export function defaultSettings(): Settings {
   return {
@@ -51,6 +51,8 @@ export function normalizeSettings(s: Settings): Settings {
 /** Length of a phase in milliseconds. */
 export function phaseDurationMs(settings: Settings, kind: PhaseKind): number {
   switch (kind) {
+    case 'packing':
+    case 'boarding':
     case 'takeoff':
     case 'dawn':
     case 'verdict':

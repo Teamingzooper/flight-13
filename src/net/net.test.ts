@@ -152,7 +152,7 @@ describe('in flight', () => {
     for (let i = 0; i < 3; i++) expect(await captain.command({ kind: 'addBot' })).toEqual({ ok: true });
     expect(await captain.command({ kind: 'takeoff' })).toEqual({ ok: true });
     await settle();
-    expect(ann.snapshot.state!.game!.phase.kind).toBe('takeoff');
+    expect(ann.snapshot.state!.game!.phase.kind).toBe('packing');
 
     for (let step = 0; step < 3000 && captain.snapshot.state!.game?.phase.kind !== 'ended'; step++) {
       await passTurn(captain);

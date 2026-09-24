@@ -212,6 +212,60 @@ class CabinAudio {
     this.tone(t, 'square', 2300 + u * 900, 2300 + u * 900, 0.07, 0.035 + u * 0.03, { type: 'lowpass', frequency: 6000 });
   }
 
+  /** Something thrown past you through the air. */
+  whoosh(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.4, { type: 'bandpass', frequency: 380, to: 1500, q: 1.1 }, 0.16, 0.12);
+  }
+
+  /** Something heavy landing on a soft bed (`weight` 0..1). */
+  thud(weight = 1): void {
+    const t = this.now();
+    if (t === null) return;
+    const w = clamp(weight, 0.1, 1);
+    this.tone(t, 'sine', 95, 52, 0.28, 0.42 * w);
+    this.noise(t, 0.22, { type: 'lowpass', frequency: 300 }, 0.5 * w, 0.004, true);
+    this.noise(t, 0.08, { type: 'bandpass', frequency: 900, q: 0.8 }, 0.06 * w, 0.003);
+  }
+
+  /** A suitcase zipper run over `seconds`. */
+  zipper(seconds = 0.9): void {
+    const ctx = this.ctx;
+    const t = this.now();
+    if (!ctx || t === null || !this.white || !this.muffle) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.white;
+    src.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = 2.2;
+    band.frequency.setValueAtTime(1500, t);
+    band.frequency.linearRampToValueAtTime(2600, t + seconds);
+    const gate = ctx.createGain();
+    gate.gain.value = 0;
+    const teeth = ctx.createOscillator();
+    teeth.type = 'square';
+    teeth.frequency.setValueAtTime(55, t);
+    teeth.frequency.linearRampToValueAtTime(75, t + seconds);
+    const depth = ctx.createGain();
+    depth.gain.value = 0.16;
+    teeth.connect(depth).connect(gate.gain);
+    src.connect(band).connect(gate).connect(this.muffle);
+    src.start(t);
+    src.stop(t + seconds);
+    teeth.start(t);
+    teeth.stop(t + seconds);
+  }
+
+  /** An item dropped into a padded pocket. */
+  pop(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.tone(t, 'sine', 560, 330, 0.09, 0.1);
+    this.noise(t, 0.05, { type: 'lowpass', frequency: 900 }, 0.18, 0.002, true);
+  }
+
   /** A zip tie being pulled tight. */
   zip(): void {
     const ctx = this.ctx;

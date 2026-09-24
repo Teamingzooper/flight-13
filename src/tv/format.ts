@@ -30,6 +30,10 @@ export function shortName(name: string): string {
 export function phaseTitle(game: PlayerView): string {
   const n = game.phase.night;
   switch (game.phase.kind) {
+    case 'packing':
+      return 'Packing';
+    case 'boarding':
+      return 'Boarding';
     case 'takeoff':
       return 'Takeoff';
     case 'night_move':
@@ -56,8 +60,12 @@ export function phaseHint(game: PlayerView): string {
   const you = game.you;
   const playing = you !== null && you.status === 'alive';
   switch (game.phase.kind) {
+    case 'packing':
+      return you?.packed ? 'Bag packed. Waiting for the others.' : 'Your boarding pass shows your secret role. Pack three items for the flight.';
+    case 'boarding':
+      return 'Now boarding. Find your seat.';
     case 'takeoff':
-      return 'Fasten your seatbelt. Your boarding pass shows your secret role.';
+      return 'Fasten your seatbelt. Wheels up in a moment.';
     case 'night_move':
       if (!playing) return 'The living are changing seats in the dark.';
       if (you.buckled) return 'The seatbelt sign is on over your seat.';
