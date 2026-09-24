@@ -4,7 +4,7 @@ import { createGame } from './setup';
 import { getPlayer } from './state';
 import type { DestinationId, GameState, Look, PhaseKind, PlayerState, RoleId, SeatId, Settings } from './types';
 
-export const TEST_LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, bottom: 0 };
+export const TEST_LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 };
 
 export interface TestPlayer {
   id: string;

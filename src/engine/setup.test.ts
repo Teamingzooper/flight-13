@@ -4,7 +4,7 @@ import { defaultSettings } from './settings';
 import { checkTakeoff, createGame, dealRoles, type NewPlayer } from './setup';
 import type { Look } from './types';
 
-const LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, bottom: 0 };
+const LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 };
 const passengers = (n: number): NewPlayer[] =>
   Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}`, look: LOOK }));
 

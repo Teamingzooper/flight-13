@@ -72,6 +72,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         },
       });
       c.setPoseSource(flight.client.poses);
+      c.setFaceSource(flight.client.faces);
       cabin.current = c;
       if (import.meta.env.DEV) (globalThis as { cabin3d?: Cabin3D }).cabin3d = c;
       return () => {

@@ -10,6 +10,8 @@ export interface ClientSnapshot {
   /** Local time when `state` arrived; countdowns run from here. */
   receivedAt: number;
   reason: string | null;
+  /** Bumped when painted faces arrive, so portraits redraw. */
+  facesAt?: number;
 }
 
 export interface ClientOptions {
@@ -18,6 +20,8 @@ export interface ClientOptions {
   token: string;
   name: string;
   look: Look;
+  /** Your painted face ('' for none). */
+  face?: string;
   tower?: boolean;
   now?: () => number;
   timeoutMs?: number;
@@ -27,17 +31,19 @@ export class ClientSession {
   snapshot: ClientSnapshot = { status: 'searching', state: null, receivedAt: 0, reason: null };
   /** Everyone's latest pose (read every frame by the 3D view; never triggers re-renders). */
   readonly poses = new Map<string, Pose>();
+  /** Everyone's painted face by player id (missing = plain face). */
+  readonly faces = new Map<string, string>();
   private hostPeer: string | null = null;
   private seq = 0;
   private readonly pending = new Map<number, (result: IntentResult) => void>();
   private readonly listeners = new Set<(snapshot: ClientSnapshot) => void>();
   private readonly offs: (() => void)[] = [];
-  private profile: { name: string; look: Look };
+  private profile: { name: string; look: Look; face: string };
   private readonly now: () => number;
 
   constructor(private readonly opts: ClientOptions) {
     this.now = opts.now ?? Date.now;
-    this.profile = { name: opts.name, look: opts.look };
+    this.profile = { name: opts.name, look: opts.look, face: opts.face ?? '' };
     this.offs.push(
       opts.transport.onMessage((msg, peerId) => this.received(msg, peerId)),
       opts.transport.onPeerLeave((peerId) => {
@@ -75,9 +81,9 @@ export class ClientSession {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pose', ...pose } satisfies ClientMessage);
   }
 
-  /** Change your name or look while boarding. */
-  updateProfile(name: string, look: Look): void {
-    this.profile = { name, look };
+  /** Change your name, look or face while boarding. */
+  updateProfile(name: string, look: Look, face = this.profile.face): void {
+    this.profile = { name, look, face };
     if (this.snapshot.status === 'joined') this.sendJoin();
   }
 
@@ -117,6 +123,11 @@ export class ClientSession {
       case 'refused':
         this.update({ status: 'refused', reason: msg.reason });
         break;
+      case 'faces':
+        this.faces.clear();
+        for (const [id, face] of Object.entries(msg.faces ?? {})) if (typeof face === 'string') this.faces.set(id, face);
+        this.update({ facesAt: this.now() });
+        break;
       case 'poses':
         // The host always sends everyone's pose, so anyone missing has left.
         for (const id of [...this.poses.keys()]) if (!(id in msg.poses)) this.poses.delete(id);
@@ -133,6 +144,7 @@ export class ClientSession {
       token: this.opts.token,
       name: this.profile.name,
       look: this.profile.look,
+      face: this.profile.face,
       tower: this.opts.tower ?? false,
     };
     this.opts.transport.send(this.hostPeer, join);

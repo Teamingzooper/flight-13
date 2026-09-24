@@ -11,14 +11,18 @@ describe('protocol sanitising', () => {
   });
 
   it('clamps looks to the known palettes', () => {
-    expect(cleanLook({ body: 2, skin: 99, hair: -1, hairColor: 1.5, top: 3 })).toEqual({
+    expect(cleanLook({ body: 2, skin: 99, hair: -1, hairColor: 1.5, top: 3, topStyle: 9 })).toEqual({
       body: 2,
       skin: 0,
       hair: 0,
       hairColor: 0,
       top: 3,
+      topStyle: 0,
       bottom: 0,
     });
+    // Looks saved before top styles existed keep their sleeves.
+    expect(cleanLook({ body: 0, skin: 0, hair: 0, hairColor: 0, top: 5, bottom: 0 }).topStyle).toBe(1);
+    expect(cleanLook({ body: 0, skin: 0, hair: 0, hairColor: 0, top: 2, bottom: 0 }).topStyle).toBe(0);
   });
 
   it('rebuilds valid settings and rejects junk', () => {
@@ -40,7 +44,8 @@ describe('protocol sanitising', () => {
       v: 1,
       token: 'abcdefgh12',
       name: 'Ann',
-      look: { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, bottom: 0 },
+      look: { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 },
+      face: '',
       tower: false,
     });
     expect(parseClientMessage({ t: 'join', v: 1, token: 'short' })).toBeNull();

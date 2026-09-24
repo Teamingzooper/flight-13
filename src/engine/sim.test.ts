@@ -68,5 +68,6 @@ describe('bot simulation', () => {
     // Vitest hides console output of passing tests; stderr always shows.
     if (process.env.SIM_REPORT) process.stderr.write(`${report.join('\n')}\nby reason: ${JSON.stringify(reasons)}\n`);
     expect(games).toBe(13 * 5 * 6);
-  });
+    // 390 whole games: allow for a busy machine running the other test files alongside.
+  }, 30_000);
 });

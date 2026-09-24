@@ -95,6 +95,7 @@ export class Cabin3D {
   private readonly liveMesh: THREE.Mesh;
   private readonly people = new People();
   private poseSource: Map<string, Pose> | null = null;
+  private faceSource: ReadonlyMap<string, string> | null = null;
   private lastPose: Pose | null = null;
   private lastPoseAt = 0;
   private youId: string | null = null;
@@ -298,6 +299,11 @@ export class Cabin3D {
   /** Where remote poses come from (the client's live map). */
   setPoseSource(poses: Map<string, Pose>): void {
     this.poseSource = poses;
+  }
+
+  /** Where painted faces come from (the client's face map). */
+  setFaceSource(faces: ReadonlyMap<string, string>): void {
+    this.faceSource = faces;
   }
 
   /** Development helpers (exposed as window.cabin3d in dev builds). */
@@ -605,7 +611,7 @@ export class Cabin3D {
     const players = this.holdAlive.size
       ? game.players.map((p) => (this.holdAlive.has(p.id) ? { ...p, status: 'alive' as const, cause: null } : p))
       : game.players;
-    this.people.sync(players, this.youId, (i) => rearSpot(rows, i));
+    this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource);
   }
 
   private later(seconds: number, fn: () => void): void {

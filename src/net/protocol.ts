@@ -8,12 +8,13 @@ import {
   type PlayerView,
   type Settings,
 } from '../engine';
+import { cleanFace } from './face';
 
 export const PROTOCOL_VERSION = 1;
 export const NAME_MAX_LENGTH = 16;
 
 /** Options per look slot; the avatar and 3D palettes are sized to match. */
-export const LOOK_LIMITS: Readonly<Record<keyof Look, number>> = { body: 3, skin: 6, hair: 8, hairColor: 6, top: 8, bottom: 5 };
+export const LOOK_LIMITS: Readonly<Record<keyof Look, number>> = { body: 3, skin: 8, hair: 10, hairColor: 12, top: 12, topStyle: 4, bottom: 8 };
 
 export interface LobbyPlayer {
   id: string;
@@ -61,7 +62,7 @@ export type HostCommand =
   | { kind: 'boardAgain' };
 
 export type ClientMessage =
-  | { t: 'join'; v: number; token: string; name: string; look: Look; tower: boolean }
+  | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean }
   | { t: 'intent'; seq: number; intent: Intent }
   | { t: 'lobbyChat'; seq: number; text: string }
   | { t: 'command'; seq: number; command: HostCommand }
@@ -73,7 +74,9 @@ export type HostMessage =
   | { t: 'ack'; seq: number; ok: boolean; error?: string }
   | { t: 'refused'; reason: string }
   /** Everyone's latest pose: player id → [yaw, pitch, lean 0/1]. */
-  | { t: 'poses'; poses: Record<string, [number, number, number]> };
+  | { t: 'poses'; poses: Record<string, [number, number, number]> }
+  /** Everyone's painted face (player id → face text); sent on joining and whenever one changes. */
+  | { t: 'faces'; faces: Record<string, string> };
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -90,12 +93,30 @@ export function cleanLook(raw: unknown): Look {
     const v = src[key];
     return isInt(v) && v >= 0 && v < LOOK_LIMITS[key] ? v : 0;
   };
-  return { body: slot('body'), skin: slot('skin'), hair: slot('hair'), hairColor: slot('hairColor'), top: slot('top'), bottom: slot('bottom') };
+  // Before top styles existed, the top's colour decided the sleeves (colours 4-7 were T-shirts).
+  const topStyle = isInt(src.topStyle) ? slot('topStyle') : isInt(src.top) && src.top >= 4 && src.top < 8 ? 1 : 0;
+  return {
+    body: slot('body'),
+    skin: slot('skin'),
+    hair: slot('hair'),
+    hairColor: slot('hairColor'),
+    top: slot('top'),
+    topStyle,
+    bottom: slot('bottom'),
+  };
 }
 
 export function randomLook(random: () => number): Look {
   const r = (key: keyof Look) => Math.floor(random() * LOOK_LIMITS[key]);
-  return { body: r('body'), skin: r('skin'), hair: r('hair'), hairColor: r('hairColor'), top: r('top'), bottom: r('bottom') };
+  return {
+    body: r('body'),
+    skin: r('skin'),
+    hair: r('hair'),
+    hairColor: r('hairColor'),
+    top: r('top'),
+    topStyle: r('topStyle'),
+    bottom: r('bottom'),
+  };
 }
 
 /** Rebuild Settings from untrusted input, keeping only known fields (validate separately). */
@@ -145,6 +166,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
         token: raw.token,
         name: cleanName(raw.name),
         look: cleanLook(raw.look),
+        face: cleanFace(raw.face),
         tower: raw.tower === true,
       };
     case 'intent':

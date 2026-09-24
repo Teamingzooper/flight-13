@@ -69,13 +69,15 @@ export interface Cell {
 export type PlayerStatus = 'alive' | 'dead' | 'restrained';
 export type DeathCause = 'explosion' | 'poison' | 'restrained';
 
-/** Indices into the avatar palettes used by the 3D layer. */
+/** Indices into the avatar palettes and styles (see app/Avatar.tsx). */
 export interface Look {
   body: number;
   skin: number;
   hair: number;
   hairColor: number;
   top: number;
+  /** Long sleeves, T-shirt, hoodie or tank top. */
+  topStyle: number;
   bottom: number;
 }
 

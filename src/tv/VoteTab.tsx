@@ -4,7 +4,7 @@ import type { TVContext } from './context';
 import { clock, nameOf } from './format';
 
 export function VoteTab({ ctx }: { ctx: TVContext }) {
-  const { game, send, left } = ctx;
+  const { game, send, left, flight } = ctx;
   if (game.phase.kind !== 'day_vote') {
     return (
       <div class="tab">
@@ -33,7 +33,7 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
       <div class="vote-grid">
         {candidates.map((p) => (
           <button key={p.id} class={`vote-card${mine === p.id ? ' on' : ''}`} disabled={!canVote.has(p.id)} onClick={() => void send({ kind: 'vote', target: p.id })}>
-            <Avatar look={p.look} size={44} />
+            <Avatar look={p.look} face={flight.client.faces.get(p.id)} size={44} />
             <span class="vote-name">
               {p.name}
               {p.id === game.you?.id ? ' (you)' : ''}
