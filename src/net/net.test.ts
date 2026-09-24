@@ -4,7 +4,7 @@ import { ClientSession } from './client';
 import { HostSession, newHostSnapshot } from './host';
 import { MemoryHub } from './transport';
 
-const LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, bottom: 0 };
+const LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 };
 const HOST_TOKEN = 'host-token-0001';
 
 /** Let queued microtasks and zero-delay timers run. */

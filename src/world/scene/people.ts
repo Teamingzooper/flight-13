@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { BOTTOM, HAIR_COLOR, SKIN, TOP } from '../../app/Avatar';
+import { BOTTOM, HAIR_COLOR, HAIR_STYLES, SKIN, TOP } from '../../app/Avatar';
+import { paintFace } from '../../app/faceImage';
 import type { DeathCause, Look, PlayerSummary, SeatId } from '../../engine';
+import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
 
@@ -31,7 +33,7 @@ type JointName =
   | 'ankle0'
   | 'ankle1';
 
-type Paint = 'top' | 'sleeve' | 'bottom' | 'skin' | 'shoe' | 'eye' | 'hair';
+type Paint = 'top' | 'upper' | 'sleeve' | 'bottom' | 'skin' | 'shoe' | 'eye' | 'hair';
 
 interface PartSpec {
   geometry: THREE.BufferGeometry;
@@ -44,37 +46,44 @@ interface PartSpec {
   head?: boolean;
   /** Hair style index this part belongs to. */
   hair?: number;
+  /** Top style (Look.topStyle) this part belongs to. */
+  outfit?: number;
 }
 
 const m = (x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) =>
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
 
-/** Eight hair shapes, built around a head of radius ~0.105 centred at y = 0.1 on the head joint. */
-function hairGeometries(): THREE.BufferGeometry[] {
-  const cap = (thetaLength: number, scale: [number, number, number], y = 0.112) => {
+/** One geometry out of several (positions, normals and UVs). */
+function merge(...parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const list = parts.map((p) => (p.index ? p.toNonIndexed() : p));
+  const out = new THREE.BufferGeometry();
+  const attrs = ['position', 'normal', 'uv'] as const;
+  for (const name of attrs) {
+    const arrays = list.map((p) => p.getAttribute(name).array as Float32Array);
+    const total = arrays.reduce((n, a) => n + a.length, 0);
+    const merged = new Float32Array(total);
+    let offset = 0;
+    for (const a of arrays) {
+      merged.set(a, offset);
+      offset += a.length;
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(merged, name === 'uv' ? 2 : 3));
+  }
+  return out;
+}
+
+/**
+ * The hair styles of HAIR_STYLES in order, built around a head of radius ~0.105 centred at y = 0.1 on the
+ * head joint. Bald has no geometry.
+ */
+export function hairGeometries(): (THREE.BufferGeometry | null)[] {
+  const cap = (thetaLength: number, scale: [number, number, number], y = 0.112, z = 0.008) => {
     const g = new THREE.SphereGeometry(0.112, 20, 12, 0, Math.PI * 2, 0, thetaLength);
     // Tilt back so the hairline sits above the eyes and the nape is covered.
     g.rotateX(0.32);
     g.scale(...scale);
-    g.translate(0, y, 0.008);
+    g.translate(0, y, z);
     return g;
-  };
-  const merge = (...parts: THREE.BufferGeometry[]) => {
-    const list = parts.map((p) => (p.index ? p.toNonIndexed() : p));
-    const out = new THREE.BufferGeometry();
-    const attrs = ['position', 'normal', 'uv'] as const;
-    for (const name of attrs) {
-      const arrays = list.map((p) => p.getAttribute(name).array as Float32Array);
-      const total = arrays.reduce((n, a) => n + a.length, 0);
-      const merged = new Float32Array(total);
-      let offset = 0;
-      for (const a of arrays) {
-        merged.set(a, offset);
-        offset += a.length;
-      }
-      out.setAttribute(name, new THREE.BufferAttribute(merged, name === 'uv' ? 2 : 3));
-    }
-    return out;
   };
   const bun = new THREE.SphereGeometry(0.045, 12, 10);
   bun.translate(0, 0.2, 0.07);
@@ -93,22 +102,69 @@ function hairGeometries(): THREE.BufferGeometry[] {
   for (let i = 0; i < 10; i++) {
     const s = new THREE.SphereGeometry(0.045, 10, 8);
     const a = (i / 10) * Math.PI * 2;
-    s.translate(Math.sin(a) * 0.085, 0.12 + Math.cos(a * 2) * 0.02, Math.cos(a) * 0.075 + 0.01);
+    s.translate(Math.sin(a) * 0.085, 0.132 + Math.cos(a * 2) * 0.02, Math.cos(a) * 0.075 + 0.01);
     curls.push(s);
   }
   const brim = new THREE.CylinderGeometry(0.12, 0.12, 0.012, 20);
   brim.translate(0, 0.16, -0.05);
+  // A tie at the back of the head and a tail hanging down behind it.
+  const tie = new THREE.SphereGeometry(0.024, 10, 8);
+  tie.translate(0, 0.15, 0.116);
+  const tail = new THREE.CapsuleGeometry(0.03, 0.14, 4, 10);
+  tail.scale(0.9, 1, 0.85);
+  tail.rotateX(-0.27);
+  tail.translate(0, 0.065, 0.142);
   return [
     cap(Math.PI * 0.42, [1, 1, 1.02]),
     merge(cap(Math.PI * 0.5, [1.04, 1.04, 1.06]), longBack),
     merge(cap(Math.PI * 0.4, [1, 1, 1]), bun),
-    cap(Math.PI * 0.12, [0.9, 0.5, 0.9], 0.2),
+    // Buzz: close-cropped, a few millimetres off the skull all round.
+    cap(Math.PI * 0.4, [0.9, 1.04, 0.985], 0.1, 0),
     merge(cap(Math.PI * 0.36, [1, 0.95, 1]), ...spikes),
     cap(Math.PI * 0.48, [1.05, 1.08, 1.05]),
     merge(cap(Math.PI * 0.45, [1.06, 1.06, 1.06]), ...curls),
-    merge(cap(Math.PI * 0.38, [1.05, 1, 1.05], 0.12), brim),
+    // The crown comes down to meet the brim.
+    merge(cap(Math.PI * 0.47, [1.05, 1, 1.05], 0.115), brim),
+    null,
+    merge(cap(Math.PI * 0.46, [1.02, 1.02, 1.04]), tie, tail),
   ];
 }
+
+/** A hood lying on the upper back, with its collar round the back of the neck (on the chest joint). */
+function hoodGeometry(): THREE.BufferGeometry {
+  const collar = new THREE.TorusGeometry(0.085, 0.03, 8, 20, Math.PI);
+  collar.rotateX(HALF_PI);
+  collar.translate(0, 0.15, 0);
+  const hood = new THREE.SphereGeometry(0.1, 16, 12);
+  hood.scale(1, 0.85, 0.4);
+  hood.translate(0, 0.08, 0.108);
+  return merge(collar, hood);
+}
+
+/** The head's shape on the head joint: a slightly tall sphere. */
+export const HEAD_CENTER_Y = 0.1;
+export const HEAD_SCALE = new THREE.Vector3(0.92, 1.08, 1);
+const HEAD_LOCAL = m(0, HEAD_CENTER_Y, 0, HEAD_SCALE.x, HEAD_SCALE.y, HEAD_SCALE.z);
+/** The painted face's shell (before the head's scale): a hair's breadth above the skin. */
+export const FACE_RADIUS = 0.105 * 1.012;
+/** The face editor draws the head as a circle of this radius, as a fraction of the picture. */
+export const FACE_SPAN = 0.49;
+
+/**
+ * The front of the head for painted faces. Its UVs are the face editor's front view of the head: a circle
+ * filling the picture, the passenger's right on the left.
+ */
+function faceGeometry(): THREE.BufferGeometry {
+  const r = FACE_RADIUS;
+  const g = new THREE.SphereGeometry(r, 28, 20, Math.PI, Math.PI);
+  const pos = g.getAttribute('position');
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, 0.5 - (FACE_SPAN * pos.getX(i)) / r, 0.5 + (FACE_SPAN * pos.getY(i)) / r);
+  return g;
+}
+
+const sameLook = (a: Look, b: Look) =>
+  a.body === b.body && a.skin === b.skin && a.hair === b.hair && a.hairColor === b.hairColor && a.top === b.top && a.topStyle === b.topStyle && a.bottom === b.bottom;
 
 function buildParts(): PartSpec[] {
   const cloth = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
@@ -120,7 +176,7 @@ function buildParts(): PartSpec[] {
     { geometry: new RoundedBoxGeometry(0.32, 0.17, 0.22, 3, 0.06), material: cloth, joints: ['hips'], local: [m(0, 0.03, 0.01)], paint: 'bottom' },
     { geometry: new THREE.CapsuleGeometry(0.155, 0.2, 6, 14), material: cloth, joints: ['spine'], local: [m(0, 0.2, 0, 1, 1, 0.72)], paint: 'top' },
     { geometry: new THREE.CylinderGeometry(0.045, 0.052, 0.1, 12), material: skin, joints: ['neck'], local: [m(0, 0.02, 0)], paint: 'skin', head: true },
-    { geometry: new THREE.SphereGeometry(0.105, 24, 18), material: skin, joints: ['head'], local: [m(0, 0.1, 0, 0.92, 1.08, 1)], paint: 'skin', head: true },
+    { geometry: new THREE.SphereGeometry(0.105, 24, 18), material: skin, joints: ['head'], local: [HEAD_LOCAL], paint: 'skin', head: true },
     {
       geometry: new THREE.SphereGeometry(0.014, 10, 8),
       material: dark,
@@ -129,7 +185,7 @@ function buildParts(): PartSpec[] {
       paint: 'eye',
       head: true,
     },
-    { geometry: new THREE.CapsuleGeometry(0.05, 0.19, 4, 10), material: cloth, joints: ['shoulder0', 'shoulder1'], local: pair(m(0, -0.13), m(0, -0.13)), paint: 'top' },
+    { geometry: new THREE.CapsuleGeometry(0.05, 0.19, 4, 10), material: cloth, joints: ['shoulder0', 'shoulder1'], local: pair(m(0, -0.13), m(0, -0.13)), paint: 'upper' },
     { geometry: new THREE.CapsuleGeometry(0.043, 0.17, 4, 10), material: cloth, joints: ['elbow0', 'elbow1'], local: pair(m(0, -0.12), m(0, -0.12)), paint: 'sleeve' },
     { geometry: new THREE.SphereGeometry(0.045, 12, 10), material: skin, joints: ['wrist0', 'wrist1'], local: pair(m(0, -0.04, 0, 0.8, 1.15, 0.6), m(0, -0.04, 0, 0.8, 1.15, 0.6)), paint: 'skin' },
     { geometry: new THREE.CapsuleGeometry(0.075, 0.27, 4, 12), material: cloth, joints: ['hip0', 'hip1'], local: pair(m(0, -0.2), m(0, -0.2)), paint: 'bottom' },
@@ -142,7 +198,10 @@ function buildParts(): PartSpec[] {
       paint: 'shoe',
     },
   ];
-  hairGeometries().forEach((geometry, index) => parts.push({ geometry, material: hair, joints: ['head'], local: [m()], paint: 'hair', head: true, hair: index }));
+  parts.push({ geometry: hoodGeometry(), material: cloth, joints: ['chest'], local: [m()], paint: 'top', head: true, outfit: 2 });
+  hairGeometries().forEach((geometry, index) => {
+    if (geometry) parts.push({ geometry, material: hair, joints: ['head'], local: [m()], paint: 'hair', head: true, hair: index });
+  });
   return parts;
 }
 
@@ -151,6 +210,8 @@ export class Actor {
   readonly joints = {} as Record<JointName, THREE.Object3D>;
   readonly root = new THREE.Object3D();
   look: Look;
+  /** Painted face ('' for the plain one). */
+  face = '';
   seat: SeatId | null = null;
   dead = false;
   cause: DeathCause | null = null;
@@ -189,20 +250,36 @@ export class Actor {
       j[name] = o;
       return o;
     };
-    const w = 1 + (look.body - 1) * 0.1;
     const hips = make('hips', this.root, 0, 0.5, 0);
     const spine = make('spine', hips, 0, 0.06, 0);
     const chest = make('chest', spine, 0, 0.28, 0);
     const neck = make('neck', chest, 0, 0.14, 0);
     make('head', neck, 0, 0.05, 0);
     for (const side of [0, 1] as Side[]) {
-      const sx = side === 0 ? -1 : 1;
-      const shoulder = make(`shoulder${side}`, chest, sx * 0.19 * w, 0.07, 0);
+      const shoulder = make(`shoulder${side}`, chest, 0, 0.07, 0);
       const elbow = make(`elbow${side}`, shoulder, 0, -0.27, 0);
       make(`wrist${side}`, elbow, 0, -0.24, 0);
-      const hip = make(`hip${side}`, hips, sx * 0.09 * w, -0.02, 0);
+      const hip = make(`hip${side}`, hips, 0, -0.02, 0);
       const knee = make(`knee${side}`, hip, 0, -0.42, 0);
       make(`ankle${side}`, knee, 0, -0.42, 0);
+    }
+    this.shape();
+  }
+
+  /** New clothes, hair or build. */
+  setLook(look: Look): void {
+    this.look = look;
+    this.shape();
+  }
+
+  /** Shoulders and hips spread with the build. */
+  private shape(): void {
+    const w = 1 + (this.look.body - 1) * 0.1;
+    const j = this.joints;
+    for (const side of [0, 1] as Side[]) {
+      const sx = side === 0 ? -1 : 1;
+      j[`shoulder${side}`].position.x = sx * 0.19 * w;
+      j[`hip${side}`].position.x = sx * 0.09 * w;
     }
     j.spine.scale.set(w, 1, w);
   }
@@ -391,6 +468,9 @@ export class People {
   private readonly free: number[] = [];
   /** Stable standing spot per restrained passenger. */
   private readonly rearSlots = new Map<string, number>();
+  /** Painted faces, one small mesh each (every face has its own picture). */
+  private readonly decals = new Map<string, { mesh: THREE.Mesh; texture: THREE.CanvasTexture; material: THREE.MeshStandardMaterial }>();
+  private readonly faceGeometry = faceGeometry();
   private readonly zero = new THREE.Matrix4().makeScale(0, 0, 0);
   private readonly tmp = new THREE.Matrix4();
   private readonly color = new THREE.Color();
@@ -419,9 +499,9 @@ export class People {
 
   /**
    * Match the cabin to the game: create, seat, walk, kill or restrain passengers.
-   * `rearSpot(i)` gives where the i-th restrained passenger stands.
+   * `rearSpot(i)` gives where the i-th restrained passenger stands; `faces` has painted faces by player.
    */
-  sync(players: PlayerSummary[], youId: string | null, rearSpot: (index: number) => THREE.Vector3): void {
+  sync(players: PlayerSummary[], youId: string | null, rearSpot: (index: number) => THREE.Vector3, faces: ReadonlyMap<string, string> | null = null): void {
     const seen = new Set<string>();
     for (const id of [...this.rearSlots.keys()]) {
       if (players.find((p) => p.id === id)?.status !== 'restrained') this.rearSlots.delete(id);
@@ -437,6 +517,12 @@ export class People {
         this.slots.set(p.id, slot);
         this.paint(p.id);
       }
+      if (!sameLook(actor.look, p.look)) {
+        actor.setLook(p.look);
+        this.paint(p.id);
+      }
+      const face = faces?.get(p.id) ?? '';
+      if (face !== actor.face) this.setFace(p.id, actor, face);
       actor.hideHead = p.id === youId;
       if (p.status === 'restrained') {
         let slot = this.rearSlots.get(p.id);
@@ -461,6 +547,7 @@ export class People {
     for (const id of [...this.actors.keys()]) {
       if (seen.has(id)) continue;
       this.hide(id);
+      this.setFace(id, this.actors.get(id)!, '');
       this.free.push(this.slots.get(id)!);
       this.slots.delete(id);
       this.actors.delete(id);
@@ -476,6 +563,8 @@ export class People {
   }
 
   dispose(): void {
+    for (const [id, actor] of this.actors) this.setFace(id, actor, '');
+    this.faceGeometry.dispose();
     for (const mesh of this.meshes) {
       mesh.geometry.dispose();
       mesh.dispose();
@@ -488,11 +577,18 @@ export class People {
     const slot = this.slots.get(id)!;
     // Your camera travels on its own path, so your body only shows once you have arrived (or while it follows you).
     const hideBody = actor.hidden || (actor.hideHead && actor.walking);
+    const look = actor.look;
     this.parts.forEach((part, index) => {
       const mesh = this.meshes[index];
       part.joints.forEach((joint, k) => {
         const i = slot * part.joints.length + k;
-        const hidden = hideBody || (part.head && actor.hideHead) || (part.hair !== undefined && part.hair !== actor.look.hair % 8);
+        const hidden =
+          hideBody ||
+          (part.head && actor.hideHead) ||
+          (part.hair !== undefined && part.hair !== look.hair % HAIR_STYLES.length) ||
+          (part.outfit !== undefined && part.outfit !== look.topStyle) ||
+          // A painted face brings its own eyes.
+          (part.paint === 'eye' && actor.face !== '');
         if (hidden) {
           mesh.setMatrixAt(i, this.zero);
           return;
@@ -501,6 +597,46 @@ export class People {
         mesh.setMatrixAt(i, this.tmp);
       });
     });
+    const decal = this.decals.get(id);
+    if (decal) {
+      decal.mesh.visible = !hideBody && !actor.hideHead;
+      decal.mesh.matrix.multiplyMatrices(actor.joints.head.matrixWorld, HEAD_LOCAL);
+      decal.mesh.matrixWorldNeedsUpdate = true;
+    }
+  }
+
+  /** Put a painted face on a passenger ('' for the plain one). */
+  private setFace(id: string, actor: Actor, face: string): void {
+    actor.face = face;
+    const old = this.decals.get(id);
+    if (old) {
+      this.group.remove(old.mesh);
+      old.texture.dispose();
+      old.material.dispose();
+      this.decals.delete(id);
+    }
+    const ink = face ? decodeFace(face) : null;
+    if (!ink) {
+      actor.face = '';
+      return;
+    }
+    const texture = new THREE.CanvasTexture(paintFace(ink, 256));
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      alphaTest: 0.5,
+      roughness: 0.6,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
+    });
+    const mesh = new THREE.Mesh(this.faceGeometry, material);
+    mesh.name = `face:${id}`;
+    mesh.matrixAutoUpdate = false;
+    mesh.receiveShadow = true;
+    this.group.add(mesh);
+    this.decals.set(id, { mesh, texture, material });
   }
 
   private hide(id: string): void {
@@ -515,12 +651,15 @@ export class People {
     const actor = this.actors.get(id)!;
     const slot = this.slots.get(id)!;
     const look = actor.look;
-    const shortSleeves = look.top >= 4;
+    const top = TOP[look.top] ?? TOP[0];
+    const skin = SKIN[look.skin] ?? SKIN[0];
+    // Long sleeves and hoodies cover the arms; a T-shirt bares the forearms, a tank top the whole arm.
     const palette: Record<Paint, string> = {
-      top: TOP[look.top] ?? TOP[0],
-      sleeve: shortSleeves ? SKIN[look.skin] ?? SKIN[0] : TOP[look.top] ?? TOP[0],
+      top,
+      upper: look.topStyle === 3 ? skin : top,
+      sleeve: look.topStyle === 0 || look.topStyle === 2 ? top : skin,
       bottom: BOTTOM[look.bottom] ?? BOTTOM[0],
-      skin: SKIN[look.skin] ?? SKIN[0],
+      skin,
       shoe: '#1c1d22',
       eye: '#141414',
       hair: HAIR_COLOR[look.hairColor] ?? HAIR_COLOR[0],

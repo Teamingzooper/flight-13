@@ -60,7 +60,7 @@ export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => 
     case 'dawn':
       return <MorningReport game={game} onClose={close} />;
     case 'verdict':
-      return <VerdictCard game={game} onClose={close} />;
+      return <VerdictCard game={game} faces={ctx.flight.client.faces} onClose={close} />;
     case 'ended':
       return <EndScreen ctx={ctx} onLeave={onLeave} />;
     default:
@@ -157,7 +157,7 @@ function MorningReport({ game, onClose }: { game: PlayerView; onClose: () => voi
   );
 }
 
-function VerdictCard({ game, onClose }: { game: PlayerView; onClose: () => void }) {
+function VerdictCard({ game, faces, onClose }: { game: PlayerView; faces: ReadonlyMap<string, string>; onClose: () => void }) {
   const v = game.verdict;
   const restrained = v?.restrained ? game.players.find((p) => p.id === v.restrained) : undefined;
   const note = restrained ? game.log.find((e) => e.tag === 'note' && e.data?.player === restrained.id) : undefined;
@@ -166,7 +166,7 @@ function VerdictCard({ game, onClose }: { game: PlayerView; onClose: () => void 
       <div class="label">Verdict · Day {game.phase.night}</div>
       {restrained ? (
         <>
-          <Avatar look={restrained.look} size={72} />
+          <Avatar look={restrained.look} face={faces.get(restrained.id)} size={72} />
           <h2>{restrained.name} is restrained</h2>
           {restrained.role && restrained.team && (
             <p>
@@ -214,7 +214,7 @@ function EndScreen({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
           <ul class="role-reveal">
             {game.players.map((p) => (
               <li key={p.id} class={p.team ?? ''}>
-                <Avatar look={p.look} size={32} dim={p.status !== 'alive'} />
+                <Avatar look={p.look} face={flight.client.faces.get(p.id)} size={32} dim={p.status !== 'alive'} />
                 <span class="name">{p.name}</span>
                 <span class="role">{p.role ? roleName(p.role) : '?'}</span>
                 <span class="status">{outcome(p)}</span>

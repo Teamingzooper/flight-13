@@ -1,10 +1,13 @@
 import type { Look } from '../engine';
+import { cleanFace } from '../net/face';
 import { cleanLook, randomLook } from '../net/protocol';
 
 export interface Profile {
   token: string;
   name: string;
   look: Look;
+  /** Painted face ('' for the plain one). */
+  face: string;
 }
 
 /** `?p=2` gives a tab its own identity, so one browser can test several passengers. */
@@ -21,12 +24,12 @@ export function loadProfile(): Profile {
   try {
     const raw = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as Partial<Profile> | null;
     if (raw && typeof raw.token === 'string' && raw.token.length >= 16) {
-      return { token: raw.token, name: typeof raw.name === 'string' ? raw.name : '', look: cleanLook(raw.look) };
+      return { token: raw.token, name: typeof raw.name === 'string' ? raw.name : '', look: cleanLook(raw.look), face: cleanFace(raw.face) };
     }
   } catch {
     // Corrupt or blocked storage: start fresh.
   }
-  const fresh: Profile = { token: randomToken(), name: '', look: randomLook(Math.random) };
+  const fresh: Profile = { token: randomToken(), name: '', look: randomLook(Math.random), face: '' };
   saveProfile(fresh);
   return fresh;
 }

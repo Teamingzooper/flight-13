@@ -82,7 +82,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
           <ul class="manifest">
             {state.players.map((p) => (
               <li key={p.id} class={p.connected ? '' : 'offline'}>
-                <Avatar look={p.look} size={38} dim={!p.connected} />
+                <Avatar look={p.look} face={client.faces.get(p.id)} size={38} dim={!p.connected} />
                 <span class="name">{p.name}</span>
                 <span class="tags">
                   {p.host && <span class="badge amber">Host</span>}
@@ -243,7 +243,7 @@ function MyPass({ flight }: { flight: OpenFlight }) {
   const change = (next: Profile) => {
     setProfile(next);
     saveProfile(next);
-    if (next.name.trim()) flight.client.updateProfile(next.name.trim(), next.look);
+    if (next.name.trim()) flight.client.updateProfile(next.name.trim(), next.look, next.face);
   };
   return (
     <section class="panel">

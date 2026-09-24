@@ -1,5 +1,6 @@
 import { normalizeGame, normalizeSettings } from '../engine';
 import type { HostSnapshot } from '../net/host';
+import { cleanLook } from '../net/protocol';
 import { randomToken } from './profile';
 
 const snapshotKey = (code: string) => `flight13.host.${code}`;
@@ -61,7 +62,11 @@ export function loadHostSnapshot(code: string): HostSnapshot | null {
     if (!snapshot || snapshot.v !== 1 || snapshot.code !== code) return null;
     // Saved by an older version: fill in rules and fields added since.
     snapshot.settings = normalizeSettings(snapshot.settings);
-    if (snapshot.game) normalizeGame(snapshot.game);
+    for (const p of snapshot.players) p.look = cleanLook(p.look);
+    if (snapshot.game) {
+      normalizeGame(snapshot.game);
+      for (const p of snapshot.game.players) p.look = cleanLook(p.look);
+    }
     return snapshot;
   } catch {
     return null;

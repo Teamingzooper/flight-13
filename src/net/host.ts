@@ -28,6 +28,7 @@ import {
   type LobbyMessage,
   type Pose,
 } from './protocol';
+import { FACE_TEMPLATES } from './face';
 import type { Transport } from './transport';
 
 export interface HostPlayer {
@@ -36,6 +37,8 @@ export interface HostPlayer {
   token: string;
   name: string;
   look: Look;
+  /** Painted face ('' for none); older saves have no field. */
+  face?: string;
   bot: boolean;
 }
 
@@ -75,6 +78,8 @@ interface Peer {
   playerId: string | null;
   tower: boolean;
   lastSent: string;
+  /** The faces this peer last received, so it only gets them again when one changes. */
+  facesSent: string;
 }
 
 interface BotPlan {
@@ -172,8 +177,16 @@ export class HostSession {
   flush(): void {
     if (this.closed) return;
     const now = this.now();
+    const faces: Record<string, string> = {};
+    for (const p of this.snapshot.players) if (p.face) faces[p.id] = p.face;
+    const facesKey = JSON.stringify(faces);
     for (const [peerId, peer] of this.peers) {
       if (!peer.playerId && !peer.tower) continue;
+      // Faces first, so portraits have them by the time the state arrives.
+      if (peer.facesSent !== facesKey) {
+        peer.facesSent = facesKey;
+        this.sendTo(peerId, { t: 'faces', faces });
+      }
       const state = this.stateFor(peer, now);
       const key = JSON.stringify(state.game ? { ...state, game: { ...state.game, phase: { ...state.game.phase, endsInMs: 0 } } } : state);
       if (key === peer.lastSent) continue;
@@ -193,7 +206,7 @@ export class HostSession {
   }
 
   private peerJoined(peerId: string, transport: Transport, trusted: boolean): void {
-    if (!this.peers.has(peerId)) this.peers.set(peerId, { transport, trusted, playerId: null, tower: false, lastSent: '' });
+    if (!this.peers.has(peerId)) this.peers.set(peerId, { transport, trusted, playerId: null, tower: false, lastSent: '', facesSent: '' });
     this.sendTo(peerId, { t: 'hello', v: PROTOCOL_VERSION, code: this.snapshot.code });
   }
 
@@ -212,7 +225,7 @@ export class HostSession {
     if (this.closed) return;
     let peer = this.peers.get(peerId);
     if (!peer) {
-      peer = { transport, trusted, playerId: null, tower: false, lastSent: '' };
+      peer = { transport, trusted, playerId: null, tower: false, lastSent: '', facesSent: '' };
       this.peers.set(peerId, peer);
     }
     const msg = parseClientMessage(raw);
@@ -265,6 +278,7 @@ export class HostSession {
       peer.tower = true;
       peer.playerId = null;
       peer.lastSent = '';
+      peer.facesSent = '';
       this.changed();
       return;
     }
@@ -272,11 +286,12 @@ export class HostSession {
     if (!player) {
       if (s.game) return this.refuse(peerId, 'The doors are closed. This flight has already taken off.');
       if (s.players.length >= s.settings.maxPassengers) return this.refuse(peerId, 'This flight is full.');
-      player = { id: `p${s.nextId++}`, token: msg.token, name: this.uniqueName(msg.name, null), look: msg.look, bot: false };
+      player = { id: `p${s.nextId++}`, token: msg.token, name: this.uniqueName(msg.name, null), look: msg.look, face: msg.face, bot: false };
       s.players.push(player);
     } else if (!s.game) {
       player.name = this.uniqueName(msg.name, player.id);
       player.look = msg.look;
+      player.face = msg.face;
     }
     for (const [otherId, other] of this.peers) {
       if (otherId !== peerId && other.playerId === player.id) {
@@ -286,6 +301,7 @@ export class HostSession {
     }
     peer.playerId = player.id;
     peer.lastSent = '';
+    peer.facesSent = '';
     this.disconnectedAt.delete(player.id);
     this.changed();
   }
@@ -357,7 +373,8 @@ export class HostSession {
         if (s.game) return fail('The doors are closed.');
         if (s.players.length >= s.settings.maxPassengers) return fail('The flight is full.');
         const base = BOT_NAMES[Math.floor(this.random() * BOT_NAMES.length)];
-        s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random), bot: true });
+        const face = FACE_TEMPLATES[Math.floor(this.random() * FACE_TEMPLATES.length)].face;
+        s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random), face, bot: true });
         break;
       }
       case 'boardAgain': {

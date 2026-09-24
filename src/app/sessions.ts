@@ -63,6 +63,7 @@ export function openFlight(code: string): ActiveFlight {
       token: profile.token,
       name: profile.name,
       look: profile.look,
+      face: profile.face,
       tower: saved.controlTower,
     });
     const flight: OpenFlight = { kind: 'ok', code, client, host };
@@ -79,7 +80,14 @@ export function openFlight(code: string): ActiveFlight {
     return flight;
   }
 
-  const client = new ClientSession({ transport: trysteroTransport(code), code, token: profile.token, name: profile.name, look: profile.look });
+  const client = new ClientSession({
+    transport: trysteroTransport(code),
+    code,
+    token: profile.token,
+    name: profile.name,
+    look: profile.look,
+    face: profile.face,
+  });
   const flight: OpenFlight = { kind: 'ok', code, client, host: null };
   exposeForDev(flight);
   active = { flight, stop: () => client.close() };
