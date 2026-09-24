@@ -146,8 +146,15 @@ export class Lighting {
     this.apply(PRESETS.day);
   }
 
+  /** Safe to call every frame: only a change of mode starts a transition. */
   setMode(mode: LightMode, instant = false): void {
-    if (mode === this.mode && this.t >= 1) return;
+    if (mode === this.mode) {
+      if (instant && this.t < 1) {
+        this.t = 1;
+        this.apply(this.to);
+      }
+      return;
+    }
     this.from = this.snapshot();
     this.to = PRESETS[mode];
     this.mode = mode;
