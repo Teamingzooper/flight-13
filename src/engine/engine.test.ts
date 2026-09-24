@@ -31,7 +31,7 @@ describe('phase flow', () => {
     expect(s.log.at(-1)?.tag).toBe('takeoff');
     expect(tick(s, 83_999)).toBe(false);
     expect(tick(s, 84_000)).toBe(true);
-    expect(s.phase).toMatchObject({ kind: 'night_move', night: 1, startedAt: 84_000, endsAt: 104_000 });
+    expect(s.phase).toMatchObject({ kind: 'night_move', night: 1, startedAt: 84_000, endsAt: 109_000 });
   });
 
   it('a phase ends 3 seconds after everyone has submitted', () => {
@@ -53,6 +53,17 @@ describe('phase flow', () => {
     expect(s.phase.earlyEndAt).toBeNull();
     applyIntent(s, 'p3', { kind: 'act', action: null }, s.phase.startedAt);
     expect(s.phase.earlyEndAt).not.toBeNull();
+  });
+
+  it('the night lasts 7 seconds after the last action, so a look under your seat can finish', () => {
+    const s = smallFlight();
+    advanceTo(s, 'night_act', 1);
+    const t = s.phase.startedAt + 2000;
+    for (const id of ['bomber', 'pilot', 'p1', 'p2']) applyIntent(s, id, { kind: 'act', action: null }, t);
+    applyIntent(s, 'p3', { kind: 'act', action: { kind: 'search' } }, t);
+    expect(s.phase.earlyEndAt).toBe(t + 7000);
+    expect(tick(s, t + 6999)).toBe(false);
+    expect(tick(s, t + 7000)).toBe(true);
   });
 
   it('"after incident" mode skips the vote after a quiet night', () => {

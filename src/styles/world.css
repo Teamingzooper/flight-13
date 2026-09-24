@@ -208,6 +208,8 @@
   position: absolute;
   inset: 0;
   display: grid;
+  /* One cell the size of the window, so the screen never grows past it (its tabs scroll instead). */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   padding: max(12px, 3vmin);
   animation: world-tv-in 0.45s ease 0.35s both;
@@ -239,6 +241,8 @@
   width: min(100%, 1150px);
   height: min(100%, 780px);
   min-height: 0;
+  /* A fixed-size cell for the bezel, so the screen inside fits and its tabs scroll (not the whole TV). */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   padding: 0;
   background: none;
 }

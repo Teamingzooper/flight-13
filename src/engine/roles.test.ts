@@ -40,7 +40,7 @@ describe('settings', () => {
   it('the red-eye to Tokyo shortens discussion', () => {
     expect(phaseDurationMs(defaultSettings(), 'day_discuss')).toBe(90_000);
     expect(phaseDurationMs({ ...defaultSettings(), destination: 'HND' }, 'day_discuss')).toBe(54_000);
-    expect(phaseDurationMs({ ...defaultSettings(), timers: 'quick' }, 'night_act')).toBe(20_000);
+    expect(phaseDurationMs({ ...defaultSettings(), timers: 'quick' }, 'night_act')).toBe(30_000);
     expect(phaseDurationMs(defaultSettings(), 'takeoff')).toBe(12_000);
   });
 });

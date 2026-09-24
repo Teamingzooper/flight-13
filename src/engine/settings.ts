@@ -5,6 +5,8 @@ import type { PhaseKind, Settings, TimerPreset } from './types';
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 16;
 export const EARLY_END_GRACE_MS = 3000;
+/** After the last night action, long enough to finish looking under your seat before the lights come on. */
+export const NIGHT_ACT_GRACE_MS = 7000;
 export const CHAT_MAX_LENGTH = 200;
 export const CHAT_COOLDOWN_MS = 1000;
 export const CHAT_HISTORY = 300;
@@ -19,9 +21,9 @@ export interface TimerSet {
 
 /** Seconds per adjustable phase. */
 export const TIMERS: Record<TimerPreset, TimerSet> = {
-  quick: { night_move: 15, night_act: 20, day_discuss: 60, day_vote: 20 },
-  standard: { night_move: 20, night_act: 30, day_discuss: 90, day_vote: 30 },
-  relaxed: { night_move: 30, night_act: 45, day_discuss: 150, day_vote: 45 },
+  quick: { night_move: 20, night_act: 30, day_discuss: 60, day_vote: 20 },
+  standard: { night_move: 25, night_act: 40, day_discuss: 90, day_vote: 30 },
+  relaxed: { night_move: 35, night_act: 55, day_discuss: 150, day_vote: 45 },
 };
 
 /** Seconds for packing and the cutscene phases (packing ends early once everyone is packed). */

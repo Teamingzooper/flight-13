@@ -669,7 +669,8 @@ export class Cabin3D {
     }
     const built = this.built;
     if (built) {
-      const mode = this.wantedMode !== 'night' && time < this.darkUntil ? 'night' : this.wantedMode;
+      // The lights stay off after a blast for a moment, and until you are back up from under your seat.
+      const mode = this.wantedMode !== 'night' && (time < this.darkUntil || this.searching) ? 'night' : this.wantedMode;
       built.lighting.setMode(mode);
       this.flight(time, built);
       built.lighting.update(dt);
