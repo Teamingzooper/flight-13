@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks';
-import { ROLES, grid, type NightAction, type PlayerView } from '../engine';
+import { useEffect, useState } from 'preact/hooks';
+import { NOTE_MAX_LENGTH, ROLES, grid, type NightAction, type PlayerView } from '../engine';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, roleName, teamName, whenLabel } from './format';
 import { SeatMap } from './SeatMap';
@@ -29,6 +29,7 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
   return (
     <div class="tab action-tab">
       <RoleStrip game={game} />
+      <BlackBoxNote ctx={ctx} />
       {kind === 'night_move' && (you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
       {kind === 'night_act' && (you.buckled ? <Buckled game={game} /> : <AbilityPanel ctx={ctx} />)}
       {kind !== 'night_move' && kind !== 'night_act' && <Notes game={game} />}
@@ -50,6 +51,11 @@ function RoleStrip({ game }: { game: PlayerView }) {
         </div>
       </div>
       <p class="role-how">{info.howTo}</p>
+      {you.role === 'pilot' && game.settings.pilotMustFly && (
+        <div class="callout amber">
+          <b>Pilot must fly.</b> If the passengers restrain you, nobody can fly the plane and the saboteurs win.
+        </div>
+      )}
       {you.poisoned && (
         <div class="callout red">
           <b>You were poisoned.</b> Get the Nurse to sit next to you and treat you tonight, or you will not survive the next dawn.
@@ -126,6 +132,10 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   const you = game.you!;
   const mine = game.mine!;
   const actions = game.options?.actions ?? [];
+  // Looking under your seat is answered at once and spends the night.
+  if (you.searched) return <SearchResult game={game} />;
+  const canSearch = actions.some((a) => a.kind === 'search');
+  let hasAbility = true;
   let body;
   switch (you.role) {
     case 'nurse':
@@ -144,15 +154,31 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
     case 'mastermind':
       body = <BombPicker ctx={ctx} actions={actions} />;
       break;
+    case 'marshal':
+      body = you.cuffsUsed ? (
+        <p class="muted">You already used your handcuffs. Keep your eyes open.</p>
+      ) : (
+        <TargetPicker
+          ctx={ctx}
+          title="Handcuff someone"
+          hint="Once per game, anyone within 2 seats. They cannot act tonight and are walked to the rear galley at dawn. Cuff a passenger and the passengers lose a player."
+          actions={actions.filter((a) => a.kind === 'cuff')}
+          empty="Nobody is within 2 seats. Move closer to your suspect tomorrow night."
+        />
+      );
+      break;
     case 'pilot':
-      body = <p class="muted">Your seatbelt call is in. Nothing else to do tonight.</p>;
+      hasAbility = false;
+      body = <p class="muted">Your seatbelt call is in.</p>;
       break;
     default:
-      body = <p class="muted">You have no ability. Close your eyes and listen.</p>;
+      hasAbility = false;
+      body = <p class="muted">You have no special ability.</p>;
   }
   return (
     <div class="stack">
       {body}
+      {canSearch && <SearchCard ctx={ctx} instead={hasAbility} />}
       <div class="done-row">
         <span>
           {mine.acted
@@ -169,7 +195,7 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   );
 }
 
-function TargetPicker({ ctx, title, actions, empty }: { ctx: TVContext; title: string; actions: NightAction[]; empty: string }) {
+function TargetPicker({ ctx, title, hint, actions, empty }: { ctx: TVContext; title: string; hint?: string; actions: NightAction[]; empty: string }) {
   const { game, send } = ctx;
   const targeted = actions.filter((a): a is TargetAction => 'target' in a);
   const byTarget = new Map(targeted.map((a) => [a.target, a]));
@@ -182,7 +208,10 @@ function TargetPicker({ ctx, title, actions, empty }: { ctx: TVContext; title: s
   if (targeted.length === 0) return <p class="muted">{empty}</p>;
   return (
     <div class="stack">
-      <div class="panel-title">{title}</div>
+      <div class="panel-title">
+        {title}
+        {hint && <span class="muted">{hint}</span>}
+      </div>
       <div class="chips">
         {targeted.map((a) => (
           <button key={a.target} class={`chip${selected === a.target ? ' on' : ''}`} onClick={() => choose(a.target)}>
@@ -315,12 +344,115 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   );
 }
 
+/** Look under your own seat: the answer comes at once, but it is the whole night's action. */
+function SearchCard({ ctx, instead }: { ctx: TVContext; instead: boolean }) {
+  const { game, send } = ctx;
+  const seat = game.you!.seat;
+  const [sure, setSure] = useState(false);
+  const look = () => {
+    if (instead && !sure) return setSure(true);
+    void send({ kind: 'act', action: { kind: 'search' } });
+  };
+  return (
+    <div class="ability-card search-card">
+      <div class="ability-title">Look under your seat</div>
+      <p class="muted">
+        Check {seat} for anything a previous passenger left behind. You find out at once, but it uses up your night
+        {instead ? ' instead of your ability' : ''}.
+      </p>
+      <div class="row">
+        <button class={`btn${instead ? '' : ' primary'}`} onClick={look}>
+          {sure ? 'Yes, look under it' : `Look under ${seat}`}
+        </button>
+        {sure && (
+          <button class="btn ghost small" onClick={() => setSure(false)}>
+            Never mind
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SearchResult({ game }: { game: PlayerView }) {
+  const entry = [...game.log].reverse().find((e) => e.tag === 'search' && Array.isArray(e.to));
+  const found = ((entry?.data?.bombs as string[] | undefined) ?? []).length > 0;
+  return (
+    <div class="stack">
+      <div class={`callout ${found ? 'red' : 'amber'}`}>
+        <b>{found ? 'There is a bomb under your seat.' : 'Nothing under your seat.'}</b> {entry?.text}
+      </div>
+      <div class="done-row">
+        <span>Your night is spent. Wait for dawn{found ? ', and warn the cabin if you live to see it' : ''}.</span>
+      </div>
+    </div>
+  );
+}
+
+/** A private note, read out to everyone if you die or are restrained. */
+function BlackBoxNote({ ctx }: { ctx: TVContext }) {
+  const { game, send } = ctx;
+  const saved = game.you?.note ?? '';
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) setDraft(saved);
+  }, [saved, open]);
+  if (!open) {
+    return (
+      <button class="blackbox-row" onClick={() => setOpen(true)}>
+        <span class="label">Black box note</span>
+        <span class="blackbox-preview">{saved ? `\u201c${saved}\u201d` : 'Leave a note for the cabin in case you are taken out.'}</span>
+        <span class="blackbox-edit">{saved ? 'Edit' : 'Write'}</span>
+      </button>
+    );
+  }
+  const save = async () => {
+    setBusy(true);
+    const ok = await send({ kind: 'note', text: draft });
+    setBusy(false);
+    if (ok) setOpen(false);
+  };
+  return (
+    <div class="ability-card blackbox">
+      <div class="ability-title">Black box note</div>
+      <p class="muted">Private until you die or are restrained. Then it is read out to the whole cabin.</p>
+      <textarea
+        class="input blackbox-input"
+        rows={3}
+        maxLength={NOTE_MAX_LENGTH}
+        value={draft}
+        placeholder="What you know, who you suspect, what you did…"
+        onInput={(e) => setDraft(e.currentTarget.value)}
+      />
+      <div class="row">
+        <button class="btn primary" disabled={busy || draft.trim() === saved} onClick={() => void save()}>
+          Save note
+        </button>
+        <button
+          class="btn ghost small"
+          onClick={() => {
+            setDraft(saved);
+            setOpen(false);
+          }}
+        >
+          Cancel
+        </button>
+        <span class="muted">
+          {draft.trim().length}/{NOTE_MAX_LENGTH}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Notes({ game }: { game: PlayerView }) {
   const notes = game.log.filter((e) => Array.isArray(e.to) || e.to === 'saboteurs').slice().reverse();
   return (
     <div class="stack">
       <div class="panel-title">
-        Your notes <span class="muted">Private results and messages only you can see.</span>
+        Your log <span class="muted">Private results and messages only you can see.</span>
       </div>
       {notes.length === 0 ? (
         <p class="muted">Nothing yet. Your night results will show up here.</p>
@@ -351,6 +483,7 @@ function GhostPanel({ game }: { game: PlayerView }) {
         <p>
           You were the <b>{roleName(you.role)}</b> ({teamName(you.team)}). Keep watching, and talk with the other ghosts in Chat.
         </p>
+        {you.note && <blockquote class="blackbox-quote">\u201c{you.note}\u201d<cite>Your black box note was read out</cite></blockquote>}
       </div>
       <Notes game={game} />
     </div>

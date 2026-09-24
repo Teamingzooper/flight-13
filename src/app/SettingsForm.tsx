@@ -66,6 +66,7 @@ export function describeRules(s: Settings): string[] {
     s.revealRoles ? 'Roles are revealed when someone is out.' : 'Roles stay secret until landing.',
     s.anonymousVotes ? 'Votes are anonymous.' : 'Everyone sees who voted for whom.',
     s.whispers ? 'Whispers to nearby seats are allowed.' : 'No whispering.',
+    ...(s.pilotMustFly ? ['Pilot must fly: restraining the Pilot hands the saboteurs the win.'] : []),
   ];
 }
 
@@ -178,6 +179,12 @@ export function SettingsForm({
           />
           <Toggle checked={s.anonymousVotes} onChange={(v) => set({ anonymousVotes: v })} title="Anonymous votes" />
           <Toggle checked={s.whispers} onChange={(v) => set({ whispers: v })} title="Whispers to nearby seats" />
+          <Toggle
+            checked={s.pilotMustFly}
+            onChange={(v) => set({ pilotMustFly: v })}
+            title="Pilot must fly"
+            hint="If the passengers restrain the Pilot (by vote or handcuffs), nobody can fly the plane and the saboteurs win."
+          />
         </div>
       </section>
 

@@ -1046,3 +1046,98 @@
   opacity: 1;
   cursor: default;
 }
+
+/* ---------- Black box notes ---------- */
+.blackbox-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 181, 71, 0.35);
+  background: rgba(255, 181, 71, 0.04);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.blackbox-row:hover {
+  border-color: var(--amber);
+}
+
+.blackbox-row .label {
+  white-space: nowrap;
+}
+
+.blackbox-preview {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.blackbox-edit {
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.blackbox-input {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.blackbox-quote {
+  margin: 4px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--amber);
+  border-radius: 0 10px 10px 0;
+  background: rgba(255, 181, 71, 0.07);
+  color: #ffe9c7;
+  font-style: italic;
+  text-align: left;
+}
+
+.blackbox-quote cite {
+  display: block;
+  margin-top: 6px;
+  font: 600 11px var(--display);
+  font-style: normal;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.search-card {
+  border-style: dashed;
+}
+
+/* On the paper boarding pass: a stamped warning. */
+.pass-rule {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1.5px dashed #b0691a;
+  background: rgba(214, 138, 36, 0.12);
+  color: #6b3a08;
+  font-size: 14px;
+}
+
+.note.tag-note {
+  border-color: rgba(255, 181, 71, 0.45);
+  background: rgba(255, 181, 71, 0.06);
+  font-style: italic;
+}
+
+.note.tag-cuff {
+  border-color: rgba(185, 164, 255, 0.5);
+}
+
+.note.tag-search {
+  border-color: rgba(79, 209, 197, 0.35);
+}
