@@ -201,3 +201,211 @@ export function idleScreenTexture(): THREE.CanvasTexture {
   g.fillText('FLIGHT 13', 16, 30);
   return toTexture(canvas);
 }
+
+/** The view at dusk while rolling down the runway: sky above, terminal and grass below, edge lights near. */
+export function runwayTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(1024, 512);
+  const r = seeded(31);
+  const horizon = 300;
+  const sky = g.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, '#26386b');
+  sky.addColorStop(0.55, '#8c6a8f');
+  sky.addColorStop(0.85, '#e79463');
+  sky.addColorStop(1, '#f7c887');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 1024, horizon);
+  // Terminal, hangars and the tower on the horizon.
+  g.fillStyle = '#2a2530';
+  for (let x = 0; x < 1024; ) {
+    const w = 20 + r() * 70;
+    const h = 4 + r() * 16;
+    g.fillRect(x, horizon - h, w, h);
+    x += w + r() * 40;
+  }
+  g.fillRect(610, horizon - 42, 8, 42);
+  g.fillRect(600, horizon - 50, 28, 10);
+  const ground = g.createLinearGradient(0, horizon, 0, 512);
+  ground.addColorStop(0, '#6f6655');
+  ground.addColorStop(0.3, '#54573c');
+  ground.addColorStop(1, '#3a4428');
+  g.fillStyle = ground;
+  g.fillRect(0, horizon, 1024, 512 - horizon);
+  for (let i = 0; i < 5000; i++) {
+    const y = horizon + r() * (512 - horizon);
+    g.fillStyle = r() > 0.5 ? 'rgba(255,240,200,0.05)' : 'rgba(0,0,0,0.12)';
+    g.fillRect(r() * 1024, y, 2 + ((y - horizon) / 212) * 6, 1 + ((y - horizon) / 212) * 2);
+  }
+  // Taxiway with blue lights, then our runway's edge with white lights, then the runway itself.
+  g.fillStyle = '#4c4b4a';
+  g.fillRect(0, 352, 1024, 12);
+  for (let x = 0; x < 1024; x += 64) {
+    g.fillStyle = 'rgba(90,140,255,0.9)';
+    g.fillRect(x, 348, 4, 3);
+  }
+  g.fillStyle = '#2f3033';
+  g.fillRect(0, 440, 1024, 72);
+  g.fillStyle = '#d9d6cf';
+  g.fillRect(0, 440, 1024, 4);
+  for (let x = 0; x < 1024; x += 128) {
+    const glow = g.createRadialGradient(x + 4, 432, 1, x + 4, 432, 14);
+    glow.addColorStop(0, 'rgba(255,248,220,1)');
+    glow.addColorStop(1, 'rgba(255,248,220,0)');
+    g.fillStyle = glow;
+    g.fillRect(x - 12, 418, 32, 28);
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  // A window shows the middle half: horizon in view, runway lights along the bottom.
+  texture.repeat.set(1, 0.5);
+  texture.offset.set(0, 0.06);
+  return texture;
+}
+
+/** Sunrise: deep blue overhead, pink and orange toward the horizon. */
+export function dawnSkyTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(512, 256);
+  const r = seeded(41);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, '#1d2c5c');
+  sky.addColorStop(0.45, '#6d5d92');
+  sky.addColorStop(0.75, '#ef8a63');
+  sky.addColorStop(1, '#ffd89a');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 256);
+  const sun = g.createRadialGradient(300, 250, 4, 300, 250, 120);
+  sun.addColorStop(0, 'rgba(255,244,210,0.95)');
+  sun.addColorStop(1, 'rgba(255,200,120,0)');
+  g.fillStyle = sun;
+  g.fillRect(0, 100, 512, 156);
+  for (let i = 0; i < 40; i++) {
+    const x = r() * 512;
+    const y = 150 + r() * 90;
+    const w = 30 + r() * 80;
+    g.fillStyle = `rgba(${200 + r() * 55},${120 + r() * 60},${140 + r() * 40},0.35)`;
+    g.beginPath();
+    g.ellipse(x, y, w, 4 + r() * 6, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** Night over the Bermuda Triangle: green curtains of light. */
+export function auroraSkyTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(512, 256);
+  const r = seeded(53);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, '#020610');
+  sky.addColorStop(0.6, '#051a24');
+  sky.addColorStop(1, '#0c2c35');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 180; i++) {
+    g.fillStyle = `rgba(255,255,255,${0.2 + r() * 0.7})`;
+    g.fillRect(r() * 512, r() * 150, 1, 1);
+  }
+  for (let x = 0; x < 512; x += 2) {
+    const wave = Math.sin(x * 0.02) * 30 + Math.sin(x * 0.051 + 1) * 14;
+    const top = 40 + wave;
+    const height = 70 + Math.sin(x * 0.033) * 25;
+    const band = g.createLinearGradient(0, top, 0, top + height);
+    const a = 0.12 + 0.18 * (0.5 + 0.5 * Math.sin(x * 0.07));
+    band.addColorStop(0, 'rgba(80,255,170,0)');
+    band.addColorStop(0.7, `rgba(80,255,170,${a})`);
+    band.addColorStop(1, 'rgba(120,90,255,0)');
+    g.fillStyle = band;
+    g.fillRect(x, top, 2, height);
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** A soft puff for smoke sprites. */
+export function smokeTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(128, 128);
+  const r = seeded(61);
+  for (let i = 0; i < 14; i++) {
+    const x = 40 + r() * 48;
+    const y = 40 + r() * 48;
+    const radius = 18 + r() * 26;
+    const puff = g.createRadialGradient(x, y, 0, x, y, radius);
+    puff.addColorStop(0, 'rgba(255,255,255,0.32)');
+    puff.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = puff;
+    g.fillRect(0, 0, 128, 128);
+  }
+  return toTexture(canvas);
+}
+
+/** A flame tongue for fire sprites (drawn additively). */
+export function flameTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(64, 128);
+  const flame = g.createRadialGradient(32, 96, 2, 32, 80, 60);
+  flame.addColorStop(0, 'rgba(255,246,210,1)');
+  flame.addColorStop(0.25, 'rgba(255,190,80,0.9)');
+  flame.addColorStop(0.6, 'rgba(230,80,20,0.35)');
+  flame.addColorStop(1, 'rgba(120,20,0,0)');
+  g.fillStyle = flame;
+  g.beginPath();
+  g.moveTo(32, 4);
+  g.bezierCurveTo(56, 50, 60, 90, 32, 124);
+  g.bezierCurveTo(4, 90, 8, 50, 32, 4);
+  g.fill();
+  return toTexture(canvas);
+}
+
+/** A blackened blast mark for the floor. */
+export function scorchTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(256, 256);
+  const r = seeded(71);
+  for (let i = 0; i < 30; i++) {
+    const a = r() * Math.PI * 2;
+    const d = r() * 60;
+    const x = 128 + Math.cos(a) * d;
+    const y = 128 + Math.sin(a) * d;
+    const radius = 30 + r() * 60;
+    const blot = g.createRadialGradient(x, y, 0, x, y, radius);
+    blot.addColorStop(0, 'rgba(8,6,5,0.5)');
+    blot.addColorStop(1, 'rgba(8,6,5,0)');
+    g.fillStyle = blot;
+    g.fillRect(0, 0, 256, 256);
+  }
+  g.strokeStyle = 'rgba(0,0,0,0.35)';
+  g.lineWidth = 2;
+  for (let i = 0; i < 24; i++) {
+    const a = r() * Math.PI * 2;
+    g.beginPath();
+    g.moveTo(128 + Math.cos(a) * 20, 128 + Math.sin(a) * 20);
+    g.lineTo(128 + Math.cos(a) * (70 + r() * 50), 128 + Math.sin(a) * (70 + r() * 50));
+    g.stroke();
+  }
+  // Pale ash and a few embers, so the mark reads even on dark carpet.
+  for (let i = 0; i < 260; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 20 + r() * 80;
+    g.fillStyle = `rgba(190,184,176,${0.12 + r() * 0.25})`;
+    g.fillRect(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 1 + r() * 3, 1 + r() * 2);
+  }
+  for (let i = 0; i < 40; i++) {
+    const a = r() * Math.PI * 2;
+    const d = r() * 40;
+    g.fillStyle = `rgba(255,${90 + r() * 80},30,${0.35 + r() * 0.4})`;
+    g.fillRect(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 1.5, 1.5);
+  }
+  return toTexture(canvas);
+}
+
+/** A soft round glow (for the fireball). */
+export function glowTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(128, 128);
+  const glow = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  glow.addColorStop(0, 'rgba(255,255,255,1)');
+  glow.addColorStop(0.25, 'rgba(255,255,255,0.85)');
+  glow.addColorStop(0.6, 'rgba(255,255,255,0.25)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 128, 128);
+  return toTexture(canvas);
+}

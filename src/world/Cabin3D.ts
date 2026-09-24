@@ -12,17 +12,22 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { grid, isNightPhase, type PlayerView, type SeatId } from '../engine';
+import { grid, isNightPhase, phaseDurationMs, type Cell, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import type { ClientState, Pose } from '../net/protocol';
+import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
-import { BULKHEAD_Z, eyePosition, rowZ } from './layout';
-import { Lighting } from './lighting';
+import { directorCues, type Cue } from './director';
+import { BULKHEAD_Z, colX, eyePosition, rowZ } from './layout';
+import { Lighting, type LightMode } from './lighting';
 import { buildCabin, type CabinParts } from './scene/cabin';
 import { Cart } from './scene/cart';
+import { Effects } from './scene/effects';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
 import { LiveScreen } from './screen';
+import { auroraSkyTexture, dawnSkyTexture, runwayTexture } from './textures';
+import { WindowView } from './windows';
 
 export interface Cabin3DOptions {
   onScreenClick: () => void;
@@ -30,6 +35,8 @@ export interface Cabin3DOptions {
   onAimChange?: (onScreen: boolean) => void;
   /** Your look direction and screen use, throttled, for the pose channel. */
   onPose?: (pose: Pose) => void;
+  /** A captain's announcement to show as a caption. */
+  onCaption?: (text: string) => void;
 }
 
 interface Built {
@@ -37,8 +44,16 @@ interface Built {
   cabin: CabinParts;
   seats: SeatParts;
   lighting: Lighting;
+  windows: WindowView;
+  effects: Effects;
+  skies: { day: THREE.Texture; night: THREE.Texture; dawn: THREE.Texture; aurora: THREE.Texture; runway: THREE.Texture };
   group: THREE.Group;
 }
+
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+/** Cruise power for the engine drone. */
+const CRUISE = 0.45;
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
@@ -86,6 +101,21 @@ export class Cabin3D {
   private snap: ClientSnapshot | null = null;
   private aimOnScreen = false;
   private disposed = false;
+  /** The previous view, for the director to compare against. */
+  private lastView: PlayerView | null = null;
+  private wantedMode: LightMode = 'day';
+  /** After a blast the cabin stays dark for a moment before the lights stutter on. */
+  private darkUntil = 0;
+  private time = 0;
+  private readonly timers: { at: number; fn: () => void }[] = [];
+  private captionAt = 0;
+  private flash = 0;
+  private readonly flashEl = document.createElement('div');
+  private turbulentNight: number | null = null;
+  private nextBump = 0;
+  private gearUp = false;
+  private engine = CRUISE;
+  private readonly unlockAudio = () => cabinAudio.unlock();
 
   constructor(
     private readonly container: HTMLElement,
@@ -126,6 +156,12 @@ export class Cabin3D {
       onLockChange: (locked) => opts.onLockChange?.(locked),
     });
 
+    this.flashEl.className = 'world-flash';
+    container.appendChild(this.flashEl);
+    cabinAudio.start();
+    addEventListener('pointerdown', this.unlockAudio);
+    addEventListener('keydown', this.unlockAudio);
+
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
@@ -139,10 +175,20 @@ export class Cabin3D {
     this.snap = snap;
     const game = state.game;
     if (!game) return;
-    if (!this.built || this.built.rows !== game.cabin.rows) this.build(game.cabin.rows);
-    const { cabin, lighting } = this.built!;
-    const night = isNightPhase(game.phase.kind);
-    lighting.setMode(night ? 'night' : 'day');
+    const fresh = !this.built || this.built.rows !== game.cabin.rows;
+    if (fresh) this.build(game.cabin.rows);
+    const { cabin, lighting, windows, effects, skies } = this.built!;
+    const kind = game.phase.kind;
+    const night = isNightPhase(kind);
+    this.wantedMode = night ? 'night' : game.blackout ? 'blackout' : 'day';
+    if (fresh) lighting.setMode(this.wantedMode, true);
+
+    const cues = game === this.lastView ? [] : directorCues(this.lastView, game);
+    this.lastView = game;
+    const bermuda = game.settings.destination === 'BDA';
+    const sky = kind === 'takeoff' ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
+    windows.show(sky, fresh || kind === 'takeoff' ? 0 : 1.4);
+    if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
     const rows = game.cabin.rows;
@@ -156,17 +202,23 @@ export class Cabin3D {
       this.seatKey = key;
       this.placeCamera(seat, animate);
     }
-    this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed);
+    const runaway = cues.some((c) => c.kind === 'cartRoll' && c.runaway);
+    this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed, runaway);
     cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
 
     // Only your own seatbelt sign lights up for you (who else is buckled stays secret).
     if (seat && game.you?.buckled) {
       const cell = grid.parseSeat(seat)!;
       cabin.lightSeatbelt(`${cell.row}${cell.col < grid.AISLE_COL ? 'L' : 'R'}`);
-      if (game.you.buckled === 'turbulence') this.controls.shake(0.05);
     } else {
       cabin.lightSeatbelt(null);
     }
+
+    for (const cue of cues) this.play(cue, game);
+    // Lasting damage comes from the state, so a reload shows the same cabin.
+    effects.setScorched(game.cabin.scorched, (cell) => this.cellPoint(cell));
+    const blasted = game.bombs.some((b) => b.exploded);
+    if (blasted && !effects.masks.down && !cues.some((c) => c.kind === 'explosion')) effects.masks.setDown();
   }
 
   setLeaning(on: boolean): void {
@@ -188,6 +240,12 @@ export class Cabin3D {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
+    cabinAudio.stop();
+    removeEventListener('pointerdown', this.unlockAudio);
+    removeEventListener('keydown', this.unlockAudio);
+    this.flashEl.remove();
+    this.built?.windows.dispose();
+    this.built?.effects.dispose();
     this.controls.dispose();
     this.timer.dispose();
     this.composer.dispose();
@@ -215,10 +273,14 @@ export class Cabin3D {
     const group = new THREE.Group();
     const cabin = buildCabin(rows);
     const seats = buildSeats(rows);
-    group.add(cabin.group, seats.group);
+    const skies = { day: cabin.skyDay, night: cabin.skyNight, dawn: dawnSkyTexture(), aurora: auroraSkyTexture(), runway: runwayTexture() };
+    const windows = new WindowView(cabin.windowGlass, skies.day);
+    const lav = cabin.lavatoryDoor.position;
+    const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7));
+    group.add(cabin.group, seats.group, effects.group);
     this.scene.add(group);
-    const lighting = new Lighting(this.scene, cabin, seats, this.renderer.shadowMap.enabled);
-    this.built = { rows, cabin, seats, lighting, group };
+    const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
+    this.built = { rows, cabin, seats, lighting, windows, effects, skies, group };
     this.seatKey = null;
   }
 
@@ -272,9 +334,25 @@ export class Cabin3D {
     this.timer.update();
     const dt = Math.min(0.1, this.timer.getDelta());
     const time = this.timer.getElapsed();
+    this.time = time;
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      if (this.timers[i].at > time) continue;
+      const [due] = this.timers.splice(i, 1);
+      due.fn();
+    }
+    const built = this.built;
+    if (built) {
+      const mode = this.wantedMode !== 'night' && time < this.darkUntil ? 'night' : this.wantedMode;
+      built.lighting.setMode(mode);
+      this.flight(time, built);
+      built.lighting.update(dt);
+      built.windows.update(dt);
+      built.effects.update(dt, time);
+    }
+    this.flash *= Math.exp(-dt * 5);
+    this.flashEl.style.opacity = this.flash > 0.01 ? String(this.flash) : '0';
     this.controls.update(dt, time);
-    this.built?.lighting.update(dt);
-    this.cart.update(dt);
+    this.cart.update(dt, time);
     this.applyPoses(time);
     this.people.update(dt, time);
     this.drawScreen(time);
@@ -317,6 +395,112 @@ export class Cabin3D {
         this.opts.onPose?.(mine);
       }
     }
+  }
+
+  /** Engine power, the takeoff roll and climb, and turbulence, from the phase clock. */
+  private flight(time: number, built: Built): void {
+    const game = this.state?.game;
+    const snap = this.snap;
+    if (!game || !snap) return;
+    const kind = game.phase.kind;
+    const { windows } = built;
+    let engine = kind === 'ended' ? 0.2 : CRUISE;
+    if (kind === 'takeoff') {
+      const total = phaseDurationMs(game.settings, 'takeoff');
+      const p = clamp01(1 - msLeft(snap, Date.now()) / total);
+      // Brakes on while the engines spool up; roll; rotate at 60%; climb away.
+      const roll = p < 0.1 ? 0 : p < 0.62 ? ((p - 0.1) / 0.52) ** 1.6 : Math.max(0.25, 1 - (p - 0.62) * 2.2);
+      windows.speed = roll * 1.35;
+      windows.lift = p < 0.6 ? 0 : Math.min(0.42, (p - 0.6) * 1.2);
+      engine = p < 0.08 ? 0.35 : p < 0.7 ? 1 : 0.8;
+      const onGround = p > 0.1 && p < 0.64;
+      if (onGround) this.controls.shake(0.003 + roll * 0.009);
+      if (p >= 0.74 && !this.gearUp) {
+        this.gearUp = true;
+        cabinAudio.thunk();
+        this.controls.shake(0.015);
+      }
+    } else {
+      this.gearUp = false;
+      windows.speed = isNightPhase(kind) ? 0.002 : 0.006;
+      windows.lift = 0;
+    }
+    if (Math.abs(engine - this.engine) > 0.01) {
+      this.engine = engine;
+      cabinAudio.setEngine(engine, kind === 'takeoff' ? 2.5 : 4);
+    }
+
+    // Turbulent nights: a bump every few seconds.
+    if (isNightPhase(kind) && this.turbulentNight === game.phase.night) {
+      if (time >= this.nextBump) {
+        const strength = rand(0.4, 1.1);
+        this.controls.shake(0.015 + 0.03 * strength);
+        cabinAudio.rumble(strength);
+        this.nextBump = time + rand(3.5, 9);
+      }
+    }
+  }
+
+  /** Play one cue from the director. */
+  private play(cue: Cue, game: PlayerView): void {
+    const built = this.built!;
+    switch (cue.kind) {
+      case 'takeoff':
+        built.effects.reset();
+        this.gearUp = false;
+        this.turbulentNight = null;
+        break;
+      case 'lightsOut':
+        cabinAudio.clunk();
+        break;
+      case 'lightsOn':
+        this.later(cue.afterBlast ? 1.6 : 0, () => cabinAudio.clunk());
+        break;
+      case 'explosion':
+        // A cart or lavatory blast covers several cells but is one explosion.
+        for (const center of cue.where === 'seat' ? cue.centers : cue.centers.slice(0, 1)) {
+          const at = built.effects.blastPoint(center, cue.where);
+          built.effects.explode(at);
+          const distance = this.camera.position.distanceTo(at);
+          cabinAudio.boom(distance);
+          this.controls.shake(0.03 + 0.14 * clamp01(1 - distance / 10));
+          this.flash = Math.max(this.flash, clamp01(1.15 - distance / 9) * 0.9 + 0.1);
+        }
+        this.darkUntil = this.time + 1.6;
+        this.later(0.35, () => built.effects.masks.drop());
+        break;
+      case 'turbulence':
+        this.turbulentNight = game.phase.night;
+        this.nextBump = this.time + 2.5;
+        this.later(0.4, () => cabinAudio.chime());
+        break;
+      case 'cartRoll':
+        if (cue.runaway) cabinAudio.rattle();
+        break;
+      case 'restrained':
+        this.later(0.6, () => cabinAudio.zip());
+        break;
+      case 'landing':
+        this.later(1.2, () => cabinAudio.chime());
+        break;
+      case 'pa': {
+        // One ding per announcement, captions one after another.
+        const at = Math.max(this.time + 0.2, this.captionAt);
+        this.captionAt = at + 4.5;
+        this.later(at - this.time, () => cabinAudio.ding());
+        this.later(at - this.time + 0.9, () => this.opts.onCaption?.(cue.text));
+        break;
+      }
+    }
+  }
+
+  private later(seconds: number, fn: () => void): void {
+    this.timers.push({ at: this.time + seconds, fn });
+  }
+
+  /** The floor under a grid cell. */
+  private cellPoint(cell: Cell): THREE.Vector3 {
+    return new THREE.Vector3(colX(cell.col), 0, rowZ(cell.row));
   }
 
   private drawScreen(time: number): void {

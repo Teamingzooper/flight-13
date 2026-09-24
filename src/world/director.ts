@@ -1,0 +1,87 @@
+import { DESTINATIONS, isNightPhase, type Cell, type GameResult, type PlayerView } from '../engine';
+
+/** Something the cabin should play: a sound, an effect, a camera move or a captain announcement. */
+export type Cue =
+  | { kind: 'takeoff' }
+  | { kind: 'lightsOut' }
+  | { kind: 'lightsOn'; afterBlast: boolean }
+  | { kind: 'explosion'; id: string; centers: Cell[]; where: 'seat' | 'cart' | 'lavatory' }
+  | { kind: 'turbulence' }
+  | { kind: 'cartRoll'; from: number; to: number; runaway: boolean }
+  | { kind: 'restrained'; playerId: string }
+  | { kind: 'landing'; result: GameResult }
+  | { kind: 'pa'; text: string };
+
+const pa = (text: string): Cue => ({ kind: 'pa', text });
+
+/**
+ * Compare two consecutive views of the game and say what just happened in the cabin. Only public
+ * information goes into announcements. The first view only welcomes passengers at takeoff, so joining
+ * or reloading mid-flight never replays old moments.
+ */
+export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
+  const cues: Cue[] = [];
+  const kind = next.phase.kind;
+  const city = DESTINATIONS[next.settings.destination].city;
+  const welcome = () => cues.push({ kind: 'takeoff' }, pa(`Welcome aboard Flight 13 to ${city}. We land in ${next.phase.nights} nights. Cabin crew, arm doors and cross-check.`));
+
+  if (!prev) {
+    if (kind === 'takeoff') welcome();
+    return cues;
+  }
+  if (kind === 'takeoff') {
+    if (prev.phase.kind !== 'takeoff') welcome();
+    return cues;
+  }
+
+  const seen = new Set(prev.log.map((e) => e.id));
+  const fresh = next.log.filter((e) => !seen.has(e.id));
+
+  const exploded = new Set(prev.bombs.filter((b) => b.exploded).map((b) => b.id));
+  for (const b of next.bombs) {
+    if (b.exploded && !exploded.has(b.id)) cues.push({ kind: 'explosion', id: b.id, centers: b.explodedAt ?? [], where: b.location.kind });
+  }
+  const blast = cues.length > 0;
+
+  const wasNight = isNightPhase(prev.phase.kind);
+  const night = isNightPhase(kind);
+  const bumpy = fresh.some((e) => e.tag === 'turbulence' && e.night === next.phase.night);
+  if (!wasNight && night) {
+    cues.push({ kind: 'lightsOut' });
+    const warning = bumpy ? ' We expect turbulence tonight, so keep your seatbelt fastened.' : '';
+    cues.push(pa(`Night ${next.phase.night} of ${next.phase.nights}. Cabin crew, please dim the cabin lights.${warning}`));
+  }
+  if (bumpy) cues.push({ kind: 'turbulence' });
+  if (wasNight && !night) {
+    cues.push({ kind: 'lightsOn', afterBlast: blast });
+    if (kind !== 'ended') {
+      if (blast) cues.push(pa('Ladies and gentlemen, please remain calm. Put on your own mask before helping others.'));
+      else if (next.blackout) cues.push(pa('We are having trouble with the cabin lights. Please bear with us.'));
+      else cues.push(pa('Good morning, ladies and gentlemen. The cabin lights are coming back on.'));
+    }
+  }
+
+  if (next.cabin.cartRow !== prev.cabin.cartRow && !next.cabin.cartDestroyed) {
+    const runaway = fresh.some((e) => e.tag === 'anomaly' && e.data?.anomaly === 'runaway_cart');
+    cues.push({ kind: 'cartRoll', from: prev.cabin.cartRow, to: next.cabin.cartRow, runaway });
+  }
+
+  for (const p of next.players) {
+    const before = prev.players.find((q) => q.id === p.id);
+    if (p.status === 'restrained' && before && before.status !== 'restrained') {
+      cues.push({ kind: 'restrained', playerId: p.id }, pa(`${p.name} has been restrained and escorted to the rear galley.`));
+    }
+  }
+
+  if (kind === 'ended' && prev.phase.kind !== 'ended' && next.result) {
+    cues.push({ kind: 'landing', result: next.result }, pa(endingLine(next.result, city)));
+  }
+  return cues;
+}
+
+function endingLine(r: GameResult, city: string): string {
+  if (r.winner === 'draw') return 'Mayday, mayday, mayday.';
+  if (r.reason === 'landed') return `Ladies and gentlemen, welcome to ${city}. Someone on board got away with it.`;
+  if (r.winner === 'passengers') return `The saboteurs are under control. We continue to ${city} as planned.`;
+  return 'This is not your captain speaking. This plane is ours now.';
+}

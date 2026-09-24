@@ -3,8 +3,10 @@ import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLigh
 import type { SeatId } from '../engine';
 import type { CabinParts } from './scene/cabin';
 import type { SeatParts } from './scene/seats';
+import type { WindowView } from './windows';
 
-export type LightMode = 'day' | 'night';
+/** `blackout`: the Bermuda Triangle knocked the cabin lights out for a day; only daylight and path lights. */
+export type LightMode = 'day' | 'night' | 'blackout';
 
 interface Preset {
   hemi: number;
@@ -22,6 +24,8 @@ interface Preset {
   glow: number;
   /** Strength of the reflection environment (it would light the cabin at night otherwise). */
   env: number;
+  /** How bright the view through the windows is. */
+  windows: number;
 }
 
 const PRESETS: Record<LightMode, Preset> = {
@@ -39,6 +43,7 @@ const PRESETS: Record<LightMode, Preset> = {
     screens: 0.85,
     glow: 0,
     env: 0.18,
+    windows: 1,
   },
   night: {
     hemi: 0.09,
@@ -54,11 +59,47 @@ const PRESETS: Record<LightMode, Preset> = {
     screens: 1.8,
     glow: 0.12,
     env: 0.015,
+    windows: 0.55,
+  },
+  blackout: {
+    hemi: 0.32,
+    hemiSky: new THREE.Color('#dfe8ff'),
+    hemiGround: new THREE.Color('#3a3129'),
+    ambient: 0.05,
+    key: 1.5,
+    keyColor: new THREE.Color('#ffe7c4'),
+    keyDir: new THREE.Vector3(-1, -0.42, 0.22).normalize(),
+    ceiling: 0,
+    cove: 0.05,
+    floor: 1.8,
+    screens: 0.9,
+    glow: 0.05,
+    env: 0.09,
+    windows: 1,
   },
 };
 
 const TRANSITION_S = 2.4;
 const smooth = (t: number) => t * t * (3 - 2 * t);
+
+/**
+ * The main cabin lights do not fade: they clunk off with a stutter, or flicker on like fluorescent
+ * tubes. Returns how far (0..1) the switch has got at transition time t.
+ */
+function switchCurve(t: number, on: boolean): number {
+  if (on) {
+    if (t < 0.06) return 0;
+    if (t < 0.085) return 0.7;
+    if (t < 0.12) return 0.05;
+    if (t < 0.14) return 0.9;
+    if (t < 0.17) return 0.3;
+    return Math.min(1, 0.85 + (t - 0.17) * 2);
+  }
+  if (t < 0.02) return 0;
+  if (t < 0.045) return 0.7;
+  if (t < 0.07) return 0.3;
+  return 1;
+}
 
 export class Lighting {
   readonly hemi = new THREE.HemisphereLight();
@@ -71,13 +112,13 @@ export class Lighting {
   private from: Preset = PRESETS.day;
   private to: Preset = PRESETS.day;
   private t = 1;
-  private skyIsNight = false;
   private readonly litSeats = new Set<SeatId>();
 
   constructor(
     private readonly scene: THREE.Scene,
     private readonly cabin: CabinParts,
     private readonly seats: SeatParts,
+    private readonly windows: WindowView,
     shadows: boolean,
   ) {
     RectAreaLightUniformsLib.init();
@@ -105,8 +146,15 @@ export class Lighting {
     this.apply(PRESETS.day);
   }
 
+  /** Safe to call every frame: only a change of mode starts a transition. */
   setMode(mode: LightMode, instant = false): void {
-    if (mode === this.mode && this.t >= 1) return;
+    if (mode === this.mode) {
+      if (instant && this.t < 1) {
+        this.t = 1;
+        this.apply(this.to);
+      }
+      return;
+    }
     this.from = this.snapshot();
     this.to = PRESETS[mode];
     this.mode = mode;
@@ -130,26 +178,13 @@ export class Lighting {
   update(dt: number): void {
     if (this.t < 1) {
       this.t = Math.min(1, this.t + dt / TRANSITION_S);
-      this.apply(this.blend(this.from, this.to, smooth(this.t)));
-    }
-    const nightSky = this.mode === 'night' ? this.t > 0.5 : this.t < 0.5;
-    if (nightSky !== this.skyIsNight) {
-      this.skyIsNight = nightSky;
-      const source = nightSky ? this.cabin.skyNight : this.cabin.skyDay;
-      for (const glass of this.cabin.windowGlass) {
-        const offset = glass.map!.offset.x;
-        glass.map = source.clone();
-        glass.map.wrapS = THREE.RepeatWrapping;
-        glass.map.offset.x = offset;
-        glass.map.needsUpdate = true;
-      }
-    }
-    // The window crossfade dips to dark at the halfway point.
-    const dip = this.t < 1 ? Math.abs(1 - 2 * this.t) : 1;
-    const brightness = (this.skyIsNight ? 0.55 : 1) * (0.15 + 0.85 * dip);
-    for (const glass of this.cabin.windowGlass) {
-      glass.color.setScalar(brightness);
-      glass.map!.offset.x += dt * (this.skyIsNight ? 0.002 : 0.006);
+      const p = this.blend(this.from, this.to, smooth(this.t));
+      // Main lights switch rather than fade.
+      const turningOn = this.to.ceiling > this.from.ceiling;
+      const k = switchCurve(this.t, turningOn);
+      p.ceiling = this.from.ceiling + (this.to.ceiling - this.from.ceiling) * k;
+      p.cove = this.from.cove + (this.to.cove - this.from.cove) * k;
+      this.apply(p);
     }
   }
 
@@ -179,6 +214,7 @@ export class Lighting {
       screens: this.seats.screenMaterial.emissiveIntensity,
       glow: this.screenGlow.intensity,
       env: this.scene.environmentIntensity,
+      windows: this.windows.brightness,
     };
   }
 
@@ -200,6 +236,7 @@ export class Lighting {
       screens: n(a.screens, b.screens),
       glow: n(a.glow, b.glow),
       env: n(a.env, b.env),
+      windows: n(a.windows, b.windows),
     };
   }
 
@@ -218,5 +255,6 @@ export class Lighting {
     this.seats.screenMaterial.emissiveIntensity = p.screens;
     this.screenGlow.intensity = p.glow;
     this.scene.environmentIntensity = p.env;
+    this.windows.brightness = p.windows;
   }
 }
