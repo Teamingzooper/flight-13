@@ -38,6 +38,7 @@ export function trysteroTransport(code: string): Transport {
   ].map((room) => ({ room, action: room.makeAction<Envelope>('m') }));
 
   const messages = new Emitter<[unknown, string]>();
+  const streams = new Emitter<[MediaStream, string]>();
   const joins = new Emitter<[string]>();
   const leaves = new Emitter<[string]>();
   const live = new Map<string, Set<number>>();
@@ -78,7 +79,14 @@ export function trysteroTransport(code: string): Transport {
     route.action.onMessage = (data, { peerId }) => {
       if (data && typeof data === 'object' && typeof data.i === 'number' && firstSight(peerId, data.i)) messages.emit(data.m, peerId);
     };
+    route.room.onPeerStream = (stream, peerId) => streams.emit(stream, peerId);
   });
+
+  /** The route a peer is reached over (the same one messages use). */
+  const routeTo = (peerId: string): Route | null => {
+    const via = live.get(peerId);
+    return closed || !via || via.size === 0 ? null : routes[Math.min(...via)];
+  };
 
   return {
     selfId,
@@ -93,10 +101,33 @@ export function trysteroTransport(code: string): Transport {
     onMessage: (fn: MessageHandler) => messages.on(fn),
     onPeerJoin: (fn: PeerHandler) => joins.on(fn),
     onPeerLeave: (fn: PeerHandler) => leaves.on(fn),
+    media: {
+      addStream(stream, peerId) {
+        const route = routeTo(peerId);
+        if (!route) return;
+        for (const sent of route.room.addStream(stream, { target: peerId })) {
+          sent.catch(() => {
+            // The peer dropped before the stream went through; it is added again if they come back.
+          });
+        }
+      },
+      removeStream(stream, peerId) {
+        // Whichever route it went out on.
+        for (const route of routes) {
+          try {
+            route.room.removeStream(stream, { target: peerId });
+          } catch {
+            // Never sent that way.
+          }
+        }
+      },
+      onPeerStream: (fn) => streams.on(fn),
+    },
     close() {
       if (closed) return;
       closed = true;
       messages.clear();
+      streams.clear();
       joins.clear();
       leaves.clear();
       for (const route of routes) void route.room.leave();

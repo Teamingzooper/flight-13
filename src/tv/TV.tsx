@@ -12,6 +12,7 @@ import { ChatTab } from './ChatTab';
 import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
 import { Header } from './Header';
+import { VoiceButton } from './VoiceButton';
 import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
 import { MapTab } from './MapTab';
 import { PhaseOverlay } from './Overlays';
@@ -95,6 +96,7 @@ export function TV({
             onLeave={embedded && onClose ? onClose : () => setLeaving(true)}
             closeLabel={embedded ? 'Back to your seat (Esc)' : 'Leave the flight'}
             onUse3D={onUse3D}
+            tools={embedded ? null : <VoiceButton flight={flight} />}
           />
           <main class="tv-body">
             {game.phase.kind === 'packing' ? (

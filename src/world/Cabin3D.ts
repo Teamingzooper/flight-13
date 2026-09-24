@@ -15,6 +15,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { DESTINATIONS, grid, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
+import type { VoiceChat } from '../net/voice';
 import type { ClientState, Pose } from '../net/protocol';
 import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
@@ -114,6 +115,9 @@ export class Cabin3D {
   /** Emoji bubbles over the heads of people gesturing. */
   private readonly bubbles = document.createElement('div');
   private readonly bubbleEls = new Map<string, { el: HTMLDivElement; until: number }>();
+  /** Voice chat: it listens from your camera, places voices at people's heads, and says who is talking. */
+  private voice: VoiceChat | null = null;
+  private readonly talkEls = new Map<string, HTMLDivElement>();
   private lastPose: Pose | null = null;
   private lastPoseAt = 0;
   private youId: string | null = null;
@@ -461,6 +465,19 @@ export class Cabin3D {
     for (const [id, e] of emotes) this.emoteSeen.set(id, e.seq);
   }
 
+  /** Voice chat to position (null when it is not running). */
+  setVoice(voice: VoiceChat | null): void {
+    this.voice?.setListener(null);
+    this.voice?.setPositionSource(null);
+    this.voice = voice;
+    voice?.setPositionSource((id) => {
+      const actor = this.people.actor(id);
+      if (!actor || actor.hidden) return null;
+      const at = actor.joints.head.getWorldPosition(new THREE.Vector3());
+      return [at.x, at.y, at.z];
+    });
+  }
+
   /** Where painted faces come from (the client's face map). */
   setFaceSource(faces: ReadonlyMap<string, string>): void {
     this.faceSource = faces;
@@ -757,6 +774,7 @@ export class Cabin3D {
     this.playEmotes(time);
     this.people.update(dt, time);
     this.placeBubbles(time);
+    this.followVoice();
     this.drawScreen(time);
     const aim = this.controls.locked && this.hitsScreen(new THREE.Vector2(0, 0));
     if (aim !== this.aimOnScreen) {
@@ -812,6 +830,44 @@ export class Cabin3D {
       const visible = !actor.hidden && !this.dark && p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
       bubble.el.hidden = !visible;
       if (visible) bubble.el.style.transform = `translate(${((p.x + 1) / 2) * width}px, ${((1 - p.y) / 2) * height}px) translate(-50%, -100%)`;
+    }
+  }
+
+  /** Hear from your camera, and show a sound badge over whoever is talking. */
+  private followVoice(): void {
+    const voice = this.voice;
+    const talking = voice && voice.status !== 'off' && this.showing === 'cabin' ? voice.speaking() : new Set<string>();
+    if (voice && voice.status !== 'off') {
+      const cam = this.camera;
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+      voice.setListener({ position: [cam.position.x, cam.position.y, cam.position.z], forward: [forward.x, forward.y, forward.z], up: [up.x, up.y, up.z] });
+    }
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    const at = new THREE.Vector3();
+    for (const [id, el] of this.talkEls) {
+      if (talking.has(id) && id !== this.youId) continue;
+      el.remove();
+      this.talkEls.delete(id);
+    }
+    for (const id of talking) {
+      if (id === this.youId) continue;
+      const actor = this.people.actor(id);
+      if (!actor) continue;
+      let el = this.talkEls.get(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'talk-badge';
+        el.innerHTML = '<i></i><i></i><i></i>';
+        this.bubbles.appendChild(el);
+        this.talkEls.set(id, el);
+      }
+      actor.joints.head.getWorldPosition(at).add(new THREE.Vector3(0, 0.3, 0));
+      const p = at.project(this.camera);
+      const visible = !actor.hidden && !this.dark && !this.bubbleEls.has(id) && p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
+      el.hidden = !visible;
+      if (visible) el.style.transform = `translate(${((p.x + 1) / 2) * width}px, ${((1 - p.y) / 2) * height}px) translate(-50%, -100%)`;
     }
   }
 

@@ -81,6 +81,8 @@ interface Peer {
   lastSent: string;
   /** The faces this peer last received, so it only gets them again when one changes. */
   facesSent: string;
+  /** Voice chat is on in this peer's browser. */
+  voice?: boolean;
 }
 
 interface BotPlan {
@@ -256,6 +258,12 @@ export class HostSession {
         break;
       case 'emote':
         if (peer.playerId) this.emote(peer.playerId, msg.emote, this.now());
+        break;
+      case 'voice':
+        if (peer.voice !== msg.on) {
+          peer.voice = msg.on;
+          this.changed();
+        }
         break;
     }
   }
@@ -464,7 +472,18 @@ export class HostSession {
       lobbyChat: s.lobbyChat,
       game: s.game ? viewFor(s.game, peer.tower ? null : peer.playerId, now) : null,
       rev: 0,
+      voice: this.voicePeers(),
     };
+  }
+
+  /** Everyone with voice on, by the id their browser has on the network (this browser's own seat included). */
+  private voicePeers(): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const [peerId, peer] of this.peers) {
+      if (!peer.voice || !peer.playerId) continue;
+      map[peer.transport === this.network ? peerId : this.network.selfId] = peer.playerId;
+    }
+    return map;
   }
 
   private uniqueName(wanted: string, selfId: string | null): string {

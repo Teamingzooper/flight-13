@@ -1620,3 +1620,56 @@ button.pack-slot:hover:not(:disabled) {
   margin: 0;
   font-size: 12px;
 }
+
+/* ---------- Voice chat ---------- */
+.tv-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.voice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 170, 230, 0.25);
+  background: rgba(14, 24, 43, 0.7);
+  color: #d7e2f5;
+  font: 600 13px var(--display, sans-serif);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.voice-button.on {
+  border-color: rgba(79, 209, 197, 0.7);
+  background: rgba(79, 209, 197, 0.18);
+  color: #c9f7f1;
+}
+
+.voice-button.on.muted {
+  border-color: rgba(255, 181, 71, 0.6);
+  background: rgba(255, 181, 71, 0.14);
+  color: #ffe2b3;
+}
+
+.voice-button.leave {
+  padding: 6px 9px;
+}
+
+.voice-button:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* In the 3D HUD the voice controls sit with the other chips. */
+.hud-actions .voice-controls .voice-button {
+  padding: 8px 12px;
+}

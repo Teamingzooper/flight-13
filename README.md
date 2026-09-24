@@ -3,6 +3,18 @@
 A social-deduction game at 35,000 feet: saboteurs, passengers and a bomb or two, played peer to peer in
 the browser. Live at https://teamingzooper.github.io/flight-13/.
 
+## Voice chat
+
+Press **Voice** in the cabin (top right) to talk out loud. Voices go straight between browsers, never
+through a server, and play from where each person sits: you hear your neighbours clearly and the back
+of the plane faintly. Voice follows the chat rules:
+- The living are silent at night.
+- Ghosts only hear each other.
+- After landing, everyone hears everyone.
+
+**M** mutes you. Use headphones so others don't hear themselves echo. Voice uses the same connections
+as the game, so a network that needs a TURN relay (below) needs it for voice too.
+
 ## Players can't join?
 
 Flight 13 has no game server: the host's browser runs the flight and everyone connects to it directly

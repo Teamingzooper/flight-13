@@ -2,6 +2,16 @@ export type Unsubscribe = () => void;
 export type MessageHandler = (msg: unknown, peerId: string) => void;
 export type PeerHandler = (peerId: string) => void;
 
+/** Audio (or video) streams between peers, for voice chat. */
+export interface MediaChannel {
+  /** Start sending `stream` to one peer. */
+  addStream(stream: MediaStream, peerId: string): void;
+  /** Stop sending `stream` to one peer. */
+  removeStream(stream: MediaStream, peerId: string): void;
+  /** A peer started sending you a stream. */
+  onPeerStream(fn: (stream: MediaStream, peerId: string) => void): Unsubscribe;
+}
+
 /** A room of peers that exchange JSON messages (Trystero in the browser, MemoryHub in tests). */
 export interface Transport {
   readonly selfId: string;
@@ -10,6 +20,8 @@ export interface Transport {
   onPeerJoin(fn: PeerHandler): Unsubscribe;
   onPeerLeave(fn: PeerHandler): Unsubscribe;
   close(): void;
+  /** Media streams to the same peers (real networks only). */
+  readonly media?: MediaChannel;
 }
 
 export class Emitter<T extends unknown[]> {
