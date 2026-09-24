@@ -2,6 +2,7 @@ import {
   CHAT_MAX_LENGTH,
   applyIntent,
   botIntents,
+  isNightPhase,
   checkTakeoff,
   createGame,
   submitDefaults,
@@ -25,6 +26,7 @@ import {
   type HostCommand,
   type HostMessage,
   type LobbyMessage,
+  type Pose,
 } from './protocol';
 import type { Transport } from './transport';
 
@@ -84,6 +86,7 @@ interface BotPlan {
 const LOBBY_GRACE_MS = 20_000;
 const LOBBY_CHAT_KEEP = 100;
 const LOBBY_CHAT_COOLDOWN_MS = 1000;
+const POSE_INTERVAL_MS = 120;
 const BOT_NAMES = ['Ada', 'Bea', 'Cal', 'Dex', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou', 'Max', 'Nia', 'Oz', 'Pip'];
 const OK: IntentResult = { ok: true };
 const fail = (error: string): IntentResult => ({ ok: false, error });
@@ -96,6 +99,9 @@ export class HostSession {
   private readonly disconnectedAt = new Map<string, number>();
   private readonly botPlans = new Map<string, BotPlan>();
   private readonly lobbyChatAt = new Map<string, number>();
+  private readonly poses = new Map<string, Pose>();
+  private posesChanged = false;
+  private posesSentAt = -Infinity;
   private readonly botRng = { rng: 1 };
   private readonly now: () => number;
   private readonly random: () => number;
@@ -128,6 +134,8 @@ export class HostSession {
     if (s.game) {
       if (tick(s.game, now)) {
         this.phaseStarted(now);
+        // Night hides who is using their screen, so resend poses at every phase change.
+        this.posesChanged = true;
         dirty = true;
       }
       if (this.runBots(s.game, now)) dirty = true;
@@ -143,6 +151,7 @@ export class HostSession {
       }
     }
     if (dirty) this.changed();
+    this.broadcastPoses(now);
   }
 
   /** Tell everyone the flight is over, then shut down. */
@@ -194,6 +203,7 @@ export class HostSession {
     if (!peer?.playerId || this.isConnected(peer.playerId)) return;
     const now = this.now();
     this.disconnectedAt.set(peer.playerId, now);
+    if (this.poses.delete(peer.playerId)) this.posesChanged = true;
     if (this.snapshot.game) submitDefaults(this.snapshot.game, peer.playerId, now);
     this.changed();
   }
@@ -220,7 +230,25 @@ export class HostSession {
       case 'command':
         this.ack(peerId, msg.seq, peer.trusted ? this.command(msg.command) : fail('Only the host can do that.'));
         break;
+      case 'pose':
+        if (peer.playerId) {
+          this.poses.set(peer.playerId, { yaw: msg.yaw, pitch: msg.pitch, lean: msg.lean });
+          this.posesChanged = true;
+        }
+        break;
     }
+  }
+
+  private broadcastPoses(now: number): void {
+    if (!this.posesChanged || now - this.posesSentAt < POSE_INTERVAL_MS) return;
+    const night = this.snapshot.game ? isNightPhase(this.snapshot.game.phase.kind) : false;
+    const poses: Record<string, [number, number, number]> = {};
+    for (const [id, pose] of this.poses) {
+      poses[id] = [Math.round(pose.yaw * 1000) / 1000, Math.round(pose.pitch * 1000) / 1000, pose.lean && !night ? 1 : 0];
+    }
+    for (const [peerId, peer] of this.peers) if (peer.playerId || peer.tower) this.sendTo(peerId, { t: 'poses', poses });
+    this.posesSentAt = now;
+    this.posesChanged = false;
   }
 
   private join(peerId: string, peer: Peer, msg: Extract<ClientMessage, { t: 'join' }>): void {

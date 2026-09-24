@@ -24,6 +24,13 @@ export interface LobbyPlayer {
   host: boolean;
 }
 
+/** Where a passenger is looking, and whether they are using their screen. Not secret. */
+export interface Pose {
+  yaw: number;
+  pitch: number;
+  lean: boolean;
+}
+
 export interface LobbyMessage {
   id: number;
   t: number;
@@ -57,13 +64,16 @@ export type ClientMessage =
   | { t: 'join'; v: number; token: string; name: string; look: Look; tower: boolean }
   | { t: 'intent'; seq: number; intent: Intent }
   | { t: 'lobbyChat'; seq: number; text: string }
-  | { t: 'command'; seq: number; command: HostCommand };
+  | { t: 'command'; seq: number; command: HostCommand }
+  | { t: 'pose'; yaw: number; pitch: number; lean: boolean };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
   | { t: 'state'; state: ClientState }
   | { t: 'ack'; seq: number; ok: boolean; error?: string }
-  | { t: 'refused'; reason: string };
+  | { t: 'refused'; reason: string }
+  /** Everyone's latest pose: player id → [yaw, pitch, lean 0/1]. */
+  | { t: 'poses'; poses: Record<string, [number, number, number]> };
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -142,6 +152,16 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     case 'command':
       if (!isInt(raw.seq) || !isObj(raw.command) || typeof raw.command.kind !== 'string') return null;
       return { t: 'command', seq: raw.seq, command: raw.command as unknown as HostCommand };
+    case 'pose': {
+      const { yaw, pitch } = raw;
+      if (typeof yaw !== 'number' || typeof pitch !== 'number' || !Number.isFinite(yaw) || !Number.isFinite(pitch)) return null;
+      return {
+        t: 'pose',
+        yaw: Math.max(-Math.PI, Math.min(Math.PI, yaw)),
+        pitch: Math.max(-1.3, Math.min(1.3, pitch)),
+        lean: raw.lean === true,
+      };
+    }
     default:
       return null;
   }

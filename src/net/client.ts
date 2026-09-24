@@ -1,5 +1,5 @@
 import type { Intent, IntentResult, Look } from '../engine';
-import { PROTOCOL_VERSION, type ClientMessage, type ClientState, type HostCommand, type HostMessage } from './protocol';
+import { PROTOCOL_VERSION, type ClientMessage, type ClientState, type HostCommand, type HostMessage, type Pose } from './protocol';
 import type { Transport } from './transport';
 
 export type ClientStatus = 'searching' | 'joining' | 'joined' | 'refused' | 'lost';
@@ -25,6 +25,8 @@ export interface ClientOptions {
 
 export class ClientSession {
   snapshot: ClientSnapshot = { status: 'searching', state: null, receivedAt: 0, reason: null };
+  /** Everyone's latest pose (read every frame by the 3D view; never triggers re-renders). */
+  readonly poses = new Map<string, Pose>();
   private hostPeer: string | null = null;
   private seq = 0;
   private readonly pending = new Map<number, (result: IntentResult) => void>();
@@ -68,6 +70,11 @@ export class ClientSession {
     return this.request((seq) => ({ t: 'command', seq, command }));
   }
 
+  /** Share where you are looking (fire and forget; the caller throttles). */
+  sendPose(pose: Pose): void {
+    if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pose', ...pose } satisfies ClientMessage);
+  }
+
   /** Change your name or look while boarding. */
   updateProfile(name: string, look: Look): void {
     this.profile = { name, look };
@@ -109,6 +116,11 @@ export class ClientSession {
       }
       case 'refused':
         this.update({ status: 'refused', reason: msg.reason });
+        break;
+      case 'poses':
+        // The host always sends everyone's pose, so anyone missing has left.
+        for (const id of [...this.poses.keys()]) if (!(id in msg.poses)) this.poses.delete(id);
+        for (const [id, [yaw, pitch, lean]] of Object.entries(msg.poses)) this.poses.set(id, { yaw, pitch, lean: lean === 1 });
         break;
     }
   }
