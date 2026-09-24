@@ -1141,3 +1141,159 @@
 .note.tag-search {
   border-color: rgba(79, 209, 197, 0.35);
 }
+
+/* ---------- Ability choices (Investigator, Bomber) ---------- */
+.step-label {
+  margin-bottom: -4px;
+  font: 700 11px var(--display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.choice-grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0d182d;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: #3a5686;
+  background: #10203b;
+}
+
+.choice.on {
+  border-color: var(--amber);
+  background: rgba(255, 181, 71, 0.09);
+  box-shadow: inset 0 0 0 1px var(--amber);
+}
+
+.choice:disabled {
+  cursor: not-allowed;
+  background: #0a1324;
+}
+
+.choice:disabled b {
+  color: var(--dim);
+}
+
+.choice-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.choice-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 209, 197, 0.14);
+  color: var(--cyan);
+  font: 700 11px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.choice.on .choice-tag {
+  background: var(--amber);
+  color: var(--amber-ink);
+}
+
+.choice:disabled .choice-tag {
+  background: rgba(147, 164, 196, 0.1);
+  color: var(--dim);
+}
+
+.choice-sub {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 94, 98, 0.45);
+  background: rgba(80, 20, 24, 0.35);
+}
+
+.plan-card p {
+  margin: 0;
+}
+
+.plan-title {
+  font: 700 20px var(--display);
+  color: #ffd0d1;
+}
+
+.plan-warn,
+.blast-list.warn {
+  color: #ffb3b5;
+  font-weight: 600;
+}
+
+.blast-list {
+  margin: 0;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.done-ok {
+  color: #bdf5d0;
+}
+
+/* The seat map in "checking" mode shows the area in cyan rather than blast red. */
+.seatmap.tone-check .sm-seat.preview {
+  border-color: rgba(79, 209, 197, 0.8);
+  background-image: linear-gradient(rgba(79, 209, 197, 0.26), rgba(79, 209, 197, 0.26));
+}
+
+/* Tappable places on the map: the cart and the lavatory. */
+button.sm-cart,
+button.sm-block {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.sm-cart {
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: transparent;
+  outline: 1px dashed var(--amber);
+}
+
+button.sm-cart.selected,
+button.sm-block.selected {
+  background: var(--amber);
+  color: var(--amber-ink);
+  outline: none;
+}
+
+button.sm-block.pick {
+  outline: 1px dashed var(--amber);
+  outline-offset: -2px;
+}

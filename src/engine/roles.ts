@@ -63,7 +63,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     team: 'saboteurs',
     blurb: 'One bomb. Make it count.',
     howTo:
-      'Once per game, plant a bomb under your seat, on the drink cart (from an aisle seat next to it) or in the lavatory (from a seat next to it). Set the fuse to 1 or 2 nights. Everyone within 2 seats is caught in the blast.',
+      'Once per game, plant a bomb under your seat, on the drink cart (from an aisle seat next to it) or in the lavatory (from a seat next to it). It goes off at the end of tomorrow night or the night after, and everyone within 2 seats is caught in the blast.',
   },
   mastermind: {
     id: 'mastermind',
