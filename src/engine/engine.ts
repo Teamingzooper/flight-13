@@ -1,10 +1,13 @@
+import { computeAwards } from './awards';
 import { resolveVote, startDay } from './day';
 import { DESTINATIONS } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
+import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isSaboteur } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
 import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
+import { clearedForTakeoff } from './setup';
 import { activePlayers, addLog, cellOf, getPlayer, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
 import { checkWin, landingResult, resultText } from './win';
@@ -35,6 +38,25 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
   if (!isActive(p)) return fail('You are out of the game.');
 
   switch (intent.kind) {
+    case 'pack': {
+      if (s.phase.kind !== 'packing') return fail('Your bag is already packed.');
+      const items: unknown = intent.items;
+      if (!Array.isArray(items) || !items.every(isItemId)) return fail('Unknown item.');
+      if (items.length > MAX_PACKED) return fail(`Your carry-on only fits ${MAX_PACKED} items.`);
+      p.items = [...items];
+      if (intent.ready === true) s.packed[p.id] = true;
+      else delete s.packed[p.id];
+      break;
+    }
+    case 'use': {
+      const use = { item: intent.item, target: intent.target, seat: intent.seat };
+      const error = checkItemUse(s, p, use);
+      if (error) return fail(error);
+      useItem(s, p, use, now);
+      // An extender can free someone who was not expected to act: let them.
+      if (s.phase.earlyEndAt !== null && !allSubmitted(s)) s.phase.earlyEndAt = null;
+      break;
+    }
     case 'move': {
       if (s.phase.kind !== 'night_move') return fail('You can only change seats while the lights are out.');
       if (s.night.buckled[p.id]) return fail('Your seatbelt is locked tonight.');
@@ -97,6 +119,8 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
 function allSubmitted(s: GameState): boolean {
   const active = activePlayers(s);
   switch (s.phase.kind) {
+    case 'packing':
+      return s.players.every((p) => s.packed[p.id] === true);
     case 'night_move':
       return active.every(
         (p) => s.night.buckled[p.id] !== undefined || (p.id in s.night.moves && (p.role !== 'pilot' || p.id in s.night.seatbelts)),
@@ -123,6 +147,9 @@ export function submitDefaults(s: GameState, playerId: string, now: number): voi
   const p = getPlayer(s, playerId);
   if (!p || !isActive(p)) return;
   switch (s.phase.kind) {
+    case 'packing':
+      s.packed[p.id] = true;
+      break;
     case 'night_move':
       s.night.moves[p.id] ??= 'stay';
       if (p.role === 'pilot') s.night.seatbelts[p.id] ??= 'none';
@@ -151,6 +178,13 @@ export function tick(s: GameState, now: number): boolean {
 
 function advance(s: GameState, now: number): void {
   switch (s.phase.kind) {
+    case 'packing':
+      setPhase(s, 'boarding', now);
+      break;
+    case 'boarding':
+      setPhase(s, 'takeoff', now);
+      clearedForTakeoff(s, now);
+      break;
     case 'takeoff':
       startNight(s, 1, now);
       break;
@@ -197,7 +231,10 @@ function finishDay(s: GameState, now: number): void {
 
 function endGame(s: GameState, now: number): void {
   s.phase = { kind: 'ended', night: s.phase.night, startedAt: now, endsAt: now, earlyEndAt: null };
-  if (s.result) addLog(s, now, 'all', 'gameover', resultText(s, s.result), { ...s.result });
+  if (s.result) {
+    s.awards = computeAwards(s, s.result);
+    addLog(s, now, 'all', 'gameover', resultText(s, s.result), { ...s.result });
+  }
 }
 
 function textError(s: GameState, p: PlayerState, text: unknown, now: number): string | null {

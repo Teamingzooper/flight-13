@@ -33,6 +33,8 @@ describe('director', () => {
 
   it('welcomes passengers at takeoff but replays nothing when joining mid-flight', () => {
     const s = flight();
+    expect(directorCues(null, view(s))).toEqual([]);
+    advanceTo(s, 'takeoff');
     const cues = directorCues(null, view(s));
     expect(kinds(cues)).toContain('takeoff');
     expect(captain(cues)).toContain('London');

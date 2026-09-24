@@ -20,11 +20,11 @@ export interface CreateGameOptions {
 }
 
 export function emptyNight(): NightChoices {
-  return { moves: {}, seatbelts: {}, actions: {}, buckled: {}, anomaly: null, searched: {} };
+  return { moves: {}, seatbelts: {}, actions: {}, buckled: {}, anomaly: null, searched: {}, asleep: {}, mirrors: {}, flashlights: {}, freed: {}, defused: {} };
 }
 
 export function emptyDay(): DayChoices {
-  return { ready: {}, votes: {} };
+  return { ready: {}, votes: {}, doubled: {} };
 }
 
 export function cardsForGame(settings: Settings, players: number): Cards {
@@ -67,13 +67,14 @@ export function createGame(opts: CreateGameOptions): GameState {
   const rows = rowsFor(settings.maxPassengers);
   const s: GameState = {
     v: 1,
+    id: `${Math.floor(now).toString(36)}-${(seed >>> 0).toString(36)}`,
     rng: seed | 0,
     settings: structuredClone(settings),
     nights: destination.nights,
     players: [],
     cabin: { rows, cartRow: 1, cartDestroyed: false, lavatoryDestroyed: false, scorched: [] },
     bombs: [],
-    phase: { kind: 'takeoff', night: 0, startedAt: now, endsAt: now + phaseDurationMs(settings, 'takeoff'), earlyEndAt: null },
+    phase: { kind: 'packing', night: 0, startedAt: now, endsAt: now + phaseDurationMs(settings, 'packing'), earlyEndAt: null },
     night: emptyNight(),
     day: emptyDay(),
     verdict: null,
@@ -84,6 +85,9 @@ export function createGame(opts: CreateGameOptions): GameState {
     nextId: 1,
     lastChatAt: {},
     result: null,
+    packed: {},
+    stats: {},
+    awards: null,
   };
   const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance);
   const seats = shuffle(s, allSeats(rows)).slice(0, players.length);
@@ -104,7 +108,16 @@ export function createGame(opts: CreateGameOptions): GameState {
     knownBombIds: [],
     note: '',
     cuffsUsed: false,
+    items: [],
+    usedItems: [],
+    poisonedBy: null,
   }));
-  addLog(s, now, 'all', 'takeoff', `Flight 13 to ${destination.city} is cleared for takeoff. ${destination.nights} nights until landing.`);
+  for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };
   return s;
+}
+
+/** The doors close behind the last passenger: the takeoff roll starts. */
+export function clearedForTakeoff(s: GameState, now: number): void {
+  const destination = DESTINATIONS[s.settings.destination];
+  addLog(s, now, 'all', 'takeoff', `Flight 13 to ${destination.city} is cleared for takeoff. ${destination.nights} nights until landing.`);
 }

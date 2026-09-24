@@ -1,11 +1,12 @@
 import { DESTINATIONS } from './destinations';
 import { BLAST_RADIUS, SWEEP_RADIUS, cartCell, distance, lavatoryCells, parseSeat, seatOrder, seatsWithin } from './grid';
+import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
-import { ROLES, apparentTeam } from './roles';
+import { ROLES, apparentTeam, isSaboteur } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, getPlayer, isActive, label, newId, readNote, removeFromPlay } from './state';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, isActive, label, newId, readNote, removeFromPlay, statsOf } from './state';
 import type { Anomaly, Bomb, BombLocation, Cell, GameState, NightAction, PlayerState, SeatId } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
@@ -19,13 +20,6 @@ export function describeLocation(loc: BombLocation, cartRow?: number): string {
     case 'lavatory':
       return 'in the lavatory';
   }
-}
-
-function fuseText(bomb: Bomb, night: number): string {
-  const left = bomb.detonateNight - night;
-  if (left <= 0) return 'about to go off';
-  if (left === 1) return 'set to go off at the end of tomorrow night';
-  return `set to go off in ${left} nights`;
 }
 
 /** Lights out: start night `night` (moves and seatbelts), applying destination twists. */
@@ -66,8 +60,13 @@ export function resolveMoves(s: GameState, now: number): void {
     }
     const target = getPlayer(s, choice)!;
     pilot.lastSeatbeltTarget = target.id;
-    s.night.buckled[target.id] ??= 'pilot';
     addLog(s, now, [pilot.id], 'seatbelt', `You turned on the seatbelt sign for ${target.name} (${target.seat}).`);
+    if (s.night.freed[target.id]) {
+      addLog(s, now, [target.id], 'item', 'Ding. The seatbelt sign lit up over your seat, but your extender keeps you free tonight.');
+      addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} tried to buckle in ${target.name}, who had a seatbelt extender.`);
+      continue;
+    }
+    s.night.buckled[target.id] ??= 'pilot';
     addLog(s, now, [target.id], 'buckled', 'Ding. The seatbelt sign lit up over your seat. You are stuck here tonight and cannot use an ability.');
     addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} buckled in ${target.name}.`);
   }
@@ -95,8 +94,9 @@ export function resolveMoves(s: GameState, now: number): void {
 export function searchSeat(s: GameState, p: PlayerState, now: number): void {
   const n = s.phase.night;
   s.night.searched[p.id] = true;
-  const found = s.bombs.filter((b) => !b.exploded && b.location.kind === 'seat' && b.location.seat === p.seat);
+  const found = s.bombs.filter((b) => !b.exploded && !b.defused && b.location.kind === 'seat' && b.location.seat === p.seat);
   for (const b of found) if (!p.knownBombIds.includes(b.id)) p.knownBombIds.push(b.id);
+  statsOf(s, p.id).found += found.length;
   const text =
     found.length === 0
       ? `You looked under ${p.seat}. Nothing but crumbs and a life vest.`
@@ -130,6 +130,36 @@ export function resolveNight(s: GameState, now: number): void {
   }
   acts.sort((a, b) => seatOrder(a.actor.seat!) - seatOrder(b.actor.seat!));
   const playerById = (id: string) => getPlayer(s, id)!;
+  /** Who used an ability on whom tonight, for compact mirrors. */
+  const visits = new Map<string, string[]>();
+  const visit = (target: string, text: string) => visits.set(target, [...(visits.get(target) ?? []), text]);
+  for (const pilot of activePlayers(s)) {
+    if (pilot.role === 'pilot' && pilot.lastSeatbeltTarget && s.night.seatbelts[pilot.id] === pilot.lastSeatbeltTarget) {
+      visit(pilot.lastSeatbeltTarget, `${pilot.name} turned on your seatbelt sign`);
+    }
+  }
+  for (const [user, seat] of Object.entries(s.night.flashlights)) {
+    const sitter = activePlayers(s).find((p) => p.seat === seat);
+    if (sitter) visit(sitter.id, `${playerById(user).name} shone a flashlight under your seat`);
+  }
+
+  // 0. Sleeping pills: whoever swallowed one does nothing tonight.
+  for (const [sleeper, by] of Object.entries(s.night.asleep)) {
+    const p = playerById(sleeper);
+    if (!isActive(p)) continue;
+    visit(p.id, `${playerById(by).name} slipped something into your water`);
+    const i = acts.findIndex((a) => a.actor.id === p.id && a.action.kind !== 'search');
+    if (i >= 0) acts.splice(i, 1);
+    addLog(
+      s,
+      now,
+      [p.id],
+      'fizzle',
+      i >= 0
+        ? 'You dozed off before you could do anything. Someone must have slipped something into your water.'
+        : 'You slept like a stone. Someone must have slipped something into your water.',
+    );
+  }
 
   // 1b. Handcuffs: the Air Marshal's target is out before anyone acts, and does nothing tonight.
   const cuffed = new Set<string>();
@@ -138,6 +168,14 @@ export function resolveNight(s: GameState, now: number): void {
     const t = playerById(action.target);
     if (!isActive(t)) continue;
     const seat = t.seat;
+    visit(t.id, `${actor.name} snapped handcuffs on you`);
+    if (consumeItem(t, 'bobbypin')) {
+      actor.cuffsUsed = true;
+      addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}), but they picked the lock and slipped free. Your cuffs are gone.`);
+      addLog(s, now, [t.id], 'item', 'Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
+      addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}, who picked the lock with a bobby pin.`);
+      continue;
+    }
     actor.cuffsUsed = true;
     cuffed.add(t.id);
     removeFromPlay(s, t, 'restrained', n);
@@ -158,12 +196,18 @@ export function resolveNight(s: GameState, now: number): void {
     }
   }
 
-  // 2. Treatments.
+  // 2. Treatments (and who gave them, so a Nurse is credited for every life saved).
   const treated = new Set<string>();
+  const nursesOf = new Map<string, string[]>();
+  const rescued = (id: string) => {
+    for (const nurse of nursesOf.get(id) ?? []) statsOf(s, nurse).rescues++;
+  };
   for (const { actor, action } of acts) {
     if (action.kind !== 'treat') continue;
     const t = playerById(action.target);
     treated.add(t.id);
+    nursesOf.set(t.id, [...(nursesOf.get(t.id) ?? []), actor.id]);
+    if (t.id !== actor.id) visit(t.id, `${actor.name} treated you`);
     if (t.id === actor.id) actor.selfTreatUsed = true;
     addLog(s, now, [actor.id], 'treat', t.id === actor.id ? 'You treated yourself tonight.' : `You treated ${t.name} (${t.seat}).`);
     addLog(s, now, 'end', 'treat', `Night ${n}: Nurse ${actor.name} treated ${t.name}.`);
@@ -181,6 +225,7 @@ export function resolveNight(s: GameState, now: number): void {
       detonateNight: n + action.fuse,
       exploded: false,
       explodedAt: null,
+      defused: false,
     };
     s.bombs.push(bomb);
     actor.bombUsed = true;
@@ -197,16 +242,23 @@ export function resolveNight(s: GameState, now: number): void {
     const t = playerById(action.target);
     addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`);
     if (treated.has(t.id)) {
+      rescued(t.id);
       addLog(s, now, [t.id], 'saved', 'Someone slipped poison into your drink, but the treatment you got tonight neutralized it.');
       addLog(s, now, 'end', 'poison', `Night ${n}: ${actor.name} poisoned ${t.name}, but the Nurse's treatment neutralized it.`);
+    } else if (consumeItem(t, 'antidote')) {
+      addLog(s, now, [t.id], 'item', 'Your drink tasted bitter. Your antidote neutralized the poison.');
+      addLog(s, now, 'end', 'poison', `Night ${n}: ${actor.name} poisoned ${t.name}, whose antidote neutralized it.`);
     } else {
-      if (t.poisonedNight === null) t.poisonedNight = n;
+      if (t.poisonedNight === null) {
+        t.poisonedNight = n;
+        t.poisonedBy = actor.id;
+      }
       addLog(s, now, 'end', 'poison', `Night ${n}: ${actor.name} poisoned ${t.name}.`);
     }
   }
 
   // 5. Investigations (the cart is where it stood during night_act).
-  const live = s.bombs.filter((b) => !b.exploded);
+  const live = s.bombs.filter((b) => !b.exploded && !b.defused);
   for (const { actor, action } of acts) {
     if (action.kind !== 'sweep' && action.kind !== 'inspect') continue;
     let found: Bomb[];
@@ -220,6 +272,7 @@ export function resolveNight(s: GameState, now: number): void {
       what = action.what === 'cart' ? `the drink cart at row ${cartRowAtAct}` : 'the lavatory';
     }
     for (const b of found) if (!actor.knownBombIds.includes(b.id)) actor.knownBombIds.push(b.id);
+    statsOf(s, actor.id).found += found.length;
     const text =
       found.length === 0
         ? `You checked ${what}. No bombs.`
@@ -234,6 +287,7 @@ export function resolveNight(s: GameState, now: number): void {
   for (const { actor, action } of acts) {
     if (action.kind !== 'serve') continue;
     const t = playerById(action.target);
+    visit(t.id, `${actor.name} served you a drink`);
     if (actor.role === 'stewardess_loyal') {
       const team = apparentTeam(t.role);
       addLog(
@@ -255,9 +309,19 @@ export function resolveNight(s: GameState, now: number): void {
     addLog(s, now, 'all', 'cart', `The drink cart is now at row ${s.cabin.cartRow}.`);
   }
 
+  // 6b. Bombs defused tonight are found out at dawn (the planter's seat is a clue).
+  for (const [bombId] of Object.entries(s.night.defused)) {
+    const bomb = s.bombs.find((b) => b.id === bombId);
+    if (!bomb) continue;
+    const where = describeLocation(bomb.location);
+    s.incidentAtDawn = true;
+    addLog(s, now, 'all', 'defused', `Someone found a bomb ${where} and defused it in the night.`, { bomb: bomb.id, location: bomb.location });
+    addLog(s, now, 'saboteurs', 'defused', `The bomb ${where} was defused.`, { bomb: bomb.id });
+  }
+
   // 7. Explosions.
   for (const bomb of s.bombs) {
-    if (bomb.exploded || bomb.detonateNight !== n) continue;
+    if (bomb.exploded || bomb.defused || bomb.detonateNight !== n) continue;
     const centers: Cell[] =
       bomb.location.kind === 'seat'
         ? [parseSeat(bomb.location.seat)!]
@@ -275,10 +339,15 @@ export function resolveNight(s: GameState, now: number): void {
     for (const p of activePlayers(s)) {
       if (!p.seat || !blast.has(p.seat)) continue;
       if (treated.has(p.id)) {
+        rescued(p.id);
         addLog(s, now, [p.id], 'saved', 'You were caught in the blast, but the treatment you got tonight kept you alive.');
+      } else if (consumeItem(p, 'pillow')) {
+        addLog(s, now, [p.id], 'item', 'You braced with your neck pillow. The blast knocked you flat, but you survived.');
+        addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} braced with a neck pillow and survived the blast.`);
       } else {
         removeFromPlay(s, p, 'explosion', n);
         victims.push(p);
+        if (!isSaboteur(p.role)) statsOf(s, bomb.planterId).kills++;
       }
     }
     const where = describeLocation(bomb.location, bomb.location.kind === 'cart' ? s.cabin.cartRow : undefined);
@@ -296,9 +365,12 @@ export function resolveNight(s: GameState, now: number): void {
     if (p.poisonedNight === null) continue;
     if (p.poisonedNight < n) {
       if (treated.has(p.id)) {
+        rescued(p.id);
         p.poisonedNight = null;
+        p.poisonedBy = null;
         addLog(s, now, [p.id], 'cured', "The Nurse's treatment worked. Your poisoning is cured.");
       } else {
+        if (p.poisonedBy && !isSaboteur(p.role)) statsOf(s, p.poisonedBy).kills++;
         removeFromPlay(s, p, 'poison', n);
         s.incidentAtDawn = true;
         addLog(s, now, 'all', 'death', `${label(p)} died of poisoning.`, { player: p.id, cause: 'poison' });
@@ -307,6 +379,18 @@ export function resolveNight(s: GameState, now: number): void {
     } else {
       addLog(s, now, [p.id], 'sick', 'You feel sick. Your drink was poisoned. Unless the Nurse treats you tomorrow night, you will not survive.');
     }
+  }
+
+  // 8b. Compact mirrors show who came near in the dark.
+  for (const id of Object.keys(s.night.mirrors)) {
+    const seen = visits.get(id) ?? [];
+    addLog(
+      s,
+      now,
+      [id],
+      'item',
+      seen.length ? `In your compact mirror you saw: ${seen.join('; ')}.` : 'You watched your compact mirror all night. Nobody came near you.',
+    );
   }
 
   // 9. Twists and the quiet-night note.

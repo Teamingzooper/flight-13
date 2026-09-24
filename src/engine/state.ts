@@ -1,7 +1,7 @@
 import { allSeats, parseSeat } from './grid';
 import { ROLES } from './roles';
 import { normalizeSettings, phaseDurationMs } from './settings';
-import type { Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, SeatId } from './types';
+import type { Bomb, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
 
 export function getPlayer(s: GameState, id: string): PlayerState | undefined {
   return s.players.find((p) => p.id === id);
@@ -61,13 +61,40 @@ export function readNote(s: GameState, p: PlayerState, now: number): void {
   if (note) addLog(s, now, 'all', 'note', `${p.name}\u2019s black box note: \u201c${note}\u201d`, { player: p.id, note });
 }
 
+/** What a player has done that pays out at the end (created on first use). */
+export function statsOf(s: GameState, id: string): PlayerStats {
+  s.stats[id] ??= { kills: 0, rescues: 0, found: 0, defused: 0 };
+  return s.stats[id];
+}
+
+export function fuseText(bomb: Bomb, night: number): string {
+  const left = bomb.detonateNight - night;
+  if (left <= 0) return 'about to go off';
+  if (left === 1) return 'set to go off at the end of tomorrow night';
+  return `set to go off in ${left} nights`;
+}
+
 /** Fill in fields that games saved by an older version do not have. */
 export function normalizeGame(s: GameState): GameState {
   s.settings = normalizeSettings(s.settings);
+  s.id ??= `old-${s.rng.toString(36)}`;
+  s.packed ??= {};
+  s.stats ??= {};
+  s.awards ??= null;
   s.night.searched ??= {};
+  s.night.asleep ??= {};
+  s.night.mirrors ??= {};
+  s.night.flashlights ??= {};
+  s.night.freed ??= {};
+  s.night.defused ??= {};
+  s.day.doubled ??= {};
+  for (const b of s.bombs) b.defused ??= false;
   for (const p of s.players) {
     p.note ??= '';
     p.cuffsUsed ??= false;
+    p.items ??= [];
+    p.usedItems ??= [];
+    p.poisonedBy ??= null;
   }
   return s;
 }

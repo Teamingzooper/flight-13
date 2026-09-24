@@ -18,7 +18,7 @@ describe('createGame', () => {
     expect(new Set(s.players.map((p) => p.seat)).size).toBe(10);
     expect(s.cabin.rows).toBe(10);
     expect(s.nights).toBe(5);
-    expect(s.phase).toMatchObject({ kind: 'takeoff', night: 0, endsAt: 12_000 });
+    expect(s.phase).toMatchObject({ kind: 'packing', night: 0, endsAt: 50_000 });
   });
 
   it('is deterministic for a seed', () => {
