@@ -309,6 +309,8 @@ export class SeatControls {
   private shakeAmount = 0;
   private time = 0;
   private drag: { id: number; x: number; y: number; startX: number; startY: number; moved: boolean; mouse: boolean } | null = null;
+  /** Ignore the pointer entirely (another set, like the hotel room, is using it). */
+  suspended = false;
   private readonly offs: (() => void)[] = [];
   private readonly seated = new THREE.Quaternion();
   private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -328,11 +330,12 @@ export class SeatControls {
       this.offs.push(() => target.removeEventListener(type, fn as EventListener));
     };
     listen<PointerEvent>(dom, 'pointerdown', (e) => {
+      if (this.suspended) return;
       this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: false, mouse: e.pointerType === 'mouse' };
     });
     listen<PointerEvent>(dom, 'pointermove', (e) => {
       const d = this.drag;
-      if (!d || d.id !== e.pointerId || this.locked) return;
+      if (!d || d.id !== e.pointerId || this.locked || this.suspended) return;
       if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > TAP_SLOP_PX) d.moved = true;
       if (d.moved) this.turn(e.clientX - d.x, e.clientY - d.y, d.mouse ? 0.004 : 0.006);
       d.x = e.clientX;
@@ -341,7 +344,7 @@ export class SeatControls {
     listen<PointerEvent>(dom, 'pointerup', (e) => {
       const d = this.drag;
       this.drag = null;
-      if (!d || d.id !== e.pointerId || d.moved) return;
+      if (!d || d.id !== e.pointerId || d.moved || this.suspended) return;
       const rect = dom.getBoundingClientRect();
       const ndc = this.locked
         ? new THREE.Vector2(0, 0)
@@ -360,7 +363,7 @@ export class SeatControls {
 
   /** Lock the mouse for looking around (desktop only; needs a user gesture). */
   requestLock(): void {
-    if (this.locked || !matchMedia('(pointer: fine)').matches) return;
+    if (this.locked || this.suspended || !matchMedia('(pointer: fine)').matches) return;
     const request = this.dom.requestPointerLock?.bind(this.dom) as undefined | (() => Promise<void> | void);
     try {
       const result = request?.();

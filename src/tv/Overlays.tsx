@@ -33,6 +33,12 @@ function useDismissed(): [string | null, (key: string) => void] {
 
 const overlayKey = (game: PlayerView) => `${game.phase.kind}:${game.phase.night}`;
 
+/** Show the current phase's card again (e.g. your boarding pass while packing). */
+export function reopenPhaseCard(): void {
+  dismissed = null;
+  for (const fn of [...dismissListeners]) fn();
+}
+
 /** Whether this moment has a card (boarding pass, morning report, verdict, end screen) not yet dismissed. */
 function cardShowing(game: PlayerView, closed: string | null): boolean {
   if (closed === overlayKey(game)) return false;

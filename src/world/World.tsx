@@ -4,10 +4,12 @@ import type { ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { clock, phaseTitle } from '../tv/format';
 import { IconSound } from '../tv/icons';
-import { PhaseOverlay, usePhaseOverlayOpen } from '../tv/Overlays';
+import { PhaseOverlay, reopenPhaseCard, usePhaseOverlayOpen } from '../tv/Overlays';
+import { usePacking } from '../tv/packing';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
 import { cabinAudio } from './audio';
 import { Cabin3D, type SceneKind } from './Cabin3D';
+import { PackingHud } from './PackingHud';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const CAPTION_MS = 5200;
@@ -46,6 +48,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
   const kind = game.phase.kind;
+  /** Packing in the hotel room and boarding: no seat, no screen, the mouse stays free. */
+  const preflight = kind === 'packing' || kind === 'boarding';
+  const packing = usePacking(ctx);
+  const packingRef = useRef(packing);
+  packingRef.current = packing;
   /** Use the seatback screen, unless you are halfway down the aisle (or under your seat). */
   const openScreen = () => {
     if (!sceneRef.current) setLeaning(true);
@@ -57,6 +64,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const cardOpen = usePhaseOverlayOpen(game) && !holdReport;
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen;
+  const mouseFree = windowOpen || preflight;
 
   useEffect(() => {
     try {
@@ -70,6 +78,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           sceneRef.current = active ? kind : null;
           setScene(active ? kind : null);
         },
+        onPack: (item) => packingRef.current.add(item),
+        onUnpack: (slot) => packingRef.current.remove(slot),
       });
       c.setPoseSource(flight.client.poses);
       c.setFaceSource(flight.client.faces);
@@ -94,13 +104,21 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     cabin.current?.setLeaning(leaning);
   }, [leaning]);
 
-  const wasOpen = useRef(windowOpen);
+  // The hotel room shows what you own and what is in the bag; you pick things up once your pass is read.
   useEffect(() => {
-    if (wasOpen.current === windowOpen) return;
-    wasOpen.current = windowOpen;
-    if (windowOpen) cabin.current?.unlockPointer();
+    if (kind === 'packing') cabin.current?.setPacking(packing.owned, packing.packed, !cardOpen && !leavingOpen && !packing.ready);
+  });
+  useEffect(() => {
+    if (kind === 'packing' && !cardOpen) cabin.current?.startPacking();
+  }, [kind, cardOpen]);
+
+  const wasOpen = useRef(mouseFree);
+  useEffect(() => {
+    if (wasOpen.current === mouseFree) return;
+    wasOpen.current = mouseFree;
+    if (mouseFree) cabin.current?.unlockPointer();
     else cabin.current?.lockPointer();
-  }, [windowOpen]);
+  }, [mouseFree]);
 
   // A scripted moment (changing seats, searching, a blast): put the screen away and capture the mouse;
   // after a walk or a search, open the screen again where you are now.
@@ -125,7 +143,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (typing) return;
+      if (typing || preflight) return;
       if (!leaning && (e.key === 'e' || e.key === 'E' || e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         openScreen();
@@ -135,7 +153,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [leaning]);
+  }, [leaning, preflight]);
 
   if (failed) {
     return (
@@ -195,14 +213,15 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               </button>
             </div>
           </div>
-          {!TOUCH && <div class={`crosshair${aim ? ' on' : ''}`} />}
+          {!TOUCH && !preflight && <div class={`crosshair${aim ? ' on' : ''}`} />}
+          {kind === 'packing' && you && !cardOpen && <PackingHud game={game} packing={packing} onRole={reopenPhaseCard} />}
           {caption && (
             <div class="hud-caption" key={caption.id} role="status">
               <span class="who">Captain</span>
               {caption.text}
             </div>
           )}
-          {TOUCH && hasScreen ? (
+          {preflight ? null : TOUCH && hasScreen ? (
             <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={openScreen}>
               {hint}
             </button>
