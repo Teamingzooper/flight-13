@@ -26,6 +26,7 @@ import { Effects } from './scene/effects';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
 import { BOARDING_SHOTS, FADE, boardingMoment } from './boarding';
+import { EndingDirector } from './endings';
 import { LiveScreen } from './screen';
 import { GateSet } from './sets/gate';
 import { HotelSet } from './sets/hotel';
@@ -45,6 +46,8 @@ export interface Cabin3DOptions {
   /** Packing in the hotel room: an item picked up from the bed, or taken back out of a slot. */
   onPack?: (item: ItemId) => void;
   onUnpack?: (slot: number) => void;
+  /** The ending cutscene started (true) or finished (false): hold the end screen until it is over. */
+  onEnding?: (playing: boolean) => void;
 }
 
 export type SceneKind = 'walk' | 'search' | 'glance';
@@ -149,6 +152,11 @@ export class Cabin3D {
   private boardingSkipped = false;
   /** Development: pin the boarding sequence at this many seconds (null follows the phase clock). */
   debugBoardingAt: number | null = null;
+  /** The ending playing now, when it started, and whether this game's ending is over (or was skipped). */
+  private ending: EndingDirector | null = null;
+  private endingFrom = 0;
+  private endingSettled = false;
+  private endingShake = 0;
   /** Black between scenes. */
   private readonly fadeEl = document.createElement('div');
   private readonly fadeText = document.createElement('div');
@@ -310,7 +318,15 @@ export class Cabin3D {
       cabin.lightSeatbelt(null);
     }
 
-    for (const cue of cues) this.play(cue, game);
+    // The ending tells its own story: no end-of-flight announcements over it.
+    const narrated = kind === 'ended' && !!prev && !this.endingSettled;
+    for (const cue of cues) if (!(narrated && cue.kind === 'pa')) this.play(cue, game);
+    // The game is over: play how it ended (unless you only just arrived, on the end screen).
+    if (kind === 'ended' && game.result && !this.ending && !this.endingSettled) {
+      if (prev) this.startEnding(game);
+      else this.endingSettled = true;
+    }
+    if (kind !== 'ended') this.endingSettled = false;
     if (prev && game.you && seat) {
       // You just looked under your seat: crouch down and see for yourself.
       if (game.you.searched && !prev.you?.searched) this.controls.search();
@@ -337,6 +353,53 @@ export class Cabin3D {
   /** Toss the bag onto the bed (once your boarding pass has been read). */
   startPacking(): void {
     this.hotel?.start();
+  }
+
+  /** Skip the rest of the ending and go to the end screen. */
+  skipEnding(): void {
+    if (!this.ending) return;
+    this.fade(1, 0.25);
+    this.finishEnding();
+  }
+
+  private startEnding(game: PlayerView): void {
+    const built = this.built!;
+    this.controls.releaseLock();
+    this.controls.suspended = true;
+    this.ending = new EndingDirector(
+      {
+        renderer: this.renderer,
+        container: this.container,
+        camera: this.camera,
+        people: this.people,
+        windows: built.windows,
+        faces: this.faceSource,
+        showRunway: () => built.windows.show(built.skies.runway, 0),
+        setLights: (mode) => (this.wantedMode = mode),
+        masksDown: () => built.effects.masks.drop(),
+        explode: (at) => built.effects.explode(at),
+        shake: (amount) => (this.endingShake = Math.max(this.endingShake, amount)),
+        flash: (amount) => (this.flash = Math.max(this.flash, amount)),
+        fade: (black, seconds) => {
+          this.dark = black > 0.5;
+          this.fadeText.textContent = '';
+          this.fadeEl.style.transition = `opacity ${seconds}s ease`;
+          this.fadeEl.style.opacity = String(black);
+        },
+        caption: (text, who) => this.opts.onCaption?.(text, who),
+        showSet: (scene, camera) => this.show(scene ?? this.scene, camera ?? this.camera),
+      },
+      game,
+    );
+    this.endingFrom = this.time;
+    this.opts.onEnding?.(true);
+  }
+
+  private finishEnding(): void {
+    this.ending?.dispose();
+    this.ending = null;
+    this.endingSettled = true;
+    this.opts.onEnding?.(false);
   }
 
   /** Skip the boarding sequence: straight to your seat to wait for takeoff. */
@@ -386,6 +449,7 @@ export class Cabin3D {
     this.fadeEl.remove();
     this.hotel?.dispose();
     this.gate?.dispose();
+    this.ending?.dispose();
     this.built?.windows.dispose();
     this.built?.effects.dispose();
     this.controls.dispose();
@@ -614,6 +678,20 @@ export class Cabin3D {
     }
     this.flash *= Math.exp(-dt * 5);
     this.flashEl.style.opacity = this.flash > 0.01 ? String(this.flash) : '0';
+    if (this.ending) {
+      // The ending drives everyone and the camera; no seat controls, no network poses.
+      this.cart.update(dt, time);
+      this.people.update(dt, time);
+      this.ending.update(this.time - this.endingFrom, dt, time);
+      if (this.endingShake > 0.001) {
+        const s = this.endingShake;
+        this.camera.position.add(new THREE.Vector3(rand(-s, s), rand(-s, s), rand(-s, s)));
+        this.endingShake *= Math.exp(-dt * 3);
+      }
+      this.composer.render(dt);
+      if (this.ending.done) this.finishEnding();
+      return;
+    }
     this.controls.update(dt, time);
     // Your own body follows the camera down the aisle, and keeps out of the way while you search.
     const me = this.youId ? this.people.actor(this.youId) : undefined;
@@ -689,7 +767,7 @@ export class Cabin3D {
         cabinAudio.thunk();
         this.controls.shake(0.015);
       }
-    } else {
+    } else if (!this.ending) {
       this.gearUp = false;
       windows.speed = isNightPhase(kind) ? 0.002 : 0.006;
       windows.lift = 0;
@@ -760,8 +838,9 @@ export class Cabin3D {
         // One ding per announcement, captions one after another (after any blast).
         const at = Math.max(this.time + 0.2 + this.batchDelay, this.captionAt);
         this.captionAt = at + 4.5;
-        this.later(at - this.time, () => cabinAudio.ding());
-        this.later(at - this.time + 0.9, () => this.opts.onCaption?.(cue.text));
+        // (Announcements still queued when an ending starts are dropped: the ending tells its own story.)
+        this.later(at - this.time, () => !this.ending && cabinAudio.ding());
+        this.later(at - this.time + 0.9, () => !this.ending && this.opts.onCaption?.(cue.text));
         break;
       }
     }

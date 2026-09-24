@@ -517,3 +517,27 @@
 .boarding-skip:hover {
   opacity: 1;
 }
+
+/* ---------- Endings ---------- */
+.world-tags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.name-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(10, 6, 8, 0.72);
+  border: 1px solid rgba(255, 94, 98, 0.65);
+  color: #ffe1e1;
+  font: 700 14px var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 0 18px rgba(255, 94, 98, 0.35);
+}
