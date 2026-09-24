@@ -42,8 +42,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [locked, setLocked] = useState(false);
   const [aim, setAim] = useState(false);
   const [leavingOpen, setLeavingOpen] = useState(false);
+  const [skipped, setSkipped] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  const [caption, setCaption] = useState<{ text: string; id: number } | null>(null);
+  const [caption, setCaption] = useState<{ text: string; who: string; id: number } | null>(null);
   const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
@@ -73,7 +74,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         onLockChange: setLocked,
         onAimChange: setAim,
         onPose: (pose) => flight.client.sendPose(pose),
-        onCaption: (text) => setCaption({ text, id: Date.now() }),
+        onCaption: (text, who = 'Captain') => setCaption({ text, who, id: Date.now() }),
         onScene: (kind, active) => {
           sceneRef.current = active ? kind : null;
           setScene(active ? kind : null);
@@ -111,6 +112,24 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   useEffect(() => {
     if (kind === 'packing' && !cardOpen) cabin.current?.startPacking();
   }, [kind, cardOpen]);
+
+  // Boarding plays by itself; Space, Enter or Esc (or the button) skips straight to your seat.
+  const skipBoarding = () => {
+    setSkipped(true);
+    cabin.current?.skipBoarding();
+  };
+  useEffect(() => {
+    setSkipped(false);
+    if (kind !== 'boarding') return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        skipBoarding();
+      }
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [kind]);
 
   const wasOpen = useRef(mouseFree);
   useEffect(() => {
@@ -196,7 +215,12 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       <div class="world-canvas" ref={host} />
       {!leaning && (
         <div class="world-hud">
-          <div class="hud-top">
+          {kind === 'boarding' && you && !skipped && (
+            <button class="hud-chip hud-button boarding-skip" onClick={skipBoarding}>
+              Skip to your seat ›
+            </button>
+          )}
+          <div class={`hud-top${kind === 'boarding' && !skipped ? ' hidden' : ''}`}>
             <div class="hud-chip hud-phase">
               <span class="hud-title">{phaseTitle(game)}</span>
               {kind !== 'ended' && <span class={`hud-clock${ctx.left < 10_000 ? ' urgent' : ''}`}>{clock(ctx.left)}</span>}
@@ -217,7 +241,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           {kind === 'packing' && you && !cardOpen && <PackingHud game={game} packing={packing} onRole={reopenPhaseCard} />}
           {caption && (
             <div class="hud-caption" key={caption.id} role="status">
-              <span class="who">Captain</span>
+              <span class="who">{caption.who}</span>
               {caption.text}
             </div>
           )}

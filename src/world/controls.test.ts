@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { walkScript, type Sample } from './controls';
+import { boardScript, walkScript, type Script, type Sample } from './controls';
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -55,5 +55,43 @@ describe('walking to another seat', () => {
     const { samples } = walk(new THREE.Vector3(0.94, 1.2, 1.74), new THREE.Vector3(0.94, 1.2, 2.56));
     expect(samples.every((s) => Math.abs(wrap(s.yaw)) < 1)).toBe(true);
     for (let i = 1; i < samples.length; i++) expect(Math.abs(samples[i].yaw - samples[i - 1].yaw)).toBeLessThan(0.3);
+  });
+});
+
+/** Sample any script every 50 ms. */
+function samplesOf(script: Script) {
+  const out: Sample = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, gait: 0 };
+  const samples: { t: number; yaw: number; x: number; y: number; z: number; gait: number }[] = [];
+  for (let t = 0; t <= script.duration + 1e-9; t += 0.05) {
+    script.sample(t, out);
+    samples.push({ t, yaw: out.yaw, x: out.pos.x, y: out.pos.y, z: out.pos.z, gait: out.gait });
+  }
+  return samples;
+}
+
+describe('boarding', () => {
+  const door = new THREE.Vector3(0, 1.6, -0.37);
+
+  it('walks in facing down the aisle, already in stride, and sits down facing forward', () => {
+    const seat = new THREE.Vector3(-0.94, 1.2, 5.84);
+    const script = boardScript(door, seat, 0, 8);
+    const samples = samplesOf(script);
+    expect(samples[0]).toMatchObject({ x: 0, z: -0.37 });
+    expect(Math.abs(wrap(samples[0].yaw - Math.PI))).toBeLessThan(0.05);
+    expect(samples[3].gait).toBeGreaterThan(0.3);
+    const end = samples[samples.length - 1];
+    expect(end.z).toBeCloseTo(5.84, 2);
+    expect(end.y).toBeCloseTo(1.2, 2);
+    expect(Math.abs(wrap(end.yaw))).toBeLessThan(0.05);
+    for (let i = 1; i < samples.length; i++) expect(Math.abs(samples[i].yaw - samples[i - 1].yaw)).toBeLessThan(0.3);
+  });
+
+  it('hurries to fit the time it has, and copes with a front-row seat', () => {
+    const far = boardScript(door, new THREE.Vector3(0.94, 1.2, 12.3), 0, 7);
+    expect(far.duration).toBeLessThanOrEqual(7.01);
+    const front = samplesOf(boardScript(door, new THREE.Vector3(1.42, 1.2, 0.1), 0, 8));
+    // Never doubles back towards the galley.
+    for (let i = 1; i < front.length; i++) expect(front[i].z).toBeGreaterThan(front[i - 1].z - 0.02);
+    expect(Math.abs(wrap(front[front.length - 1].yaw))).toBeLessThan(0.05);
   });
 });
