@@ -64,7 +64,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   // Let the lights come up (and a blast play out) before the morning report covers the cabin.
   const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
   const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 5200 : 1500) : 0);
-  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !ending;
+  // (The morning report also waits while you are still under your seat.)
+  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !ending && scene !== 'search';
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen;
   const mouseFree = windowOpen || preflight || ending;
@@ -272,7 +273,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           ) : (
             <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
           )}
-          {!holdReport && !ending && (
+          {!holdReport && !ending && scene !== 'search' && (
             <div class="hud-overlay">
               <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
             </div>

@@ -675,6 +675,7 @@
   inset: 0;
   z-index: 50;
   display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
   padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
   background: rgba(3, 6, 12, 0.72);

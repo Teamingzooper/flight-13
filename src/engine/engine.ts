@@ -6,7 +6,7 @@ import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isSaboteur } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
-import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
+import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
 import { clearedForTakeoff } from './setup';
 import { activePlayers, addLog, cellOf, getPlayer, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
@@ -139,7 +139,8 @@ function allSubmitted(s: GameState): boolean {
 /** Once every eligible player has submitted, end the phase after a short grace period. */
 export function scheduleEarlyEnd(s: GameState, now: number): void {
   if (s.phase.earlyEndAt !== null || !allSubmitted(s)) return;
-  s.phase.earlyEndAt = Math.min(s.phase.endsAt, now + EARLY_END_GRACE_MS);
+  const grace = s.phase.kind === 'night_act' ? NIGHT_ACT_GRACE_MS : EARLY_END_GRACE_MS;
+  s.phase.earlyEndAt = Math.min(s.phase.endsAt, now + grace);
 }
 
 /** Fill in "do nothing" choices for a player who is away, so phases can still end early. */
