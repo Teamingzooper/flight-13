@@ -56,7 +56,7 @@ export function openFlight(code: string): ActiveFlight {
     const stopTicker = startTicker(() => {
       host.tickNow();
       lock.beat();
-    }, 250);
+    }, 125);
     const client = new ClientSession({
       transport: hub.join('local'),
       code,
