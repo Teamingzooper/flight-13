@@ -6,12 +6,13 @@ export type RoleId =
   | 'nurse'
   | 'investigator'
   | 'stewardess_loyal'
+  | 'marshal'
   | 'bomber'
   | 'mastermind'
   | 'stewardess_rogue';
 
 /** Special cards the host puts in the deck. A stewardess card turns loyal or rogue when dealt. */
-export type SpecialCard = 'bomber' | 'mastermind' | 'stewardess' | 'pilot' | 'nurse' | 'investigator';
+export type SpecialCard = 'bomber' | 'mastermind' | 'stewardess' | 'pilot' | 'nurse' | 'investigator' | 'marshal';
 export type Cards = Record<SpecialCard, number>;
 
 export type DestinationId = 'LAS' | 'LHR' | 'HNL' | 'HND' | 'BDA';
@@ -32,6 +33,8 @@ export interface Settings {
   voteMode: VoteMode;
   anonymousVotes: boolean;
   whispers: boolean;
+  /** Restraining the Pilot (with no other Pilot free) hands the saboteurs the win. */
+  pilotMustFly: boolean;
 }
 
 export type PhaseKind =
@@ -94,8 +97,12 @@ export interface PlayerState {
   lastSeatbeltTarget: string | null;
   /** Role made public (on death or restraint when the setting is on). */
   revealed: boolean;
-  /** Bombs this player found as Investigator. */
+  /** Bombs this player found (sweeps, inspections, looking under their seat). */
   knownBombIds: string[];
+  /** Black box note, read out to the cabin when the player dies or is restrained. */
+  note: string;
+  /** The Air Marshal's one pair of handcuffs has been used. */
+  cuffsUsed: boolean;
 }
 
 export type BombLocation =
@@ -127,7 +134,11 @@ export type NightAction =
   | { kind: 'sweep' }
   | { kind: 'inspect'; what: 'cart' | 'lavatory' }
   | { kind: 'serve'; target: string }
-  | { kind: 'plant'; where: 'seat' | 'cart' | 'lavatory'; fuse: 1 | 2 };
+  | { kind: 'plant'; where: 'seat' | 'cart' | 'lavatory'; fuse: 1 | 2 }
+  /** Anyone: look under your own seat (answered at once, and it uses up your night). */
+  | { kind: 'search' }
+  /** Air Marshal, once per game: handcuff someone within 2 seats. */
+  | { kind: 'cuff'; target: string };
 
 export interface NightChoices {
   moves: Record<string, SeatId | 'stay'>;
@@ -137,6 +148,8 @@ export interface NightChoices {
   actions: Record<string, NightAction | null>;
   buckled: Record<string, 'pilot' | 'turbulence'>;
   anomaly: Anomaly | null;
+  /** Players who already looked under their seat tonight (their action is locked). */
+  searched: Record<string, true>;
 }
 
 export interface DayChoices {
@@ -182,6 +195,9 @@ export type LogTag =
   | 'saved'
   | 'sweep'
   | 'inspect'
+  | 'search'
+  | 'cuff'
+  | 'note'
   | 'serve'
   | 'cart'
   | 'explosion'
@@ -205,7 +221,7 @@ export interface LogEntry {
 
 export interface GameResult {
   winner: Team | 'draw';
-  reason: 'eliminated' | 'parity' | 'landed' | 'no_survivors';
+  reason: 'eliminated' | 'parity' | 'landed' | 'no_survivors' | 'pilot';
   night: number;
 }
 
@@ -237,6 +253,7 @@ export type Intent =
   | { kind: 'act'; action: NightAction | null }
   | { kind: 'ready' }
   | { kind: 'vote'; target: string }
+  | { kind: 'note'; text: string }
   | { kind: 'chat'; channel: ChatChannel; text: string }
   | { kind: 'whisper'; to: string; text: string };
 

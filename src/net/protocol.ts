@@ -103,11 +103,13 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (!isObj(raw) || !isObj(raw.cards)) return null;
   const cards = {} as Cards;
   for (const card of SPECIAL_CARDS) {
-    const v = raw.cards[card];
+    // Cards added in later versions may be missing from older clients: treat them as none.
+    const v = raw.cards[card] ?? 0;
     if (!isInt(v) || v < 0 || v > 16) return null;
     cards[card] = v;
   }
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
+  const pilotMustFly = raw.pilotMustFly ?? false;
   if (typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
   if (!isInt(maxPassengers)) return null;
   if (rolesMode !== 'auto' && rolesMode !== 'custom') return null;
@@ -115,6 +117,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (typeof timers !== 'string' || !(timers in TIMERS)) return null;
   if (voteMode !== 'daily' && voteMode !== 'afterIncident') return null;
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
+  if (typeof pilotMustFly !== 'boolean') return null;
   return {
     destination: destination as Settings['destination'],
     maxPassengers,
@@ -126,6 +129,7 @@ export function cleanSettings(raw: unknown): Settings | null {
     voteMode,
     anonymousVotes,
     whispers,
+    pilotMustFly,
   };
 }
 

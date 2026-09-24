@@ -1,6 +1,6 @@
 import { allSeats, parseSeat } from './grid';
 import { ROLES } from './roles';
-import { phaseDurationMs } from './settings';
+import { normalizeSettings, phaseDurationMs } from './settings';
 import type { Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, SeatId } from './types';
 
 export function getPlayer(s: GameState, id: string): PlayerState | undefined {
@@ -53,6 +53,23 @@ export function setPhase(s: GameState, kind: PhaseKind, now: number): void {
 /** Name plus role once the role is public. */
 export function label(p: PlayerState): string {
   return p.revealed ? `${p.name} (${ROLES[p.role].name})` : p.name;
+}
+
+/** Read someone's black box note out to the cabin, once they have left play. */
+export function readNote(s: GameState, p: PlayerState, now: number): void {
+  const note = (p.note ?? '').trim();
+  if (note) addLog(s, now, 'all', 'note', `${p.name}\u2019s black box note: \u201c${note}\u201d`, { player: p.id, note });
+}
+
+/** Fill in fields that games saved by an older version do not have. */
+export function normalizeGame(s: GameState): GameState {
+  s.settings = normalizeSettings(s.settings);
+  s.night.searched ??= {};
+  for (const p of s.players) {
+    p.note ??= '';
+    p.cuffsUsed ??= false;
+  }
+  return s;
 }
 
 export function removeFromPlay(s: GameState, p: PlayerState, cause: DeathCause, night: number): void {

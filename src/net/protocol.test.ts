@@ -27,6 +27,11 @@ describe('protocol sanitising', () => {
     expect(cleanSettings({ ...s, extra: 'ignored' })).toEqual(s);
     expect(cleanSettings({ ...s, destination: 'XXX' })).toBeNull();
     expect(cleanSettings({ ...s, cards: { ...s.cards, bomber: 'lots' } })).toBeNull();
+    // Settings from before the Air Marshal and the Pilot rule existed still work.
+    const { pilotMustFly: _rule, ...older } = s;
+    const { marshal: _card, ...olderCards } = s.cards;
+    expect(cleanSettings({ ...older, cards: olderCards })).toEqual({ ...s, pilotMustFly: false, cards: { ...s.cards, marshal: 0 } });
+    expect(cleanSettings({ ...s, pilotMustFly: 'yes' })).toBeNull();
   });
 
   it('parses client messages defensively', () => {

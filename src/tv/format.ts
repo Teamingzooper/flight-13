@@ -93,6 +93,10 @@ export function describeAction(game: PlayerView, action: NightAction): string {
         action.where === 'seat' ? describeLocation({ kind: 'seat', seat: game.you?.seat ?? '?' }) : describeLocation({ kind: action.where });
       return `plant a bomb ${where} (${action.fuse}-night fuse)`;
     }
+    case 'search':
+      return 'look under your seat';
+    case 'cuff':
+      return `handcuff ${nameWithSeat(game, action.target)}`;
   }
 }
 

@@ -42,6 +42,14 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     howTo:
       'Each night, sweep the seats within 1 of you for bombs, or inspect the drink cart or the lavatory if you are sitting next to it.',
   },
+  marshal: {
+    id: 'marshal',
+    name: 'Air Marshal',
+    team: 'passengers',
+    blurb: 'Undercover, with exactly one pair of handcuffs.',
+    howTo:
+      'Once per game, while the lights are out, handcuff someone within 2 seats of you. They cannot act that night and are walked to the rear galley at dawn. Cuff a fellow passenger and the passengers lose a player.',
+  },
   stewardess_loyal: {
     id: 'stewardess_loyal',
     name: 'Loyal Stewardess',
@@ -74,7 +82,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
   },
 };
 
-export const SPECIAL_CARDS: readonly SpecialCard[] = ['bomber', 'mastermind', 'stewardess', 'pilot', 'nurse', 'investigator'];
+export const SPECIAL_CARDS: readonly SpecialCard[] = ['bomber', 'mastermind', 'stewardess', 'pilot', 'nurse', 'investigator', 'marshal'];
 
 export function teamOf(role: RoleId): Team {
   return ROLES[role].team;
@@ -93,12 +101,16 @@ export function canPlantBombs(role: RoleId): boolean {
   return role === 'bomber' || role === 'mastermind';
 }
 
+export function canCuff(role: RoleId): boolean {
+  return role === 'marshal';
+}
+
 export function isStewardess(role: RoleId): boolean {
   return role === 'stewardess_loyal' || role === 'stewardess_rogue';
 }
 
 export function emptyCards(): Cards {
-  return { bomber: 0, mastermind: 0, stewardess: 0, pilot: 0, nurse: 0, investigator: 0 };
+  return { bomber: 0, mastermind: 0, stewardess: 0, pilot: 0, nurse: 0, investigator: 0, marshal: 0 };
 }
 
 /** Balanced special cards for a player count; everyone else is a Passenger. */
@@ -106,8 +118,8 @@ export function presetCards(players: number): Cards {
   if (players <= 4) return { ...emptyCards(), bomber: 1, pilot: 1, nurse: 1 };
   if (players <= 6) return { ...emptyCards(), bomber: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 1 };
   if (players <= 9) return { ...emptyCards(), bomber: 2, stewardess: 1, pilot: 1, nurse: 1, investigator: 1 };
-  if (players <= 12) return { ...emptyCards(), bomber: 2, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 1 };
-  return { ...emptyCards(), bomber: 3, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 2 };
+  if (players <= 12) return { ...emptyCards(), bomber: 2, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 1, marshal: 1 };
+  return { ...emptyCards(), bomber: 3, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 2, marshal: 1 };
 }
 
 export function countSpecials(cards: Cards): number {

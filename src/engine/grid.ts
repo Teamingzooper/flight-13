@@ -5,6 +5,8 @@ export const SEAT_COLS = [0, 1, 2, 4, 5, 6] as const;
 export const BLAST_RADIUS = 2;
 export const SWEEP_RADIUS = 1;
 export const WHISPER_RADIUS = 2;
+/** How far the Air Marshal can reach with the handcuffs. */
+export const CUFF_RADIUS = 2;
 
 const LETTER_BY_COL: Record<number, string> = { 0: 'A', 1: 'B', 2: 'C', 4: 'D', 5: 'E', 6: 'F' };
 const COL_BY_LETTER: Record<string, number> = { A: 0, B: 1, C: 2, D: 4, E: 5, F: 6 };

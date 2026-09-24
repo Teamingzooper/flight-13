@@ -1,3 +1,4 @@
+import { normalizeGame, normalizeSettings } from '../engine';
 import type { HostSnapshot } from '../net/host';
 import { randomToken } from './profile';
 
@@ -57,7 +58,11 @@ export function loadHostSnapshot(code: string): HostSnapshot | null {
   try {
     const raw = localStorage.getItem(snapshotKey(code));
     const snapshot = raw ? (JSON.parse(raw) as HostSnapshot) : null;
-    return snapshot && snapshot.v === 1 && snapshot.code === code ? snapshot : null;
+    if (!snapshot || snapshot.v !== 1 || snapshot.code !== code) return null;
+    // Saved by an older version: fill in rules and fields added since.
+    snapshot.settings = normalizeSettings(snapshot.settings);
+    if (snapshot.game) normalizeGame(snapshot.game);
+    return snapshot;
   } catch {
     return null;
   }

@@ -20,7 +20,7 @@ export interface CreateGameOptions {
 }
 
 export function emptyNight(): NightChoices {
-  return { moves: {}, seatbelts: {}, actions: {}, buckled: {}, anomaly: null };
+  return { moves: {}, seatbelts: {}, actions: {}, buckled: {}, anomaly: null, searched: {} };
 }
 
 export function emptyDay(): DayChoices {
@@ -41,6 +41,7 @@ export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChan
   add('pilot', cards.pilot);
   add('nurse', cards.nurse);
   add('investigator', cards.investigator);
+  add('marshal', cards.marshal);
   for (let i = 0; i < cards.stewardess; i++) {
     deck.push(nextFloat(h) < rogueChance ? 'stewardess_rogue' : 'stewardess_loyal');
   }
@@ -101,6 +102,8 @@ export function createGame(opts: CreateGameOptions): GameState {
     lastSeatbeltTarget: null,
     revealed: false,
     knownBombIds: [],
+    note: '',
+    cuffsUsed: false,
   }));
   addLog(s, now, 'all', 'takeoff', `Flight 13 to ${destination.city} is cleared for takeoff. ${destination.nights} nights until landing.`);
   return s;

@@ -24,6 +24,7 @@ const CARD_NAME: Record<SpecialCard, [string, string]> = {
   pilot: ['Pilot', 'Pilots'],
   nurse: ['Nurse', 'Nurses'],
   investigator: ['Investigator', 'Investigators'],
+  marshal: ['Air Marshal', 'Air Marshals'],
 };
 
 const CARD_NOTE: Record<SpecialCard, string> = {
@@ -33,6 +34,7 @@ const CARD_NOTE: Record<SpecialCard, string> = {
   pilot: 'Passenger. Buckles someone in each night.',
   nurse: 'Passenger. Saves the person next to them.',
   investigator: 'Passenger. Finds bombs nearby.',
+  marshal: 'Passenger. Handcuffs one suspect per game.',
 };
 
 export function describeCards(cards: Cards): string {
