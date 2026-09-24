@@ -26,6 +26,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # Optional relay (TURN) server for players on networks that block direct connections.
+          # Set the TURN_URLS variable and the TURN_USERNAME / TURN_CREDENTIAL secrets in the repo settings.
+          VITE_TURN_URLS: ${{ vars.TURN_URLS }}
+          VITE_TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
+          VITE_TURN_CREDENTIAL: ${{ secrets.TURN_CREDENTIAL }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

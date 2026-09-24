@@ -10,6 +10,30 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23ffb547' d='M32 4c2 0 4 3 4 8v14l22 12v6l-22-6v12l6 5v5l-10-3-10 3v-5l6-5V38L6 44v-6l22-12V12c0-5 2-8 4-8z'/%3E%3C/svg%3E"
     />
     <title>Flight 13</title>
+    <script>
+      // After a deploy, a cached page can ask for our script files that no longer exist: reload to get the
+      // new page (at most once a minute, so a real outage cannot loop).
+      window.flight13Reload = () => {
+        try {
+          const last = Number(sessionStorage.getItem('flight13.reloaded') || 0);
+          if (Date.now() - last < 60000) return false;
+          sessionStorage.setItem('flight13.reloaded', String(Date.now()));
+        } catch {
+          return false;
+        }
+        location.reload();
+        return true;
+      };
+      addEventListener(
+        'error',
+        (e) => {
+          const el = e.target;
+          const url = (el && (el.src || el.href)) || '';
+          if ((el instanceof HTMLScriptElement || el instanceof HTMLLinkElement) && url.startsWith(location.origin)) window.flight13Reload();
+        },
+        true,
+      );
+    </script>
   </head>
   <body>
     <div id="app"></div>

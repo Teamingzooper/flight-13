@@ -1,5 +1,6 @@
 import { joinRoom as joinTorrentRoom } from '@trystero-p2p/torrent';
 import { joinRoom as joinNostrRoom, selfId, type JsonValue, type MessageAction, type Room } from 'trystero';
+import { relayServers } from './ice';
 import { Emitter, type MessageHandler, type PeerHandler, type Transport } from './transport';
 
 const APP_ID = 'flight13-teamingzooper-v1';
@@ -28,7 +29,8 @@ interface Route {
  * either route reaches it; each message goes out once over the first live route and duplicates are dropped.
  */
 export function trysteroTransport(code: string): Transport {
-  const config = { appId: APP_ID, password: `flight13:${code}` };
+  // Relay (TURN) servers, when this build has them, for networks that block direct connections.
+  const config = { appId: APP_ID, password: `flight13:${code}`, turnConfig: relayServers() };
   const roomId = `flight-${code}`;
   const routes: Route[] = [
     joinTorrentRoom({ ...config, relayConfig: { urls: TRACKERS } }, roomId),

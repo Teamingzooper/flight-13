@@ -4,6 +4,7 @@ import { formatCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
 import { Avatar } from '../Avatar';
 import { useToast } from '../hooks';
+import { NetworkNote, useNetwork } from '../Notice';
 import { loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
 import { flightLink, navigate } from '../router';
@@ -14,6 +15,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
   const { client } = flight;
   const [editing, setEditing] = useState(false);
   const [toast, showToast] = useToast();
+  const network = useNetwork();
   const run = async (request: Promise<IntentResult>) => {
     const result = await request;
     if (!result.ok) showToast(result.error);
@@ -63,7 +65,10 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
           </div>
           <p class="muted">{dest.blurb}</p>
         </div>
-        <ShareBox code={state.code} />
+        <div class="stack">
+          <ShareBox code={state.code} />
+          <NetworkNote kind={network} />
+        </div>
       </header>
 
       <div class="boarding-grid">
