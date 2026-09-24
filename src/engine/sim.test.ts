@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { botIntents } from './bots';
 import { DESTINATION_ORDER } from './destinations';
 import { applyIntent, phaseDue, tick } from './engine';
-import { isSeatInCabin } from './grid';
+import { aisleRow, isSeatInCabin } from './grid';
+import { isStewardess } from './roles';
 import { defaultSettings } from './settings';
 import { createGame } from './setup';
 import { TEST_LOOK } from './testkit';
@@ -13,6 +14,7 @@ function assertInvariants(s: GameState): void {
   expect(new Set(seats).size).toBe(seats.length);
   for (const p of s.players) {
     if (p.status === 'restrained') expect(p.seat).toBeNull();
+    else if (isStewardess(p.role)) expect(aisleRow(p.seat)).toBeLessThanOrEqual(s.cabin.rows);
     else expect(p.seat !== null && isSeatInCabin(p.seat, s.cabin.rows)).toBe(true);
     if (p.status !== 'alive') {
       expect(p.cause).not.toBeNull();
@@ -24,6 +26,7 @@ function assertInvariants(s: GameState): void {
   expect(new Set(planters).size).toBe(planters.length);
   expect(s.cabin.cartRow).toBeGreaterThanOrEqual(1);
   expect(s.cabin.cartRow).toBeLessThanOrEqual(s.cabin.rows);
+  if (s.night.washroom) expect(s.players.find((p) => p.id === s.night.washroom)?.washroomUsed).toBe(true);
 }
 
 function simulate(seed: number, players: number, destination: DestinationId): GameState {

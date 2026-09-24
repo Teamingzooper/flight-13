@@ -104,7 +104,7 @@ describe('Air Marshal', () => {
   });
 
   it('stops anyone else getting to the person in cuffs that night', () => {
-    const s = cabin([{ id: 'stew', role: 'stewardess_loyal', seat: '6F' }]);
+    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 2' }]);
     advanceTo(s, 'night_act', 1);
     expect(act(s, 'marshal', { kind: 'cuff', target: 'p2' }).ok).toBe(true);
     expect(act(s, 'stew', { kind: 'serve', target: 'p2' }).ok).toBe(true);

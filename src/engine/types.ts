@@ -59,8 +59,11 @@ export interface Phase {
   earlyEndAt: number | null;
 }
 
-/** Seat id such as "12C". */
+/** Seat id such as "12C", or an aisle spot such as "Aisle 5" (where the Stewardess works). */
 export type SeatId = string;
+
+/** Where you can go when the lights go out: a seat (or, for crew, an aisle spot), nowhere, or the washroom. */
+export type MoveTarget = SeatId | 'stay' | 'washroom';
 
 /** Grid cell. Columns 0..6 where 3 is the aisle; rows 1..R, and the lavatory sits on row R+1. */
 export interface Cell {
@@ -92,7 +95,7 @@ export interface PlayerState {
   look: Look;
   role: RoleId;
   status: PlayerStatus;
-  /** Current seat. Dead players keep theirs; restrained players have null. */
+  /** Current seat (an aisle spot for the Stewardess). Dead players keep theirs; restrained players have null. */
   seat: SeatId | null;
   cause: DeathCause | null;
   /** Night number when the player died or was restrained. */
@@ -116,6 +119,8 @@ export interface PlayerState {
   usedItems: ItemId[];
   /** Who poisoned this player (credited if the poison kills them). */
   poisonedBy: string | null;
+  /** The washroom can be used once per flight. */
+  washroomUsed: boolean;
 }
 
 export type BombLocation =
@@ -148,15 +153,18 @@ export type NightAction =
   | { kind: 'treat'; target: string }
   | { kind: 'sweep' }
   | { kind: 'inspect'; what: 'cart' | 'lavatory' }
+  /** Rogue Stewardess: a poisoned drink for someone sitting in her row. */
   | { kind: 'serve'; target: string }
+  /** Loyal Stewardess: check under the three seats on one side of her row. */
+  | { kind: 'check'; side: 'left' | 'right' }
   | { kind: 'plant'; where: 'seat' | 'cart' | 'lavatory'; fuse: 1 | 2 }
-  /** Anyone: look under your own seat (answered at once, and it uses up your night). */
+  /** Anyone: look under your own seat, or search the lavatory while you are in it (answered at once, and it uses up your night). */
   | { kind: 'search' }
   /** Air Marshal, once per game: handcuff someone within 2 seats. */
   | { kind: 'cuff'; target: string };
 
 export interface NightChoices {
-  moves: Record<string, SeatId | 'stay'>;
+  moves: Record<string, MoveTarget>;
   /** Pilot id → target id or 'none'. */
   seatbelts: Record<string, string>;
   /** null = pressed Done without acting. */
@@ -175,6 +183,8 @@ export interface NightChoices {
   freed: Record<string, true>;
   /** Bombs defused tonight: bomb id → who defused it. */
   defused: Record<string, string>;
+  /** Who is locked in the lavatory tonight (back in their seat by morning). */
+  washroom: string | null;
 }
 
 export interface DayChoices {
@@ -235,6 +245,8 @@ export type LogTag =
   | 'landing'
   | 'item'
   | 'defused'
+  | 'washroom'
+  | 'check'
   | 'gameover';
 
 export interface LogEntry {
@@ -305,7 +317,7 @@ export type Intent =
   | { kind: 'pack'; items: ItemId[]; ready: boolean }
   /** Use a carry-on item (a seat for the flashlight, a neighbour for sleeping pills). */
   | { kind: 'use'; item: ItemId; target?: string; seat?: SeatId }
-  | { kind: 'move'; to: SeatId | 'stay' }
+  | { kind: 'move'; to: MoveTarget }
   | { kind: 'seatbelt'; target: string }
   | { kind: 'act'; action: NightAction | null }
   | { kind: 'ready' }

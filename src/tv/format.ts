@@ -95,14 +95,16 @@ export function describeAction(game: PlayerView, action: NightAction): string {
     case 'inspect':
       return action.what === 'cart' ? 'inspect the drink cart' : 'inspect the lavatory';
     case 'serve':
-      return `serve ${nameWithSeat(game, action.target)} a drink`;
+      return `serve ${nameWithSeat(game, action.target)} a poisoned drink`;
+    case 'check':
+      return `check under the ${action.side === 'left' ? 'A, B and C' : 'D, E and F'} seats of your row`;
     case 'plant': {
       const where =
         action.where === 'seat' ? describeLocation({ kind: 'seat', seat: game.you?.seat ?? '?' }) : describeLocation({ kind: action.where });
       return `plant a bomb ${where}, set for the end of night ${game.phase.night + action.fuse}`;
     }
     case 'search':
-      return 'look under your seat';
+      return game.you?.inWashroom ? 'search the lavatory' : 'look under your seat';
     case 'cuff':
       return `handcuff ${nameWithSeat(game, action.target)}`;
   }

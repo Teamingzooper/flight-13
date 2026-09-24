@@ -8,7 +8,7 @@ import { isSaboteur } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
 import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
 import { clearedForTakeoff } from './setup';
-import { activePlayers, addLog, cellOf, getPlayer, isActive, newId, setPhase } from './state';
+import { activePlayers, addLog, cellOf, getPlayer, inWashroom, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
 import { checkWin, landingResult, resultText } from './win';
 
@@ -77,13 +77,13 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
     case 'act': {
       if (s.phase.kind !== 'night_act') return fail('Abilities are used at night, after seats change.');
       if (s.night.buckled[p.id]) return fail('You are buckled in tonight.');
-      if (s.night.searched[p.id]) return fail('You already spent tonight looking under your seat.');
+      if (s.night.searched[p.id]) return fail(inWashroom(s, p.id) ? 'You already searched the lavatory tonight.' : 'You already spent tonight looking under your seat.');
       if (intent.action) {
         const error = checkAction(s, p, intent.action);
         if (error) return fail(error);
       }
       s.night.actions[p.id] = intent.action ?? null;
-      // Looking under your seat is answered on the spot.
+      // Looking under your seat (or round the lavatory) is answered on the spot.
       if (intent.action?.kind === 'search') searchSeat(s, p, now);
       break;
     }

@@ -1,14 +1,43 @@
-import { CUFF_RADIUS, cartCell, distance, distanceToAny, isSeatInCabin, lavatoryCells } from './grid';
+import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSpot, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
 import { canCuff, canPlantBombs, isStewardess } from './roles';
-import { activePlayers, cellOf, getPlayer, isActive, occupantOf } from './state';
-import type { GameState, NightAction, PlayerState, SeatId } from './types';
+import { activePlayers, cellOf, emptySeats, getPlayer, inWashroom, isActive, occupantOf } from './state';
+import type { GameState, MoveTarget, NightAction, PlayerState, SeatId } from './types';
 
-export function checkMove(s: GameState, p: PlayerState, to: SeatId | 'stay'): string | null {
+/** Why the drink cart stops you walking from your row to `toRow` (crew squeeze past their own cart). */
+function cartInTheWay(s: GameState, p: PlayerState, toRow: number): string | null {
+  if (s.cabin.cartDestroyed || isStewardess(p.role)) return null;
+  return cartBlocks(cellOf(p).row, toRow, s.cabin.cartRow) ? `The drink cart is blocking the aisle at row ${s.cabin.cartRow}.` : null;
+}
+
+/** Once per flight, spend the night locked in the lavatory. */
+export function checkWashroom(s: GameState, p: PlayerState): string | null {
+  if (p.washroomUsed) return 'You already used the washroom on this flight.';
+  if (s.cabin.lavatoryDestroyed) return 'The lavatory is destroyed.';
+  if (!p.seat) return 'You are out of play.';
+  return cartInTheWay(s, p, s.cabin.rows + 1);
+}
+
+export function checkMove(s: GameState, p: PlayerState, to: MoveTarget): string | null {
   if (to === 'stay') return null;
-  if (typeof to !== 'string' || !isSeatInCabin(to, s.cabin.rows)) return 'That seat does not exist.';
+  if (to === 'washroom') return checkWashroom(s, p);
+  if (typeof to !== 'string') return 'That seat does not exist.';
+  if (isStewardess(p.role)) {
+    const row = aisleRow(to);
+    if (row === null || row > s.cabin.rows) return 'Crew stay in the aisle. Pick a row to walk the cart to.';
+    if (p.seat === to) return 'You are already working that row.';
+    if (activePlayers(s).some((o) => o.seat === to)) return 'Another stewardess is working that row.';
+    return null;
+  }
+  if (!isSeatInCabin(to, s.cabin.rows)) return 'That seat does not exist.';
   if (p.seat === to) return 'You are already sitting there.';
   if (occupantOf(s, to)) return 'That seat is taken.';
-  return null;
+  return cartInTheWay(s, p, parseSeat(to)!.row);
+}
+
+/** Every seat (or, for crew, aisle spot) a player could move to right now. */
+export function possibleMoves(s: GameState, p: PlayerState): SeatId[] {
+  const places = isStewardess(p.role) ? Array.from({ length: s.cabin.rows }, (_, i) => aisleSpot(i + 1)) : emptySeats(s);
+  return places.filter((to) => checkMove(s, p, to) === null);
 }
 
 export function checkSeatbelt(s: GameState, pilot: PlayerState, target: string): string | null {
@@ -28,12 +57,33 @@ function nextToLavatory(s: GameState, p: PlayerState): boolean {
   return distanceToAny(cellOf(p), lavatoryCells(s.cabin.rows)) <= 1;
 }
 
+/** Someone to use an ability on: still in play and not hiding in the lavatory. */
+function reachable(s: GameState, p: PlayerState, target: string): PlayerState | string {
+  const t = getPlayer(s, target);
+  if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+  if (t.id !== p.id && inWashroom(s, t.id)) return `${t.name} is locked in the lavatory tonight.`;
+  return t;
+}
+
+/** The row the Stewardess is working, or null for anyone else. */
+function crewRow(p: PlayerState): number | null {
+  return isStewardess(p.role) ? aisleRow(p.seat) : null;
+}
+
 export function checkAction(s: GameState, p: PlayerState, action: NightAction): string | null {
+  if (inWashroom(s, p.id)) {
+    // Locked in the lavatory: search it, or (with a bomb) leave one behind.
+    if (action?.kind === 'search') return null;
+    if (action?.kind === 'plant' && action.where === 'lavatory' && canPlantBombs(p.role) && !p.bombUsed) {
+      return action.fuse === 1 || action.fuse === 2 ? null : 'The fuse must be 1 or 2 nights.';
+    }
+    return 'You are locked in the lavatory tonight. Search it, or wait for morning.';
+  }
   switch (action?.kind) {
     case 'treat': {
       if (p.role !== 'nurse') return 'Only the Nurse can treat people.';
-      const t = getPlayer(s, action.target);
-      if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+      const t = reachable(s, p, action.target);
+      if (typeof t === 'string') return t;
       if (t.id === p.id) return p.selfTreatUsed ? 'You already treated yourself once.' : null;
       if (distance(cellOf(p), cellOf(t)) > 1) return `${t.name} is too far away. Sit next to them first.`;
       return null;
@@ -55,11 +105,18 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
       return 'Inspect the cart or the lavatory.';
     }
     case 'serve': {
-      if (!isStewardess(p.role)) return 'Only the Stewardess serves drinks.';
-      const t = getPlayer(s, action.target);
-      if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+      if (p.role !== 'stewardess_rogue') return 'Only a rogue Stewardess poisons drinks.';
+      const t = reachable(s, p, action.target);
+      if (typeof t === 'string') return t;
       if (t.id === p.id) return 'You cannot serve yourself.';
+      const row = crewRow(p);
+      if (row === null || isAisleSpot(t.seat) || cellOf(t).row !== row) return `${t.name} is not sitting in your row. Walk the cart to them first.`;
       return null;
+    }
+    case 'check': {
+      if (p.role !== 'stewardess_loyal') return 'Only a loyal Stewardess checks the rows.';
+      if (crewRow(p) === null) return 'Walk the cart to a row first.';
+      return action.side === 'left' || action.side === 'right' ? null : 'Check the left or the right side of your row.';
     }
     case 'plant': {
       if (!canPlantBombs(p.role)) return 'You have no bomb.';
@@ -78,12 +135,12 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
       return action.where === 'seat' ? null : 'Unknown place to plant a bomb.';
     }
     case 'search':
-      return p.seat ? null : 'You have no seat to look under.';
+      return p.seat && !isAisleSpot(p.seat) ? null : 'You have no seat to look under.';
     case 'cuff': {
       if (!canCuff(p.role)) return 'Only the Air Marshal carries handcuffs.';
       if (p.cuffsUsed) return 'You already used your handcuffs.';
-      const t = getPlayer(s, action.target);
-      if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+      const t = reachable(s, p, action.target);
+      if (typeof t === 'string') return t;
       if (t.id === p.id) return 'You cannot handcuff yourself.';
       if (distance(cellOf(p), cellOf(t)) > CUFF_RADIUS) return `${t.name} is too far away. Get within ${CUFF_RADIUS} seats first.`;
       return null;
@@ -105,6 +162,8 @@ export function possibleActions(s: GameState, p: PlayerState): NightAction[] {
       candidates.push({ kind: 'sweep' }, { kind: 'inspect', what: 'cart' }, { kind: 'inspect', what: 'lavatory' });
       break;
     case 'stewardess_loyal':
+      candidates.push({ kind: 'check', side: 'left' }, { kind: 'check', side: 'right' });
+      break;
     case 'stewardess_rogue':
       for (const t of everyone) candidates.push({ kind: 'serve', target: t.id });
       break;
@@ -120,7 +179,7 @@ export function possibleActions(s: GameState, p: PlayerState): NightAction[] {
     default:
       break;
   }
-  // Anyone can look under their own seat instead.
+  // Anyone can look under their own seat (or search the lavatory they are in) instead.
   candidates.push({ kind: 'search' });
   return candidates.filter((a) => checkAction(s, p, a) === null);
 }

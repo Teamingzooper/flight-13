@@ -16,7 +16,6 @@ export {
   ROLES,
   SPECIAL_CARDS,
   teamOf,
-  apparentTeam,
   isSaboteur,
   presetCards,
   validateCards,

@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aisleRow,
+  aisleSpot,
   allSeats,
+  cartBlocks,
   cartCell,
   distance,
   isAisleSeat,
   isSeatInCabin,
   lavatoryCells,
+  parsePlace,
   parseSeat,
+  rowSeats,
   rowsFor,
   seatDistance,
   seatId,
+  seatOrder,
   seatsWithin,
 } from './grid';
 
@@ -70,5 +76,34 @@ describe('grid', () => {
   it('only the last row A-C is next to the lavatory', () => {
     expect(seatsWithin(lavatoryCells(8), 1, 8).sort()).toEqual(['8A', '8B', '8C']);
     expect(seatsWithin(lavatoryCells(8), 2, 8)).toHaveLength(8);
+  });
+
+  it('names aisle spots, which are places but never seats', () => {
+    expect(aisleSpot(5)).toBe('Aisle 5');
+    expect(aisleRow('Aisle 12')).toBe(12);
+    expect(aisleRow('5C')).toBeNull();
+    expect(aisleRow(null)).toBeNull();
+    expect(parsePlace('Aisle 5')).toEqual(cartCell(5));
+    expect(parsePlace('5C')).toEqual({ row: 5, col: 2 });
+    expect(parseSeat('Aisle 5')).toBeNull();
+    expect(isSeatInCabin('Aisle 5', 8)).toBe(false);
+    expect(allSeats(8)).not.toContain('Aisle 5');
+    expect(seatOrder('5C')).toBeLessThan(seatOrder('Aisle 5'));
+    expect(seatOrder('Aisle 5')).toBeLessThan(seatOrder('5D'));
+  });
+
+  it('splits a row into its left and right seats', () => {
+    expect(rowSeats(4, 'left')).toEqual(['4A', '4B', '4C']);
+    expect(rowSeats(4, 'right')).toEqual(['4D', '4E', '4F']);
+    expect(rowSeats(4)).toHaveLength(6);
+  });
+
+  it('nobody walks past the drink cart', () => {
+    expect(cartBlocks(2, 7, 5)).toBe(true);
+    expect(cartBlocks(7, 2, 5)).toBe(true);
+    expect(cartBlocks(2, 5, 5)).toBe(false);
+    expect(cartBlocks(5, 8, 5)).toBe(false);
+    expect(cartBlocks(6, 8, 5)).toBe(false);
+    expect(cartBlocks(5, 5, 5)).toBe(false);
   });
 });

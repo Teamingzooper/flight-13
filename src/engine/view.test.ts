@@ -7,7 +7,7 @@ import { viewFor, type PlayerView } from './view';
 function secrets(): GameState {
   return makeGame([
     { id: 'b1', role: 'bomber', seat: '2B' },
-    { id: 'rogue', role: 'stewardess_rogue', seat: '6F' },
+    { id: 'rogue', role: 'stewardess_rogue', seat: 'Aisle 5' },
     { id: 'inv', role: 'investigator', seat: '3B' },
     { id: 'pilot', role: 'pilot', seat: '2A' },
     { id: 'p2', role: 'passenger', seat: '7A' },

@@ -1,7 +1,7 @@
 import { ITEM_ORDER, MAX_PACKED, possibleItemUses } from './items';
 import { nextFloat, pick, type RngHolder } from './rng';
-import { checkSeatbelt, possibleActions } from './rules';
-import { activePlayers, emptySeats, getPlayer, isActive } from './state';
+import { checkSeatbelt, checkWashroom, possibleActions, possibleMoves } from './rules';
+import { activePlayers, getPlayer, isActive } from './state';
 import type { GameState, Intent, ItemId, PlayerState } from './types';
 
 /** Use an item now and then (always legal: computed from the current state). */
@@ -24,8 +24,10 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
     case 'night_move': {
       const intents: Intent[] = s.night.buckled[p.id] ? maybeUse(s, p, h, 'extender', 0.9) : [];
       if (s.night.buckled[p.id] && intents.length === 0) return [];
-      const seats = emptySeats(s);
-      intents.push({ kind: 'move', to: seats.length > 0 && nextFloat(h) < 0.4 ? pick(h, seats) : 'stay' });
+      const seats = possibleMoves(s, p);
+      // A poisoned bot heads for the washroom if it can; now and then one goes anyway.
+      const washroom = checkWashroom(s, p) === null && nextFloat(h) < (p.poisonedNight !== null ? 0.9 : 0.08);
+      intents.push({ kind: 'move', to: washroom ? 'washroom' : seats.length > 0 && nextFloat(h) < 0.4 ? pick(h, seats) : 'stay' });
       if (p.role === 'pilot') {
         const targets = activePlayers(s).filter((t) => checkSeatbelt(s, p, t.id) === null);
         intents.push({ kind: 'seatbelt', target: targets.length > 0 && nextFloat(h) < 0.8 ? pick(h, targets).id : 'none' });

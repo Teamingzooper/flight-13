@@ -84,10 +84,10 @@ describe('bombs', () => {
     expect(act(s, 'bomber', { kind: 'plant', where: 'lavatory', fuse: 1 }).ok).toBe(false);
   });
 
-  it('a cart bomb goes off wherever the Stewardess rolled the cart', () => {
+  it('a cart bomb goes off wherever the Stewardess walked the cart, and takes her with it', () => {
     const s = makeGame([
       { id: 'bomber', role: 'bomber', seat: '2C' },
-      { id: 'stew', role: 'stewardess_loyal', seat: '8A' },
+      { id: 'stew', role: 'stewardess_loyal', seat: 'Aisle 1' },
       { id: 'target', role: 'passenger', seat: '6E' },
       { id: 'p1', role: 'passenger', seat: '1A' },
       { id: 'p2', role: 'passenger', seat: '3F' },
@@ -95,13 +95,14 @@ describe('bombs', () => {
     ]);
     advanceTo(s, 'night_act', 1);
     expect(act(s, 'bomber', { kind: 'plant', where: 'cart', fuse: 1 })).toEqual({ ok: true });
-    expect(act(s, 'stew', { kind: 'serve', target: 'target' })).toEqual({ ok: true });
-    advanceTo(s, 'dawn', 1);
+    advanceTo(s, 'night_move', 2);
+    expect(move(s, 'stew', 'Aisle 6')).toEqual({ ok: true });
+    advanceTo(s, 'night_act', 2);
     expect(s.cabin.cartRow).toBe(6);
     advanceTo(s, 'dawn', 2);
     expect(s.cabin.cartDestroyed).toBe(true);
     expect(player(s, 'target').status).toBe('dead');
-    expect(player(s, 'stew').status).toBe('alive');
+    expect(player(s, 'stew').status).toBe('dead');
     expect(player(s, 'bomber').status).toBe('alive');
     expect(player(s, 'p3').status).toBe('alive');
   });
@@ -146,7 +147,7 @@ describe('bombs', () => {
 describe('poison', () => {
   function poisonCabin(): GameState {
     return makeGame([
-      { id: 'rogue', role: 'stewardess_rogue', seat: '1A' },
+      { id: 'rogue', role: 'stewardess_rogue', seat: 'Aisle 5' },
       { id: 'bomber', role: 'bomber', seat: '1F' },
       { id: 'victim', role: 'passenger', seat: '5E' },
       { id: 'nurse', role: 'nurse', seat: '7A' },
@@ -231,24 +232,34 @@ describe('investigation', () => {
     expect(player(s, 'inv').knownBombIds).toHaveLength(1);
   });
 
-  it('the loyal Stewardess learns teams, and the Mastermind passes as a passenger', () => {
+  it('the loyal Stewardess checks one side of her row, and misses the Mastermind', () => {
     const s = makeGame([
-      { id: 'stew', role: 'stewardess_loyal', seat: '1A' },
+      { id: 'stew', role: 'stewardess_loyal', seat: 'Aisle 5' },
       { id: 'mm', role: 'mastermind', seat: '3C' },
-      { id: 'bomber', role: 'bomber', seat: '6F' },
-      { id: 'p1', role: 'passenger', seat: '4A' },
+      { id: 'bomber', role: 'bomber', seat: '5E' },
+      { id: 'p1', role: 'passenger', seat: '3A' },
       { id: 'p2', role: 'passenger', seat: '5A' },
       { id: 'p3', role: 'passenger', seat: '7A' },
       { id: 'p4', role: 'passenger', seat: '8A' },
     ]);
     advanceTo(s, 'night_act', 1);
-    act(s, 'stew', { kind: 'serve', target: 'mm' });
+    act(s, 'mm', { kind: 'plant', where: 'seat', fuse: 2 });
+    act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 });
+    expect(act(s, 'stew', { kind: 'serve', target: 'bomber' }).ok).toBe(false);
+    expect(act(s, 'stew', { kind: 'check', side: 'right' })).toEqual({ ok: true });
+    advanceTo(s, 'night_move', 2);
+    expect(move(s, 'stew', 'Aisle 3')).toEqual({ ok: true });
     advanceTo(s, 'night_act', 2);
-    act(s, 'stew', { kind: 'serve', target: 'bomber' });
+    act(s, 'stew', { kind: 'check', side: 'left' });
     advanceTo(s, 'dawn', 2);
-    const results = logTexts(s, 'stew').filter((t) => t.startsWith('You served'));
-    expect(results[0]).toContain('Passenger team');
-    expect(results[1]).toContain('Saboteur team');
+    const bomb = s.bombs.find((b) => b.planterId === 'bomber')!;
+    expect(player(s, 'stew').knownBombIds).toEqual([bomb.id]);
+    expect(logTexts(s, 'stew')).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^You worked row 5, checked under 5D, 5E and 5F and found a bomb: under seat 5E/),
+        'You worked row 3 and checked under 3A, 3B and 3C. No bombs.',
+      ]),
+    );
   });
 });
 

@@ -67,7 +67,7 @@ describe('packing', () => {
 
 describe('carry-on items', () => {
   it('an antidote neutralizes one poisoning', () => {
-    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: '3A' }]);
+    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 6' }]);
     pack(s, 'p1', ['antidote']);
     advanceTo(s, 'night_act', 1);
     act(s, 'stew', { kind: 'serve', target: 'p1' });
@@ -82,7 +82,7 @@ describe('carry-on items', () => {
   });
 
   it('the Nurse is credited before an antidote is spent', () => {
-    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: '3A' }]);
+    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 1' }]);
     pack(s, 'nurse', ['antidote']);
     advanceTo(s, 'night_act', 1);
     act(s, 'stew', { kind: 'serve', target: 'nurse' });
@@ -102,7 +102,7 @@ describe('carry-on items', () => {
     advanceTo(s, 'night_move', 3);
     move(s, 'p1', '4B');
     advanceTo(s, 'night_act', 3);
-    expect(use(s, 'p1', { item: 'defuser' })).toEqual({ ok: false, error: 'You have not found a bomb under your seat.' });
+    expect(use(s, 'p1', { item: 'defuser' })).toEqual({ ok: false, error: 'You have not found a bomb within reach.' });
     act(s, 'p1', { kind: 'search' });
     expect(viewFor(s, 'p1', 0).options?.items).toEqual([{ item: 'defuser' }]);
     expect(use(s, 'p1', { item: 'defuser' })).toEqual({ ok: true });
@@ -176,7 +176,7 @@ describe('carry-on items', () => {
   it('a compact mirror shows who used an ability on you', () => {
     const s = cabin([
       { id: 'watcher', role: 'passenger', seat: '2E' },
-      { id: 'stew', role: 'stewardess_loyal', seat: '3A' },
+      { id: 'stew', role: 'stewardess_loyal', seat: 'Aisle 2' },
     ]);
     pack(s, 'watcher', ['mirror']);
     pack(s, 'p3', ['mirror']);
@@ -186,9 +186,11 @@ describe('carry-on items', () => {
     applyIntent(s, 'pilot', { kind: 'seatbelt', target: 'watcher' }, 0);
     advanceTo(s, 'night_act', 1);
     act(s, 'nurse', { kind: 'treat', target: 'watcher' });
-    act(s, 'stew', { kind: 'serve', target: 'watcher' });
+    act(s, 'stew', { kind: 'check', side: 'right' });
     advanceTo(s, 'dawn', 1);
-    expect(logTexts(s, 'watcher')).toContain('In your compact mirror you saw: pilot turned on your seatbelt sign; nurse treated you; stew served you a drink.');
+    expect(logTexts(s, 'watcher')).toContain(
+      'In your compact mirror you saw: pilot turned on your seatbelt sign; nurse treated you; stew checked under your seat.',
+    );
     expect(logTexts(s, 'p3')).toContain('You watched your compact mirror all night. Nobody came near you.');
   });
 
@@ -265,7 +267,7 @@ describe('flight credits', () => {
   it('passengers earn 100 for a win and 50 alive at landing; the Nurse 10 per life saved', () => {
     const s = makeGame([
       { id: 'bomber', role: 'bomber', seat: '1A' },
-      { id: 'stew', role: 'stewardess_rogue', seat: '3A' },
+      { id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 5' },
       { id: 'nurse', role: 'nurse', seat: '5A' },
       { id: 'a', role: 'passenger', seat: '5B' },
       { id: 'b', role: 'passenger', seat: '7F' },
@@ -301,8 +303,12 @@ describe('old saves', () => {
     delete (old as Partial<GameState>).packed;
     for (const p of old.players) delete (p as Partial<typeof p>).items;
     delete (old.night as Partial<GameState['night']>).asleep;
+    for (const p of old.players) delete (p as Partial<typeof p>).washroomUsed;
+    delete (old.night as Partial<GameState['night']>).washroom;
     const fixed = normalizeGame(old);
     expect(fixed.players[0].items).toEqual([]);
+    expect(fixed.players[0].washroomUsed).toBe(false);
+    expect(fixed.night.washroom).toBeNull();
     expect(fixed.stats).toEqual({});
     expect(fixed.night.asleep).toEqual({});
     expect(typeof fixed.id).toBe('string');
