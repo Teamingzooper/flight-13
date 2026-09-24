@@ -113,15 +113,37 @@ type WorldComponent = typeof import('../../world/World').World;
 /** Loads the Three.js cabin on demand so the terminal and gate stay light. */
 function World3D(props: { flight: OpenFlight; snap: ClientSnapshot; state: ClientState; onUse2D: () => void }) {
   const [World, setWorld] = useState<WorldComponent | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
-    import('../../world/World').then((module) => {
-      if (alive) setWorld(() => module.World);
-    });
+    import('../../world/World')
+      .then((module) => {
+        if (alive) setWorld(() => module.World);
+      })
+      .catch(() => {
+        // The 3D files changed under us (a new version was deployed): reload to pick them up (see index.html).
+        const reloading = (globalThis as { flight13Reload?: () => boolean }).flight13Reload?.() ?? false;
+        if (alive && !reloading) setFailed(true);
+      });
     return () => {
       alive = false;
     };
   }, []);
+  if (failed) {
+    return (
+      <div class="world-failed">
+        <p>The 3D cabin did not load. Reload the page, or play on the 2D screen.</p>
+        <div class="row">
+          <button class="btn" onClick={() => location.reload()}>
+            Reload
+          </button>
+          <button class="btn primary" onClick={props.onUse2D}>
+            Use the 2D screen
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!World) {
     return (
       <div class="world-loading">

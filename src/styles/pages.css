@@ -612,3 +612,41 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Connection help ---------- */
+.net-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.net-note.ok {
+  background: rgba(91, 227, 139, 0.08);
+  color: #b7f0cb;
+}
+
+.net-note.warn {
+  background: rgba(255, 181, 71, 0.1);
+  color: #ffe1b0;
+}
+
+.net-help {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 460px;
+  text-align: left;
+}
+
+.net-help p,
+.net-help ul {
+  margin: 0;
+}
+
+.net-help ul {
+  padding-left: 18px;
+  color: var(--dim);
+  font-size: 14px;
+}
