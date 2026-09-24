@@ -25,7 +25,9 @@ import { Cart } from './scene/cart';
 import { Effects } from './scene/effects';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
+import { BOARDING_SHOTS, FADE, boardingMoment } from './boarding';
 import { LiveScreen } from './screen';
+import { GateSet } from './sets/gate';
 import { HotelSet } from './sets/hotel';
 import { auroraSkyTexture, dawnSkyTexture, runwayTexture } from './textures';
 import { WindowView } from './windows';
@@ -36,8 +38,8 @@ export interface Cabin3DOptions {
   onAimChange?: (onScreen: boolean) => void;
   /** Your look direction and screen use, throttled, for the pose channel. */
   onPose?: (pose: Pose) => void;
-  /** A captain's announcement to show as a caption. */
-  onCaption?: (text: string) => void;
+  /** An announcement to show as a caption, and who is speaking (the captain unless said otherwise). */
+  onCaption?: (text: string, who?: string) => void;
   /** A scripted moment started or finished: walking to a new seat, searching under it, or glancing at a blast. */
   onScene?: (kind: SceneKind, active: boolean) => void;
   /** Packing in the hotel room: an item picked up from the bed, or taken back out of a slot. */
@@ -138,7 +140,15 @@ export class Cabin3D {
   private readonly unlockAudio = () => cabinAudio.unlock();
   /** The hotel room you pack in before the flight (only while packing and zipping up). */
   private hotel: HotelSet | null = null;
-  private showing: 'cabin' | 'hotel' = 'cabin';
+  /** Gate 13, for the boarding queue and the boarding pass scan. */
+  private gate: GateSet | null = null;
+  private showing: 'cabin' | 'hotel' | 'gate' = 'cabin';
+  private shownScene: THREE.Scene;
+  /** This boarding: your walk down the aisle has started, or you skipped the lot. */
+  private walkedIn = false;
+  private boardingSkipped = false;
+  /** Development: pin the boarding sequence at this many seconds (null follows the phase clock). */
+  debugBoardingAt: number | null = null;
   /** Black between scenes. */
   private readonly fadeEl = document.createElement('div');
   private readonly fadeText = document.createElement('div');
@@ -170,6 +180,7 @@ export class Cabin3D {
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.shownScene = this.scene;
     const bloom = new BloomEffect({ mipmapBlur: true, luminanceThreshold: 0.82, luminanceSmoothing: 0.2, intensity: 0.75, radius: 0.65 });
     const vignette = new VignetteEffect({ offset: 0.3, darkness: 0.6 });
     const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
@@ -232,10 +243,11 @@ export class Cabin3D {
       if (game.you) this.enterHotel();
       else this.fade(1, 0, 'The passengers are packing their bags');
     } else if (kind === 'boarding') {
-      if (this.hotel) this.hotel.close();
-      else this.fade(1, 0, `Now boarding · Flight 13 to ${DESTINATIONS[game.settings.destination].city}`);
+      // The boarding sequence plays frame by frame from the phase clock (see boardingFrame).
+      this.hotel?.close();
+      if (!game.you) this.fade(1, 0, `Now boarding · Flight 13 to ${DESTINATIONS[game.settings.destination].city}`);
     } else {
-      if (this.hotel) this.leaveHotel();
+      this.endPreflight();
       if (this.dark) this.fade(0, 1.4);
     }
 
@@ -327,6 +339,16 @@ export class Cabin3D {
     this.hotel?.start();
   }
 
+  /** Skip the boarding sequence: straight to your seat to wait for takeoff. */
+  skipBoarding(): void {
+    if (this.boardingSkipped || this.lastView?.phase.kind !== 'boarding') return;
+    this.boardingSkipped = true;
+    this.endPreflight();
+    const seat = this.lastView.you?.seat ?? null;
+    if (seat && this.built) this.placeCamera(seat, false);
+    this.fade(0, 0.6);
+  }
+
   /** Capture the mouse for looking around (desktop only; the browser may insist on a click first). */
   lockPointer(): void {
     this.controls.requestLock();
@@ -363,6 +385,7 @@ export class Cabin3D {
     this.flashEl.remove();
     this.fadeEl.remove();
     this.hotel?.dispose();
+    this.gate?.dispose();
     this.built?.windows.dispose();
     this.built?.effects.dispose();
     this.controls.dispose();
@@ -448,6 +471,7 @@ export class Cabin3D {
     this.camera.fov = width < height ? 76 : 68;
     this.camera.updateProjectionMatrix();
     this.hotel?.resize(width, height);
+    this.gate?.resize(width, height);
   }
 
   /** Into the hotel room: the mouse is for picking things up, not looking around. */
@@ -456,8 +480,6 @@ export class Cabin3D {
       this.hotel = new HotelSet(this.renderer, this.renderer.domElement, this.container, {
         onPack: (item) => this.opts.onPack?.(item),
         onUnpack: (slot) => this.opts.onUnpack?.(slot),
-        // Bag zipped: fade to black and board.
-        onClosed: () => this.fade(1, 0.8, `Now boarding · Flight 13 to ${this.lastView ? DESTINATIONS[this.lastView.settings.destination].city : ''}`),
       });
       this.resize();
     }
@@ -465,21 +487,96 @@ export class Cabin3D {
       this.showing = 'hotel';
       this.controls.releaseLock();
       this.controls.suspended = true;
-      this.composer.setMainScene(this.hotel.scene);
-      this.composer.setMainCamera(this.hotel.camera);
+      this.show(this.hotel.scene, this.hotel.camera);
       cabinAudio.setEngine(0, 0.5);
     }
   }
 
-  /** Back to the cabin (the takeoff has started): the hotel room is packed away for good. */
-  private leaveHotel(): void {
-    if (!this.hotel) return;
+  /** Point the effects chain at a set's scene and camera. */
+  private show(scene: THREE.Scene, camera: THREE.Camera): void {
+    if (this.shownScene === scene) return;
+    this.shownScene = scene;
+    this.composer.setMainScene(scene);
+    this.composer.setMainCamera(camera);
+  }
+
+  private dropHotel(): void {
+    this.hotel?.dispose();
+    this.hotel = null;
+  }
+
+  private dropGate(): void {
+    this.gate?.dispose();
+    this.gate = null;
+  }
+
+  /** Back in the cabin for good (takeoff, or the boarding skipped): the other sets are packed away. */
+  private endPreflight(): void {
+    this.dropHotel();
+    this.dropGate();
     this.showing = 'cabin';
     this.controls.suspended = false;
-    this.composer.setMainScene(this.scene);
-    this.composer.setMainCamera(this.camera);
-    this.hotel.dispose();
-    this.hotel = null;
+    this.show(this.scene, this.camera);
+    if (this.lastView?.phase.kind !== 'boarding') {
+      this.walkedIn = false;
+      this.boardingSkipped = false;
+    }
+  }
+
+  /**
+   * One frame of the boarding sequence, from the phase clock: the bag zipping shut in the hotel, the queue
+   * at the gate, your pass on the scanner, then the walk down the aisle. Returns false when the cabin
+   * itself should be drawn (the walk, or once the sequence was skipped).
+   */
+  private boardingFrame(dt: number, time: number): boolean {
+    const game = this.lastView!;
+    if (this.boardingSkipped || !game.you) return false;
+    const total = phaseDurationMs(game.settings, 'boarding') / 1000;
+    const moment = boardingMoment(this.debugBoardingAt ?? total - msLeft(this.snap!, Date.now()) / 1000);
+    this.fadeEl.style.transition = 'none';
+    this.fadeEl.style.opacity = String(moment.black);
+    this.fadeText.textContent = '';
+    this.dark = moment.black > 0.5;
+    switch (moment.shot) {
+      case 'pack':
+        if (!this.hotel) return true;
+        this.showing = 'hotel';
+        this.show(this.hotel.scene, this.hotel.camera);
+        this.hotel.update(dt, time);
+        this.composer.render(dt);
+        return true;
+      case 'queue':
+      case 'scan': {
+        this.dropHotel();
+        if (!this.gate) {
+          this.gate = new GateSet(this.renderer, game, this.faceSource);
+          this.resize();
+          if (moment.shot === 'queue' && moment.t < 1) {
+            this.later(0.9, () => this.opts.onCaption?.(`Flight 13 to ${DESTINATIONS[game.settings.destination].city} is now boarding. Please have your boarding pass ready.`, 'Gate 13'));
+          }
+        }
+        this.showing = 'gate';
+        this.show(this.gate.scene, this.gate.camera);
+        this.gate.show(moment.shot, moment.t, dt, time);
+        this.composer.render(dt);
+        return true;
+      }
+      case 'aisle': {
+        this.dropHotel();
+        this.dropGate();
+        this.showing = 'cabin';
+        this.show(this.scene, this.camera);
+        const seat = game.you.seat;
+        if (!this.walkedIn && seat && this.built) {
+          this.walkedIn = true;
+          // In past the galley curtain, down the aisle, and into your seat before the picture fades.
+          const aisle = BOARDING_SHOTS.find((s) => s.shot === 'aisle')!;
+          const seconds = aisle.end - aisle.start - FADE - 0.45;
+          this.controls.board(new THREE.Vector3(0, 1.6, BULKHEAD_Z + 0.25), seconds, moment.t);
+        }
+        return false;
+      }
+    }
   }
 
   /** Fade the picture to black (1) or back (0) over `seconds`, with an optional line on the black. */
@@ -500,6 +597,7 @@ export class Cabin3D {
       const [due] = this.timers.splice(i, 1);
       due.fn();
     }
+    if (this.lastView?.phase.kind === 'boarding' && this.snap && this.boardingFrame(dt, time)) return;
     if (this.showing === 'hotel' && this.hotel) {
       this.hotel.update(dt, time);
       this.composer.render(dt);

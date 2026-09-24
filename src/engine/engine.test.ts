@@ -20,18 +20,18 @@ const say = (s: GameState, id: string, channel: ChatChannel, text: string, t: nu
   applyIntent(s, id, { kind: 'chat', channel, text }, t);
 
 describe('phase flow', () => {
-  it('packing (50 s), boarding (6 s) and takeoff (12 s), then the lights go out', () => {
+  it('packing (50 s), boarding (22 s) and takeoff (12 s), then the lights go out', () => {
     const s = smallFlight();
     expect(s.phase).toMatchObject({ kind: 'packing', night: 0, endsAt: 50_000 });
     expect(tick(s, 49_999)).toBe(false);
     expect(tick(s, 50_000)).toBe(true);
-    expect(s.phase).toMatchObject({ kind: 'boarding', night: 0, endsAt: 56_000 });
-    expect(tick(s, 56_000)).toBe(true);
-    expect(s.phase).toMatchObject({ kind: 'takeoff', night: 0, endsAt: 68_000 });
+    expect(s.phase).toMatchObject({ kind: 'boarding', night: 0, endsAt: 72_000 });
+    expect(tick(s, 72_000)).toBe(true);
+    expect(s.phase).toMatchObject({ kind: 'takeoff', night: 0, endsAt: 84_000 });
     expect(s.log.at(-1)?.tag).toBe('takeoff');
-    expect(tick(s, 67_999)).toBe(false);
-    expect(tick(s, 68_000)).toBe(true);
-    expect(s.phase).toMatchObject({ kind: 'night_move', night: 1, startedAt: 68_000, endsAt: 88_000 });
+    expect(tick(s, 83_999)).toBe(false);
+    expect(tick(s, 84_000)).toBe(true);
+    expect(s.phase).toMatchObject({ kind: 'night_move', night: 1, startedAt: 84_000, endsAt: 104_000 });
   });
 
   it('a phase ends 3 seconds after everyone has submitted', () => {

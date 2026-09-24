@@ -25,7 +25,7 @@ export const TIMERS: Record<TimerPreset, TimerSet> = {
 };
 
 /** Seconds for packing and the cutscene phases (packing ends early once everyone is packed). */
-export const FIXED_TIMERS = { packing: 50, boarding: 6, takeoff: 12, dawn: 10, verdict: 8 } as const;
+export const FIXED_TIMERS = { packing: 50, boarding: 22, takeoff: 12, dawn: 10, verdict: 8 } as const;
 
 export function defaultSettings(): Settings {
   return {
