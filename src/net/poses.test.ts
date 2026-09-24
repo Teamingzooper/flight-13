@@ -60,6 +60,25 @@ describe('pose channel', () => {
     expect(captain.poses.get(ann.playerId!)).toEqual({ yaw: 0.1, pitch: 0, lean: false });
   });
 
+  it('forgets the pose of a passenger who leaves', async () => {
+    const { host, captain, board, advance } = flight();
+    const ann = board('Ann');
+    await settle();
+    ann.sendPose({ yaw: 0.5, pitch: -0.2, lean: true });
+    await settle();
+    advance(200);
+    host.tickNow();
+    await settle();
+    const id = ann.playerId!;
+    expect(captain.poses.has(id)).toBe(true);
+    ann.close();
+    await settle();
+    advance(200);
+    host.tickNow();
+    await settle();
+    expect(captain.poses.has(id)).toBe(false);
+  });
+
   it('cleans up pose messages', () => {
     expect(parseClientMessage({ t: 'pose', yaw: 99, pitch: -5, lean: 'yes' })).toEqual({ t: 'pose', yaw: Math.PI, pitch: -1.3, lean: false });
     expect(parseClientMessage({ t: 'pose', yaw: Number.NaN, pitch: 0 })).toBeNull();

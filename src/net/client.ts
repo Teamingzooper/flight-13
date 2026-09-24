@@ -118,6 +118,8 @@ export class ClientSession {
         this.update({ status: 'refused', reason: msg.reason });
         break;
       case 'poses':
+        // The host always sends everyone's pose, so anyone missing has left.
+        for (const id of [...this.poses.keys()]) if (!(id in msg.poses)) this.poses.delete(id);
         for (const [id, [yaw, pitch, lean]] of Object.entries(msg.poses)) this.poses.set(id, { yaw, pitch, lean: lean === 1 });
         break;
     }

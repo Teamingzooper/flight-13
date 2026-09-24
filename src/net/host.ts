@@ -203,6 +203,7 @@ export class HostSession {
     if (!peer?.playerId || this.isConnected(peer.playerId)) return;
     const now = this.now();
     this.disconnectedAt.set(peer.playerId, now);
+    if (this.poses.delete(peer.playerId)) this.posesChanged = true;
     if (this.snapshot.game) submitDefaults(this.snapshot.game, peer.playerId, now);
     this.changed();
   }

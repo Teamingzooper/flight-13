@@ -144,6 +144,13 @@ export class SeatControls {
     if (on) this.releaseLock();
   }
 
+  /** Where you are looking relative to your seat, and whether you are using your screen. */
+  pose(): { yaw: number; pitch: number; lean: boolean } {
+    // Using the screen reads as sitting at rest; the lean flag (dropped at night) shows the reach.
+    if (this.leanTarget === 1) return { yaw: 0, pitch: REST_PITCH, lean: true };
+    return { yaw: this.yaw - this.restYaw, pitch: this.pitch, lean: false };
+  }
+
   /** Development helper: aim the camera directly. */
   debugLook(yaw: number, pitch: number): void {
     this.targetYaw = this.yaw = yaw;

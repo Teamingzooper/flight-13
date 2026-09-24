@@ -23,7 +23,13 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
 
   useEffect(() => {
     try {
-      const c = new Cabin3D(host.current!, { onScreenClick: () => setLeaning(true), onLockChange: setLocked, onAimChange: setAim });
+      const c = new Cabin3D(host.current!, {
+        onScreenClick: () => setLeaning(true),
+        onLockChange: setLocked,
+        onAimChange: setAim,
+        onPose: (pose) => flight.client.sendPose(pose),
+      });
+      c.setPoseSource(flight.client.poses);
       cabin.current = c;
       if (import.meta.env.DEV) (globalThis as { cabin3d?: Cabin3D }).cabin3d = c;
       return () => {
