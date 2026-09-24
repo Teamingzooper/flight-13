@@ -4,7 +4,7 @@ import type { ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { clock, phaseTitle } from '../tv/format';
 import { IconSound } from '../tv/icons';
-import { PhaseOverlay } from '../tv/Overlays';
+import { PhaseOverlay, usePhaseOverlayOpen } from '../tv/Overlays';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
 import { cabinAudio } from './audio';
 import { Cabin3D } from './Cabin3D';
@@ -34,6 +34,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const host = useRef<HTMLDivElement>(null);
   const cabin = useRef<Cabin3D | null>(null);
   const [leaning, setLeaning] = useState(false);
+  const [walking, setWalking] = useState(false);
+  const walkingRef = useRef(false);
   const [locked, setLocked] = useState(false);
   const [aim, setAim] = useState(false);
   const [leavingOpen, setLeavingOpen] = useState(false);
@@ -42,15 +44,31 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
+  const kind = game.phase.kind;
+  /** Use the seatback screen, unless you are halfway down the aisle. */
+  const openScreen = () => {
+    if (!walkingRef.current) setLeaning(true);
+  };
+
+  // Let the lights come up (and a blast play out) before the morning report covers the cabin.
+  const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
+  const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 3800 : 1500) : 0);
+  const cardOpen = usePhaseOverlayOpen(game) && !holdReport;
+  // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
+  const windowOpen = leaning || cardOpen || leavingOpen;
 
   useEffect(() => {
     try {
       const c = new Cabin3D(host.current!, {
-        onScreenClick: () => setLeaning(true),
+        onScreenClick: openScreen,
         onLockChange: setLocked,
         onAimChange: setAim,
         onPose: (pose) => flight.client.sendPose(pose),
         onCaption: (text) => setCaption({ text, id: Date.now() }),
+        onWalk: (on) => {
+          walkingRef.current = on;
+          setWalking(on);
+        },
       });
       c.setPoseSource(flight.client.poses);
       cabin.current = c;
@@ -74,6 +92,27 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     cabin.current?.setLeaning(leaning);
   }, [leaning]);
 
+  const wasOpen = useRef(windowOpen);
+  useEffect(() => {
+    if (wasOpen.current === windowOpen) return;
+    wasOpen.current = windowOpen;
+    if (windowOpen) cabin.current?.unlockPointer();
+    else cabin.current?.lockPointer();
+  }, [windowOpen]);
+
+  // Changing seats: put the screen away, capture the mouse and walk; on arrival, open the new screen.
+  const reopen = useRef(false);
+  useEffect(() => {
+    if (walking) {
+      reopen.current = leaning;
+      if (leaning) setLeaning(false);
+      else if (!windowOpen) cabin.current?.lockPointer();
+    } else if (reopen.current) {
+      reopen.current = false;
+      setLeaning(true);
+    }
+  }, [walking]);
+
   useEffect(() => {
     if (!caption) return undefined;
     const id = setTimeout(() => setCaption(null), CAPTION_MS);
@@ -86,7 +125,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       if (typing) return;
       if (!leaning && (e.key === 'e' || e.key === 'E' || e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
-        setLeaning(true);
+        openScreen();
       } else if (leaning && e.key === 'Escape') {
         setLeaning(false);
       }
@@ -107,11 +146,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   }
 
   const you = game.you;
-  const kind = game.phase.kind;
-  // Let the lights come up (and a blast play out) before the morning report covers the cabin.
-  const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
-  const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 3800 : 1500) : 0);
   const needsInput =
+    !walking &&
     !!you &&
     you.status === 'alive' &&
     !you.buckled &&
@@ -119,14 +155,16 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
   const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
-  const hint = needsInput
-    ? `Your move: ${useIt}`
-    : TOUCH
-      ? 'Use screen · drag to look around'
-      : locked
-        ? 'Aim at your screen and click to use it · Esc frees the mouse'
-        : 'Click to look around · click your screen (or press E) to use it';
-  const hasScreen = !!you?.seat;
+  const hint = walking
+    ? `Walking to seat ${you?.seat ?? ''}…`
+    : needsInput
+      ? `Your move: ${useIt}`
+      : TOUCH
+        ? 'Use screen · drag to look around'
+        : locked
+          ? 'Aim at your screen and click to use it · Esc frees the mouse'
+          : 'Click to look around · click your screen (or press E) to use it';
+  const hasScreen = !!you?.seat && !walking;
 
   return (
     <div class={`world${leaning ? ' leaning' : ''}`}>
@@ -158,7 +196,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             </div>
           )}
           {TOUCH && hasScreen ? (
-            <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={() => setLeaning(true)}>
+            <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={openScreen}>
               {hint}
             </button>
           ) : (

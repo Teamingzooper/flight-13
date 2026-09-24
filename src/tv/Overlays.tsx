@@ -26,15 +26,37 @@ function useDismissed(): [string | null, (key: string) => void] {
   ];
 }
 
-export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
-  const { game } = ctx;
-  const key = `${game.phase.kind}:${game.phase.night}`;
-  const [closed, setClosed] = useDismissed();
-  if (closed === key) return null;
-  const close = () => setClosed(key);
+const overlayKey = (game: PlayerView) => `${game.phase.kind}:${game.phase.night}`;
+
+/** Whether this moment has a card (boarding pass, morning report, verdict, end screen) not yet dismissed. */
+function cardShowing(game: PlayerView, closed: string | null): boolean {
+  if (closed === overlayKey(game)) return false;
   switch (game.phase.kind) {
     case 'takeoff':
-      return game.you ? <BoardingPass game={game} onClose={close} /> : null;
+      return !!game.you;
+    case 'dawn':
+    case 'verdict':
+    case 'ended':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** True while `PhaseOverlay` shows a card, so the 3D view can free the mouse for it. */
+export function usePhaseOverlayOpen(game: PlayerView): boolean {
+  const [closed] = useDismissed();
+  return cardShowing(game, closed);
+}
+
+export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
+  const { game } = ctx;
+  const [closed, setClosed] = useDismissed();
+  if (!cardShowing(game, closed)) return null;
+  const close = () => setClosed(overlayKey(game));
+  switch (game.phase.kind) {
+    case 'takeoff':
+      return <BoardingPass game={game} onClose={close} />;
     case 'dawn':
       return <MorningReport game={game} onClose={close} />;
     case 'verdict':

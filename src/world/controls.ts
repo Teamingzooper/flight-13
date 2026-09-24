@@ -108,7 +108,18 @@ export class SeatControls {
    * When `animate` is set the camera stands up, walks the aisle and sits down again.
    */
   setSeat(eye: THREE.Vector3, screen: THREE.Matrix4 | null, animate: boolean, restYaw = 0): void {
-    const from = this.walk ? this.walk.curve.getPointAt(this.walk.t) : this.eye.clone();
+    const leaning = this.lean > 0;
+    const from = this.walk ? this.walk.curve.getPointAt(this.walk.t) : leaning ? this.camera.position.clone() : this.eye.clone();
+    // Moving (or losing your screen) ends any lean at once; a walk sets off from wherever the camera is.
+    if (animate || !screen) {
+      if (leaning) {
+        this.euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
+        this.targetYaw = this.yaw = this.euler.y;
+        this.targetPitch = this.pitch = this.euler.x;
+      }
+      this.lean = 0;
+      this.leanTarget = 0;
+    }
     if (animate) {
       const standFrom = new THREE.Vector3(from.x * 0.55, 1.55, from.z);
       const standTo = new THREE.Vector3(eye.x * 0.55, 1.55, eye.z);
@@ -140,6 +151,8 @@ export class SeatControls {
   }
 
   setLeaning(on: boolean): void {
+    // No using the screen halfway down the aisle.
+    if (on && this.walk) return;
     this.leanTarget = on && this.hasScreen ? 1 : 0;
     if (on) this.releaseLock();
   }
