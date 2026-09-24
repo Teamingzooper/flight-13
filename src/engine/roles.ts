@@ -16,7 +16,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     name: 'Passenger',
     team: 'passengers',
     blurb: 'An ordinary traveller with sharp eyes.',
-    howTo: 'No night ability. Change seats, watch closely, argue, and vote.',
+    howTo: 'No special ability, but at night you can look under your seat for anything left behind. Change seats, watch closely, argue, and vote.',
   },
   pilot: {
     id: 'pilot',

@@ -175,7 +175,7 @@ function VerdictCard({ game, onClose }: { game: PlayerView; onClose: () => void 
           )}
           {note && (
             <blockquote class="blackbox-quote">
-              \u201c{String(note.data?.note ?? '')}\u201d<cite>{restrained.name}\u2019s black box note</cite>
+              “{String(note.data?.note ?? '')}”<cite>{restrained.name}’s black box note</cite>
             </blockquote>
           )}
         </>

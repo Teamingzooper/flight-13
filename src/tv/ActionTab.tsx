@@ -483,7 +483,11 @@ function GhostPanel({ game }: { game: PlayerView }) {
         <p>
           You were the <b>{roleName(you.role)}</b> ({teamName(you.team)}). Keep watching, and talk with the other ghosts in Chat.
         </p>
-        {you.note && <blockquote class="blackbox-quote">\u201c{you.note}\u201d<cite>Your black box note was read out</cite></blockquote>}
+        {you.note && (
+          <blockquote class="blackbox-quote">
+            “{you.note}”<cite>Your black box note was read out</cite>
+          </blockquote>
+        )}
       </div>
       <Notes game={game} />
     </div>

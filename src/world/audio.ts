@@ -179,6 +179,39 @@ class CabinAudio {
     }
   }
 
+  /** A footstep on the aisle carpet. */
+  step(): void {
+    const t = this.now();
+    if (t === null) return;
+    const v = 0.8 + Math.random() * 0.4;
+    this.noise(t, 0.09, { type: 'lowpass', frequency: 380 * v }, 0.32 * v, 0.004, true);
+    this.noise(t + 0.01, 0.03, { type: 'bandpass', frequency: 2200 * v, q: 1.5 }, 0.05, 0.002);
+  }
+
+  /** Clothes against the seat as you stand up or sit down. */
+  rustle(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.45, { type: 'bandpass', frequency: 1900, to: 1200, q: 0.9 }, 0.09, 0.08);
+    this.noise(t + 0.05, 0.3, { type: 'lowpass', frequency: 260 }, 0.18, 0.03, true);
+  }
+
+  /** The click of a phone flashlight. */
+  click(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.012, { type: 'highpass', frequency: 3500 }, 0.25, 0.001);
+    this.tone(t, 'square', 1900, 1900, 0.02, 0.02);
+  }
+
+  /** A bomb's fuse ticking down: `urgency` 0..1 raises the pitch. */
+  beep(urgency: number): void {
+    const t = this.now();
+    if (t === null) return;
+    const u = clamp(urgency, 0, 1);
+    this.tone(t, 'square', 2300 + u * 900, 2300 + u * 900, 0.07, 0.035 + u * 0.03, { type: 'lowpass', frequency: 6000 });
+  }
+
   /** A zip tie being pulled tight. */
   zip(): void {
     const ctx = this.ctx;

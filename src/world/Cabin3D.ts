@@ -37,9 +37,11 @@ export interface Cabin3DOptions {
   onPose?: (pose: Pose) => void;
   /** A captain's announcement to show as a caption. */
   onCaption?: (text: string) => void;
-  /** Your camera started (true) or finished (false) walking to a new seat. */
-  onWalk?: (walking: boolean) => void;
+  /** A scripted moment started or finished: walking to a new seat, searching under it, or glancing at a blast. */
+  onScene?: (kind: SceneKind, active: boolean) => void;
 }
+
+export type SceneKind = 'walk' | 'search' | 'glance';
 
 interface Built {
   rows: number;
@@ -56,6 +58,8 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** Cruise power for the engine drone. */
 const CRUISE = 0.45;
+/** Seconds between a bomb starting to beep (and everyone looking at it) and the blast. */
+const PREROLL = 1.25;
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
@@ -117,7 +121,15 @@ export class Cabin3D {
   private nextBump = 0;
   private gearUp = false;
   private engine = CRUISE;
-  private walking = false;
+  /** Your phone flashlight, for looking under your seat. */
+  private readonly flashlight = new THREE.SpotLight('#fff1dc', 0, 5, 0.5, 0.55, 1.6);
+  private searching = false;
+  /** Blast victims stay upright until their bomb actually goes off on screen. */
+  private readonly holdAlive = new Set<string>();
+  /** Extra delay for announcements when a blast plays first. */
+  private batchDelay = 0;
+  /** With several blasts at once, the one everyone turns to (the nearest). */
+  private glanceAt: THREE.Vector3 | null = null;
   private readonly unlockAudio = () => cabinAudio.unlock();
 
   constructor(
@@ -157,7 +169,20 @@ export class Cabin3D {
     this.controls = new SeatControls(this.camera, this.renderer.domElement, {
       onTap: (ndc) => this.tap(ndc),
       onLockChange: (locked) => opts.onLockChange?.(locked),
+      onStep: () => cabinAudio.step(),
+      onRustle: () => cabinAudio.rustle(),
+      onFlashlight: (on) => {
+        this.flashlight.intensity = on ? 9 : 0;
+        cabinAudio.click();
+      },
+      onScript: (kind, active) => {
+        if (kind === 'search') this.searching = active;
+        opts.onScene?.(kind, active);
+      },
     });
+    this.flashlight.position.set(0.06, -0.06, 0);
+    this.flashlight.target.position.set(0, -0.12, -1);
+    this.camera.add(this.flashlight, this.flashlight.target);
 
     this.flashEl.className = 'world-flash';
     container.appendChild(this.flashEl);
@@ -186,17 +211,44 @@ export class Cabin3D {
     this.wantedMode = night ? 'night' : game.blackout ? 'blackout' : 'day';
     if (fresh) lighting.setMode(this.wantedMode, true);
 
-    const cues = game === this.lastView ? [] : directorCues(this.lastView, game);
+    const prev = this.lastView;
+    const cues = game === prev ? [] : directorCues(prev, game);
     this.lastView = game;
+    const blast = cues.some((c) => c.kind === 'explosion');
+    this.batchDelay = blast ? PREROLL + 0.6 : 0;
+    this.glanceAt = null;
+    if (blast && this.built) {
+      let best = Infinity;
+      for (const c of cues) {
+        if (c.kind !== 'explosion' || c.centers.length === 0) continue;
+        const at = this.built.effects.blastPoint(c.centers[0], c.where);
+        const d = at.distanceTo(this.camera.position);
+        if (d < best) {
+          best = d;
+          this.glanceAt = at;
+        }
+      }
+    }
+    // People caught in a blast stay upright until it goes off on screen.
+    for (const c of cues) if (c.kind === 'explosion') for (const id of c.victims) this.holdAlive.add(id);
     const bermuda = game.settings.destination === 'BDA';
     const sky = kind === 'takeoff' ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
     windows.show(sky, fresh || kind === 'takeoff' ? 0 : 1.4);
     if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
-    const rows = game.cabin.rows;
-    this.people.sync(game.players, this.youId, (i) => rearSpot(rows, i));
+    this.syncPeople(game);
     this.aimVotes(game);
+    // Known bombs show as devices (planters, investigators, and anyone who found one under their seat).
+    effects.devices.set(
+      game.bombs
+        .filter((b) => !b.exploded)
+        .map((b) => ({
+          id: b.id,
+          place: b.location.kind === 'seat' ? { kind: 'seat' as const, cell: grid.parseSeat(b.location.seat)! } : { kind: b.location.kind },
+        })),
+      (place) => effects.devicePoint(place),
+    );
 
     const seat = game.you?.seat ?? null;
     const key = seat ?? (game.you ? 'aft' : 'tower');
@@ -218,6 +270,11 @@ export class Cabin3D {
     }
 
     for (const cue of cues) this.play(cue, game);
+    if (prev && game.you && seat) {
+      // You just looked under your seat: crouch down and see for yourself.
+      if (game.you.searched && !prev.you?.searched) this.controls.search();
+    }
+    if (prev?.you?.status === 'alive' && game.you?.status === 'dead' && !this.holdAlive.has(game.you.id)) this.dieOnScreen();
     // Lasting damage comes from the state, so a reload shows the same cabin.
     effects.setScorched(game.cabin.scorched, (cell) => this.cellPoint(cell));
     const blasted = game.bombs.some((b) => b.exploded);
@@ -360,14 +417,16 @@ export class Cabin3D {
       this.flight(time, built);
       built.lighting.update(dt);
       built.windows.update(dt);
-      built.effects.update(dt, time);
+      built.effects.update(dt, time, this.cart.group.position.z);
     }
     this.flash *= Math.exp(-dt * 5);
     this.flashEl.style.opacity = this.flash > 0.01 ? String(this.flash) : '0';
     this.controls.update(dt, time);
-    if (this.controls.walking !== this.walking) {
-      this.walking = this.controls.walking;
-      this.opts.onWalk?.(this.walking);
+    // Your own body follows the camera down the aisle, and keeps out of the way while you search.
+    const me = this.youId ? this.people.actor(this.youId) : undefined;
+    if (me) {
+      me.drive(this.controls.body());
+      me.hidden = this.searching;
     }
     this.cart.update(dt, time);
     this.applyPoses(time);
@@ -471,21 +530,25 @@ export class Cabin3D {
         cabinAudio.clunk();
         break;
       case 'lightsOn':
-        this.later(cue.afterBlast ? 1.6 : 0, () => cabinAudio.clunk());
+        this.later(cue.afterBlast ? PREROLL + 1.6 : 0, () => cabinAudio.clunk());
         break;
-      case 'explosion':
+      case 'explosion': {
         // A cart or lavatory blast covers several cells but is one explosion.
-        for (const center of cue.where === 'seat' ? cue.centers : cue.centers.slice(0, 1)) {
-          const at = built.effects.blastPoint(center, cue.where);
-          built.effects.explode(at);
-          const distance = this.camera.position.distanceTo(at);
-          cabinAudio.boom(distance);
-          this.controls.shake(0.03 + 0.14 * clamp01(1 - distance / 10));
-          this.flash = Math.max(this.flash, clamp01(1.15 - distance / 9) * 0.9 + 0.1);
+        const points = (cue.where === 'seat' ? cue.centers : cue.centers.slice(0, 1)).map((c) => built.effects.blastPoint(c, cue.where));
+        if (points.length === 0) break;
+        // First the (nearest) device beeps faster and faster and every head turns to it...
+        const focus = this.glanceAt && points.some((p) => p.equals(this.glanceAt!)) ? this.glanceAt : null;
+        if (focus) {
+          built.effects.arm(focus);
+          this.controls.glance(focus.clone().add(new THREE.Vector3(0, 0.15, 0)), PREROLL + 1.3);
+          this.opts.onScene?.('glance', true);
+          for (let i = 0; i < 7; i++) this.later(PREROLL * (1 - 0.7 ** i) - 0.05, () => cabinAudio.beep(i / 6));
         }
-        this.darkUntil = this.time + 1.6;
-        this.later(0.35, () => built.effects.masks.drop());
+        // ...then it goes off, and the lights stay dark a moment longer.
+        this.darkUntil = this.time + PREROLL + 1.6;
+        this.later(PREROLL, () => this.detonate(points, cue.victims));
         break;
+      }
       case 'turbulence':
         this.turbulentNight = game.phase.night;
         this.nextBump = this.time + 2.5;
@@ -501,14 +564,48 @@ export class Cabin3D {
         this.later(1.2, () => cabinAudio.chime());
         break;
       case 'pa': {
-        // One ding per announcement, captions one after another.
-        const at = Math.max(this.time + 0.2, this.captionAt);
+        // One ding per announcement, captions one after another (after any blast).
+        const at = Math.max(this.time + 0.2 + this.batchDelay, this.captionAt);
         this.captionAt = at + 4.5;
         this.later(at - this.time, () => cabinAudio.ding());
         this.later(at - this.time + 0.9, () => this.opts.onCaption?.(cue.text));
         break;
       }
     }
+  }
+
+  /** The blast itself: effects, sound, shake, the victims fall, the masks drop. */
+  private detonate(points: THREE.Vector3[], victims: string[]): void {
+    const built = this.built;
+    if (!built) return;
+    built.effects.disarm();
+    for (const at of points) {
+      built.effects.explode(at);
+      const distance = this.camera.position.distanceTo(at);
+      cabinAudio.boom(distance);
+      this.controls.shake(0.03 + 0.14 * clamp01(1 - distance / 10));
+      this.flash = Math.max(this.flash, clamp01(1.15 - distance / 9) * 0.9 + 0.1);
+    }
+    for (const id of victims) this.holdAlive.delete(id);
+    if (this.lastView) this.syncPeople(this.lastView);
+    if (this.youId && victims.includes(this.youId)) this.dieOnScreen();
+    this.later(0.35, () => built.effects.masks.drop());
+    this.later(1.3, () => this.opts.onScene?.('glance', false));
+  }
+
+  /** You died: slump in your seat, then straighten up again as a ghost. */
+  private dieOnScreen(): void {
+    this.controls.slump(true);
+    this.later(4.5, () => this.controls.slump(false));
+  }
+
+  /** Seat, walk, slump or restrain everyone, keeping blast victims upright until their blast. */
+  private syncPeople(game: PlayerView): void {
+    const rows = game.cabin.rows;
+    const players = this.holdAlive.size
+      ? game.players.map((p) => (this.holdAlive.has(p.id) ? { ...p, status: 'alive' as const, cause: null } : p))
+      : game.players;
+    this.people.sync(players, this.youId, (i) => rearSpot(rows, i));
   }
 
   private later(seconds: number, fn: () => void): void {
