@@ -209,7 +209,7 @@ export function resolveNight(s: GameState, now: number): void {
   }
   if (s.night.anomaly === 'runaway_cart' && !s.cabin.cartDestroyed) {
     s.cabin.cartRow = 1 + nextInt(s, rows);
-    addLog(s, now, 'all', 'anomaly', `In the dark, the drink cart broke loose and rolled to row ${s.cabin.cartRow}.`);
+    addLog(s, now, 'all', 'anomaly', `In the dark, the drink cart broke loose and rolled to row ${s.cabin.cartRow}.`, { anomaly: 'runaway_cart' });
   } else if (s.cabin.cartRow !== cartRowAtAct) {
     addLog(s, now, 'all', 'cart', `The drink cart is now at row ${s.cabin.cartRow}.`);
   }
@@ -269,7 +269,7 @@ export function resolveNight(s: GameState, now: number): void {
   // 9. Twists and the quiet-night note.
   if (s.night.anomaly === 'blackout') {
     s.blackoutNight = n;
-    addLog(s, now, 'all', 'anomaly', 'The cabin lights failed. The seat map is offline today.');
+    addLog(s, now, 'all', 'anomaly', 'The cabin lights failed. The seat map is offline today.', { anomaly: 'blackout' });
   }
   if (!s.incidentAtDawn) addLog(s, now, 'all', 'info', 'The night passed quietly.');
 }
