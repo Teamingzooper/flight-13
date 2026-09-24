@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
-import { NOTE_MAX_LENGTH, ROLES, grid, type NightAction, type PlayerView } from '../engine';
+import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, type NightAction, type PlayerView } from '../engine';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, roleName, teamName, whenLabel } from './format';
-import { SeatMap } from './SeatMap';
+import { SeatMap, type Spot } from './SeatMap';
 
 type TargetAction = Extract<NightAction, { target: string }>;
 type Check = 'sweep' | 'cart' | 'lavatory';
@@ -178,18 +178,23 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   return (
     <div class="stack">
       {body}
-      {canSearch && <SearchCard ctx={ctx} instead={hasAbility} />}
+      {/* Looking under your seat is the other option, until you have picked your ability tonight. */}
+      {canSearch && !(hasAbility && mine.action) && <SearchCard ctx={ctx} instead={hasAbility} />}
       <div class="done-row">
-        <span>
-          {mine.acted
-            ? mine.action
-              ? `Tonight you will ${describeAction(game, mine.action)}.`
-              : 'You are resting tonight.'
-            : 'Press Done when you are finished. Everyone has to.'}
-        </span>
-        <button class={`btn${mine.acted ? '' : ' primary'}`} onClick={() => void send({ kind: 'act', action: mine.acted ? mine.action : null })}>
-          {mine.acted ? 'Done ✓' : 'Done'}
-        </button>
+        {mine.acted ? (
+          mine.action ? (
+            <span class="done-ok">✓ Tonight you will {describeAction(game, mine.action)}. You can change your mind until dawn.</span>
+          ) : (
+            <span>You are resting tonight. Changed your mind? Pick something above.</span>
+          )
+        ) : (
+          <>
+            <span>{hasAbility ? 'Pick what to do above, or rest tonight.' : 'Nothing you want to do? Rest, so the night can end sooner.'}</span>
+            <button class="btn" onClick={() => void send({ kind: 'act', action: null })}>
+              Rest tonight
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -224,119 +229,211 @@ function TargetPicker({ ctx, title, hint, actions, empty }: { ctx: TVContext; ti
   );
 }
 
+/** The Investigator checks one place a night: tap a card (or the place on the map). */
 function InvestigatorPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
   const { game, send } = ctx;
-  const [hover, setHover] = useState<Check | null>(null);
+  const [focus, setFocus] = useState<Check | null>(null);
   const you = game.you!;
-  const rows = game.cabin.rows;
+  const { rows, cartRow, cartDestroyed, lavatoryDestroyed } = game.cabin;
   const current = game.mine?.action ?? null;
+  const chosen: Check | null = current?.kind === 'sweep' ? 'sweep' : current?.kind === 'inspect' ? current.what : null;
   const find = (key: Check) => actions.find((a) => (key === 'sweep' ? a.kind === 'sweep' : a.kind === 'inspect' && a.what === key));
-  const isCurrent = (key: Check) => !!current && (key === 'sweep' ? current.kind === 'sweep' : current.kind === 'inspect' && current.what === key);
   const areas: Record<Check, Set<string>> = {
     sweep: new Set(grid.seatsWithin([grid.parseSeat(you.seat!)!], grid.SWEEP_RADIUS, rows)),
-    cart: new Set(grid.seatsWithin([grid.cartCell(game.cabin.cartRow)], 1, rows)),
+    cart: new Set(grid.seatsWithin([grid.cartCell(cartRow)], 1, rows)),
     lavatory: new Set(grid.seatsWithin(grid.lavatoryCells(rows), 1, rows)),
   };
-  const shown: Check = hover ?? (current?.kind === 'inspect' ? current.what : 'sweep');
-  const options: { key: Check; title: string; sub: string }[] = [
-    { key: 'sweep', title: 'Sweep nearby seats', sub: 'Every seat within 1 of you, diagonals included.' },
+  const choices: { key: Check; title: string; ok: string; no: string }[] = [
+    { key: 'sweep', title: `The seats around ${you.seat}`, ok: 'Your seat and every seat touching it.', no: '' },
     {
       key: 'cart',
-      title: 'Inspect the drink cart',
-      sub: find('cart')
-        ? `It is right next to you (row ${game.cabin.cartRow}).`
-        : game.cabin.cartDestroyed
-          ? 'The cart is gone.'
-          : 'Sit in an aisle seat next to the cart first (highlighted).',
+      title: 'The drink cart',
+      ok: `Row ${cartRow}, right next to you.`,
+      no: cartDestroyed ? 'The cart is gone.' : `Too far. Sit in an aisle seat by row ${cartRow} first.`,
     },
     {
       key: 'lavatory',
-      title: 'Inspect the lavatory',
-      sub: find('lavatory') ? 'You are right next to it.' : game.cabin.lavatoryDestroyed ? 'The lavatory is destroyed.' : `Sit in row ${rows}, seats A–C, first.`,
+      title: 'The lavatory',
+      ok: 'Right next to you.',
+      no: lavatoryDestroyed ? 'The lavatory is destroyed.' : `Too far. Sit in row ${rows}, seats A–C, first.`,
     },
   ];
+  const pick = (key: Check) => {
+    const action = find(key);
+    if (action) void send({ kind: 'act', action });
+  };
+  const spots = new Set<Spot>();
+  if (find('sweep')) spots.add('seat');
+  if (find('cart')) spots.add('cart');
+  if (find('lavatory')) spots.add('lavatory');
+  const shown: Check = focus ?? chosen ?? 'sweep';
   return (
     <div class="stack">
       <div class="panel-title">
-        Check for bombs <span class="muted">Highlighted seats show where each check reaches.</span>
+        Check one place for bombs <span class="muted">Tap a card or the place on the map. You find out at dawn.</span>
       </div>
-      <div class="option-grid">
-        {options.map((o) => {
-          const action = find(o.key);
+      <div class="choice-grid">
+        {choices.map((c) => {
+          const available = !!find(c.key);
+          const on = chosen === c.key;
           return (
             <button
-              key={o.key}
-              class={`option${isCurrent(o.key) ? ' on' : ''}`}
-              disabled={!action}
-              onMouseEnter={() => setHover(o.key)}
-              onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(o.key)}
-              onBlur={() => setHover(null)}
-              onClick={() => action && void send({ kind: 'act', action })}
+              key={c.key}
+              class={`choice${on ? ' on' : ''}`}
+              disabled={!available}
+              onMouseEnter={() => setFocus(c.key)}
+              onMouseLeave={() => setFocus(null)}
+              onFocus={() => setFocus(c.key)}
+              onBlur={() => setFocus(null)}
+              onClick={() => pick(c.key)}
             >
-              <b>{o.title}</b>
-              <span>{o.sub}</span>
+              <span class="choice-head">
+                <b>{c.title}</b>
+                <span class="choice-tag">{on ? '✓ Tonight' : available ? 'Check' : 'Out of reach'}</span>
+              </span>
+              <span class="choice-sub">{available ? c.ok : c.no}</span>
             </button>
           );
         })}
       </div>
-      <SeatMap game={game} preview={areas[shown]} />
+      <SeatMap
+        game={game}
+        preview={areas[shown]}
+        tone="check"
+        spotPick={{ spots, selected: chosen === 'sweep' ? 'seat' : chosen, onPick: (spot) => pick(spot === 'seat' ? 'sweep' : spot) }}
+      />
     </div>
   );
 }
 
+/** The Bomber picks where and when, sees who would be caught, and plants with one button. */
 function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
   const { game, send } = ctx;
   const you = game.you!;
+  const night = game.phase.night;
+  const { rows, cartRow, cartDestroyed, lavatoryDestroyed } = game.cabin;
   const current = game.mine?.action ?? null;
   const planned = current?.kind === 'plant' ? current : null;
   const [where, setWhere] = useState<BombSpot>(planned?.where ?? 'seat');
   const [fuse, setFuse] = useState<1 | 2>(planned?.fuse ?? 2);
-  if (you.bombUsed) return <p class="muted">Your bomb is already planted. Stay hidden, and stay out of the blast.</p>;
+  const [editing, setEditing] = useState(false);
+  if (you.bombUsed) {
+    const bomb = game.bombs.find((b) => !b.exploded && b.planterId === you.id);
+    return (
+      <p class="muted">
+        Your bomb is already planted{bomb ? ` ${describeLocation(bomb.location)}, set to go off at the end of night ${bomb.detonateNight}` : ''}. Stay
+        hidden, and stay out of the blast.
+      </p>
+    );
+  }
   const can = (w: BombSpot) => actions.some((a) => a.kind === 'plant' && a.where === w);
-  const rows = game.cabin.rows;
-  const centers = where === 'seat' ? [grid.parseSeat(you.seat!)!] : where === 'cart' ? [grid.cartCell(game.cabin.cartRow)] : grid.lavatoryCells(rows);
-  const blast = new Set(grid.seatsWithin(centers, grid.BLAST_RADIUS, rows));
-  const labels: Record<BombSpot, string> = { seat: `Under ${you.seat}`, cart: 'Drink cart', lavatory: 'Lavatory' };
-  const note =
-    where === 'cart'
-      ? 'A cart bomb goes off wherever the cart is when the fuse runs out, and it reaches both sides of the aisle.'
-      : where === 'lavatory'
-        ? 'A lavatory bomb destroys the lavatory and hits the back rows.'
-        : 'You are sitting on it. Move away before it goes off, and hope the Pilot does not buckle you in.';
+  const place: BombSpot = can(where) ? where : 'seat';
+  const placeName: Record<BombSpot, string> = { seat: `under ${you.seat}`, cart: 'on the drink cart', lavatory: 'in the lavatory' };
+  const when = (f: 1 | 2) => `the end of night ${night + f}`;
+  const blastOf = (spot: BombSpot) => {
+    const centers = spot === 'seat' ? [grid.parseSeat(you.seat!)!] : spot === 'cart' ? [grid.cartCell(cartRow)] : grid.lavatoryCells(rows);
+    return new Set(grid.seatsWithin(centers, grid.BLAST_RADIUS, rows));
+  };
+
+  if (planned && !editing) {
+    const blast = blastOf(planned.where);
+    const youIn = !!you.seat && blast.has(you.seat);
+    return (
+      <div class="plan-card">
+        <div class="plan-title">✓ Bomb planted {placeName[planned.where]}</div>
+        <p>
+          It goes off at {when(planned.fuse)} ({planned.fuse === 1 ? 'tomorrow night' : 'the night after tomorrow'}), after everyone has
+          changed seats.
+        </p>
+        {youIn && <p class="plan-warn">You are sitting in the blast. Move at least 3 seats away before it goes off.</p>}
+        <div class="row">
+          <button
+            class="btn small"
+            onClick={() => {
+              setWhere(planned.where);
+              setFuse(planned.fuse);
+              setEditing(true);
+            }}
+          >
+            Change the plan
+          </button>
+          <button class="btn ghost small" onClick={() => void send({ kind: 'act', action: null })}>
+            Don’t plant tonight
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const blast = blastOf(place);
+  const caught = game.players.filter((p) => p.status === 'alive' && p.seat && blast.has(p.seat) && p.id !== you.id);
+  const youIn = !!you.seat && blast.has(you.seat);
+  const spots: { key: BombSpot; title: string; ok: string; no: string }[] = [
+    { key: 'seat', title: `Under your seat (${you.seat})`, ok: 'Hits everyone within 2 seats of it.', no: '' },
+    {
+      key: 'cart',
+      title: 'On the drink cart',
+      ok: `At row ${cartRow} now; it goes off wherever the cart has rolled to.`,
+      no: cartDestroyed ? 'The cart is gone.' : `Too far. Sit in an aisle seat next to the cart (row ${cartRow}) first.`,
+    },
+    {
+      key: 'lavatory',
+      title: 'In the lavatory',
+      ok: 'Destroys it and hits the back rows.',
+      no: lavatoryDestroyed ? 'The lavatory is already destroyed.' : `Too far. Sit in row ${rows}, seats A–C, first.`,
+    },
+  ];
+  const plant = async () => {
+    const ok = await send({ kind: 'act', action: { kind: 'plant', where: place, fuse } });
+    if (ok) setEditing(false);
+  };
   return (
     <div class="stack">
       <div class="panel-title">
-        Plant your bomb <span class="muted">One per game. Red seats are caught in the blast.</span>
+        Plant your bomb <span class="muted">One per game. Choose where and when, then plant it.</span>
       </div>
-      <div class="row">
-        <div class="segmented">
-          {(['seat', 'cart', 'lavatory'] as const).map((w) => (
-            <button key={w} class={where === w ? 'on' : ''} disabled={!can(w)} onClick={() => setWhere(w)}>
-              {labels[w]}
+      <div class="step-label">Where</div>
+      <div class="choice-grid">
+        {spots.map((c) => {
+          const available = can(c.key);
+          return (
+            <button key={c.key} class={`choice${place === c.key ? ' on' : ''}`} disabled={!available} onClick={() => setWhere(c.key)}>
+              <span class="choice-head">
+                <b>{c.title}</b>
+              </span>
+              <span class="choice-sub">{available ? c.ok : c.no}</span>
             </button>
-          ))}
-        </div>
-        <div class="segmented">
-          {([1, 2] as const).map((f) => (
-            <button key={f} class={fuse === f ? 'on' : ''} onClick={() => setFuse(f)}>
-              Fuse: {f} night{f > 1 ? 's' : ''}
-            </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
-      <p class="hint">
-        {note} It explodes at the end of night {game.phase.night + fuse}, after everyone changes seats.
+      <div class="step-label">When it goes off</div>
+      <div class="choice-grid two">
+        {([1, 2] as const).map((f) => (
+          <button key={f} class={`choice${fuse === f ? ' on' : ''}`} onClick={() => setFuse(f)}>
+            <span class="choice-head">
+              <b>{f === 1 ? 'Tomorrow night' : 'The night after'}</b>
+            </span>
+            <span class="choice-sub">At {when(f)}, after everyone changes seats.</span>
+          </button>
+        ))}
+      </div>
+      <SeatMap
+        game={game}
+        preview={blast}
+        tone="blast"
+        spotPick={{ spots: new Set((['seat', 'cart', 'lavatory'] as const).filter(can)), selected: place, onPick: (spot) => setWhere(spot) }}
+      />
+      <p class={`blast-list${youIn ? ' warn' : ''}`}>
+        {caught.length ? `Caught in the blast right now: ${caught.map((p) => `${p.name} (${p.seat})`).join(', ')}.` : 'Nobody else is in the blast right now.'}
+        {youIn ? ' So are you: move away before it goes off.' : ''}
       </p>
-      <SeatMap game={game} preview={blast} />
       <div class="row">
-        <button class="btn danger" disabled={!can(where)} onClick={() => void send({ kind: 'act', action: { kind: 'plant', where, fuse } })}>
-          {planned ? 'Update the plan' : 'Plant bomb'}
+        <button class="btn danger" onClick={() => void plant()}>
+          Plant it {placeName[place]} for {when(fuse)}
         </button>
-        {planned && <span class="muted">Planned: {describeAction(game, planned)}.</span>}
         {planned && (
-          <button class="btn ghost small" onClick={() => void send({ kind: 'act', action: null })}>
-            Not tonight
+          <button class="btn ghost small" onClick={() => setEditing(false)}>
+            Keep the current plan
           </button>
         )}
       </div>

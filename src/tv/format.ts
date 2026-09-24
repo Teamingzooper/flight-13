@@ -64,7 +64,7 @@ export function phaseHint(game: PlayerView): string {
       return you.role === 'pilot' ? 'Change seats if you like, and pick who gets the seatbelt sign.' : 'Change seats or stay put. Nobody can talk.';
     case 'night_act':
       if (!playing) return 'Abilities are being used in the dark.';
-      return you.buckled ? 'You are buckled in. Wait for dawn.' : 'Use your ability from your new seat, then press Done.';
+      return you.buckled ? 'You are buckled in. Wait for dawn.' : 'Use your ability from your new seat, or rest.';
     case 'dawn':
       return 'The lights come back on. Here is what happened overnight.';
     case 'day_discuss':
@@ -91,7 +91,7 @@ export function describeAction(game: PlayerView, action: NightAction): string {
     case 'plant': {
       const where =
         action.where === 'seat' ? describeLocation({ kind: 'seat', seat: game.you?.seat ?? '?' }) : describeLocation({ kind: action.where });
-      return `plant a bomb ${where} (${action.fuse}-night fuse)`;
+      return `plant a bomb ${where}, set for the end of night ${game.phase.night + action.fuse}`;
     }
     case 'search':
       return 'look under your seat';

@@ -17,6 +17,15 @@ export interface PlayerPick {
   onPick: (playerId: string) => void;
 }
 
+/** Places an ability can target: your own seat, the drink cart, the lavatory. */
+export type Spot = 'seat' | 'cart' | 'lavatory';
+
+export interface SpotPick {
+  spots: ReadonlySet<Spot>;
+  selected: Spot | null;
+  onPick: (spot: Spot) => void;
+}
+
 const LETTERS = ['A', 'B', 'C', '', 'D', 'E', 'F'];
 
 /** The cabin as the seatback TV draws it: front on the left (top when the screen is tall). */
@@ -24,12 +33,17 @@ export function SeatMap({
   game,
   seatPick,
   playerPick,
+  spotPick,
   preview,
+  tone,
 }: {
   game: PlayerView;
   seatPick?: SeatPick;
   playerPick?: PlayerPick;
+  spotPick?: SpotPick;
   preview?: ReadonlySet<SeatId>;
+  /** What the highlighted seats mean: somewhere being checked, or a blast. */
+  tone?: 'check' | 'blast';
 }) {
   const vertical = useMediaQuery('(max-aspect-ratio: 1/1)');
   const { rows, cartRow, cartDestroyed, lavatoryDestroyed } = game.cabin;
@@ -67,14 +81,30 @@ export function SeatMap({
       );
     }
   });
+  const spotClass = (spot: Spot) =>
+    spotPick?.spots.has(spot) ? ` pick${spotPick.selected === spot ? ' selected' : ''}` : '';
   cells.push(
     <div key="galley" class="sm-block sm-galley" style={at(0, 0, 7)}>
       <span>Galley</span>
     </div>,
-    <div key="lav" class={`sm-block sm-lav${lavatoryDestroyed ? ' destroyed' : ''}`} style={at(rows + 1, 0, 3)}>
-      <span>WC</span>
-      {lavBomb && <IconBomb />}
-    </div>,
+    spotPick?.spots.has('lavatory') ? (
+      <button
+        key="lav"
+        type="button"
+        class={`sm-block sm-lav${spotClass('lavatory')}`}
+        style={at(rows + 1, 0, 3)}
+        aria-label="The lavatory"
+        onClick={() => spotPick.onPick('lavatory')}
+      >
+        <span>WC</span>
+        {lavBomb && <IconBomb />}
+      </button>
+    ) : (
+      <div key="lav" class={`sm-block sm-lav${lavatoryDestroyed ? ' destroyed' : ''}`} style={at(rows + 1, 0, 3)}>
+        <span>WC</span>
+        {lavBomb && <IconBomb />}
+      </div>
+    ),
     <div key="crew" class="sm-block sm-crew" style={at(rows + 1, 4, 3)}>
       <span>Crew</span>
     </div>,
@@ -86,12 +116,18 @@ export function SeatMap({
         const cart = !cartDestroyed && cartRow === r;
         cells.push(
           <div key={`a${r}`} class={`sm-aisle${scorched.has(`${r}:${c}`) ? ' scorched' : ''}`} style={at(r, c)}>
-            {cart && (
-              <span class="sm-cart" title="Drink cart">
-                <IconCart />
-                {cartBomb && <IconBomb />}
-              </span>
-            )}
+            {cart &&
+              (spotPick?.spots.has('cart') ? (
+                <button type="button" class={`sm-cart${spotClass('cart')}`} title="Drink cart" aria-label="The drink cart" onClick={() => spotPick.onPick('cart')}>
+                  <IconCart />
+                  {cartBomb && <IconBomb />}
+                </button>
+              ) : (
+                <span class="sm-cart" title="Drink cart">
+                  <IconCart />
+                  {cartBomb && <IconBomb />}
+                </span>
+              ))}
           </div>,
         );
         continue;
@@ -102,16 +138,23 @@ export function SeatMap({
       const hidden = game.blackout && !!p && !you;
       const pickSeat = seatPick?.options.has(seat) ?? false;
       const pickPlayer = !!p && (playerPick?.options.has(p.id) ?? false);
-      const selected = seatPick?.selected === seat || (!!p && playerPick?.selected === p.id);
+      const pickOwn = you && (spotPick?.spots.has('seat') ?? false);
+      const selected = seatPick?.selected === seat || (!!p && playerPick?.selected === p.id) || (pickOwn && spotPick?.selected === 'seat');
       const classes = ['sm-seat', p ? (p.status === 'dead' ? 'dead' : 'taken') : 'empty'];
       if (you) classes.push('you');
       if (saboteurView && p && !you && p.team === 'saboteurs') classes.push('mate');
-      if (pickSeat || pickPlayer) classes.push('pick');
+      if (pickSeat || pickPlayer || pickOwn) classes.push('pick');
       if (selected) classes.push('selected');
       if (preview?.has(seat)) classes.push('preview');
       if (scorched.has(`${r}:${c}`)) classes.push('scorched');
       const who = !p ? 'empty' : hidden ? 'someone' : `${p.name}${p.status === 'dead' ? ' (dead)' : ''}${you ? ' (you)' : ''}`;
-      const onPick = pickSeat ? () => seatPick!.onPick(seat) : pickPlayer ? () => playerPick!.onPick(p!.id) : undefined;
+      const onPick = pickSeat
+        ? () => seatPick!.onPick(seat)
+        : pickPlayer
+          ? () => playerPick!.onPick(p!.id)
+          : pickOwn
+            ? () => spotPick!.onPick('seat')
+            : undefined;
       cells.push(
         <button
           key={seat}
@@ -132,7 +175,7 @@ export function SeatMap({
   }
 
   return (
-    <div class={`seatmap${vertical ? ' vertical' : ''}`} style={{ '--rows': String(rows) }}>
+    <div class={`seatmap${vertical ? ' vertical' : ''}${tone ? ` tone-${tone}` : ''}`} style={{ '--rows': String(rows) }}>
       {cells}
     </div>
   );

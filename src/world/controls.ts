@@ -47,7 +47,7 @@ export interface ControlEvents {
 
 export type ScriptKind = 'walk' | 'search';
 
-interface Sample {
+export interface Sample {
   pos: THREE.Vector3;
   yaw: number;
   pitch: number;
@@ -56,7 +56,7 @@ interface Sample {
 }
 
 /** A scripted camera move, sampled by time. */
-interface Script {
+export interface Script {
   kind: ScriptKind;
   t: number;
   duration: number;
@@ -69,8 +69,51 @@ interface Script {
   marks: { t: number; fn: () => void; done?: boolean }[];
 }
 
-/** Stand up, walk the aisle and sit down again: one smooth path with a gentle start and finish. */
-function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number): Script {
+/**
+ * A smooth curve through keyed values (monotone cubic: no overshoot, no pause at in-between keys,
+ * at rest at the first and last key), held beyond the ends.
+ */
+export function smoothKeys(input: readonly (readonly [number, number])[]): (x: number) => number {
+  const keys = input.filter((k, i) => i === 0 || k[0] > input[i - 1][0] + 1e-3);
+  const n = keys.length;
+  if (n === 1) return () => keys[0][1];
+  const slope = keys.slice(1).map((k, i) => (k[1] - keys[i][1]) / (k[0] - keys[i][0]));
+  const tan = keys.map((_, i) => (i === 0 || i === n - 1 ? 0 : slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2));
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) {
+      tan[i] = tan[i + 1] = 0;
+      continue;
+    }
+    const a = tan[i] / slope[i];
+    const b = tan[i + 1] / slope[i];
+    const h = a * a + b * b;
+    if (h > 9) {
+      const k = 3 / Math.sqrt(h);
+      tan[i] = k * a * slope[i];
+      tan[i + 1] = k * b * slope[i];
+    }
+  }
+  return (x) => {
+    if (x <= keys[0][0]) return keys[0][1];
+    if (x >= keys[n - 1][0]) return keys[n - 1][1];
+    let i = 0;
+    while (x > keys[i + 1][0]) i++;
+    const [x0, y0] = keys[i];
+    const [x1, y1] = keys[i + 1];
+    const w = x1 - x0;
+    const t = (x - x0) / w;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * w * tan[i] + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * w * tan[i + 1];
+  };
+}
+
+/**
+ * Stand up, walk the aisle and sit down again: one smooth path with a gentle start and finish.
+ * You rise facing forward, turn toward the aisle and then down it, walk, turn into the new row, and
+ * face forward again before you sit, the way people actually get in and out of airline seats.
+ */
+export function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number, fromPitch: number, restYaw: number): Script {
   const sameRow = Math.abs(to.z - from.z) < 0.3;
   const dir = Math.sign(to.z - from.z) || 1;
   const points = sameRow
@@ -94,6 +137,71 @@ function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number): Sc
       ];
   const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
   const length = curve.getLength();
+  const last = points.length - 1;
+  // Where each control point falls along the path, in metres, so turns are timed by distance walked.
+  const at: number[] = points.map((_, i) => (i === 0 ? 0 : length));
+  for (let i = 0, k = 1; i <= 400 && k < points.length; i++) {
+    const p = curve.getUtoTmapping(i / 400, 0) * last; // (a distance of 0 means "use u")
+    while (k < points.length && p >= k - 1e-6) at[k++] = (i / 400) * length;
+  }
+  const d = (index: number) => {
+    const i = Math.min(last - 1, Math.floor(index));
+    return at[i] + (at[i + 1] - at[i]) * clamp(index - i, 0, 1);
+  };
+
+  // Headings as unwrapped angles (each turn takes the short way from the one before).
+  // Yaw 0 faces the front of the plane, +PI/2 faces left (-x), -PI/2 right (+x), PI the back.
+  const near = (a: number, ref: number) => ref + wrap(a - ref);
+  const facing = (towardPlusX: boolean) => (towardPlusX ? -Math.PI / 2 : Math.PI / 2);
+  const toward = (fromAngle: number, target: number, share: number) => fromAngle + wrap(target - fromAngle) * share;
+  let yawKeys: [number, number][];
+  if (sameRow) {
+    // Shuffle along the row half-turned the way you go, then face forward to sit.
+    const side = toward(fromYaw, facing(to.x > from.x), 0.55);
+    yawKeys = [
+      [d(1.2), fromYaw],
+      [d(2.3), side],
+      [d(2.7), side],
+      [d(3.6), near(restYaw, side)],
+    ];
+  } else if (at[4] - at[3] < 1.3) {
+    // A row or two: mostly face forward, glancing toward the aisle and then the new row.
+    const out = toward(fromYaw, facing(from.x < 0), 0.45);
+    const end = near(restYaw, out);
+    const into = toward(end, facing(to.x > 0), 0.45);
+    yawKeys = [
+      [d(1.2), fromYaw],
+      [d(2.4), out],
+      [d(4.4), into],
+      [d(5.6), end],
+    ];
+  } else {
+    // A real walk: face the aisle, turn down it, walk, turn to the row, face forward to sit.
+    const aisle = near(facing(from.x < 0), fromYaw);
+    const walk = near(dir > 0 ? Math.PI : 0, aisle);
+    const row = near(facing(to.x > 0), walk);
+    const end = near(restYaw, row);
+    const mid = (at[3] + at[4]) / 2;
+    yawKeys = [
+      [d(1.2), fromYaw],
+      [Math.min(at[2] + 0.25, mid - 0.1), aisle],
+      [Math.min(at[3] + 0.7, mid), walk],
+      [Math.max(at[4] - 0.7, mid), walk],
+      [d(4.6), row],
+      [d(5.6), end],
+    ];
+  }
+  const yawAt = smoothKeys(yawKeys);
+  // Glance down while getting up, level while walking, down at the seat while sitting.
+  const pitchAt = smoothKeys([
+    [0, fromPitch],
+    [d(1.1), -0.34],
+    [d(2), -0.12],
+    [d(last - 2), -0.12],
+    [d(last - 1), -0.38],
+    [length, REST_PITCH],
+  ]);
+
   // Trapezoid speed: ease out of the seat, walk at a steady pace, ease into the new one.
   const rampIn = 0.95;
   const rampOut = 1.05;
@@ -104,8 +212,6 @@ function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number): Sc
     return WALK_SPEED * (rampIn / 2 + t - rampIn);
   };
   const tangent = new THREE.Vector3();
-  const ahead = new THREE.Vector3();
-  let heading = fromYaw;
   return {
     kind: 'walk',
     t: 0,
@@ -119,12 +225,9 @@ function walkScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number): Sc
       const u = clamp(distanceAt(clamp(t, 0, duration)) / length, 0, 1);
       curve.getPointAt(u, out.pos);
       curve.getTangentAt(Math.min(0.999, u), tangent);
-      // Look a little ahead along the way, as people do.
-      curve.getTangentAt(Math.min(0.999, u + 0.04), ahead);
-      const flat = Math.hypot(ahead.x, ahead.z);
-      if (flat > 0.3 && u > 0.04 && u < 0.97) heading = Math.atan2(-ahead.x, -ahead.z);
-      out.yaw = heading;
-      out.pitch = -0.1 + clamp(tangent.y, -0.6, 0.35) * 0.7;
+      const walked = u * length;
+      out.yaw = yawAt(walked);
+      out.pitch = pitchAt(walked);
       const speed = t < rampIn ? t / rampIn : t > duration - rampOut ? (duration - t) / rampOut : 1;
       out.gait = clamp(speed, 0, 1) * clamp(1 - Math.abs(tangent.y) * 1.6, 0, 1);
     },
@@ -299,7 +402,7 @@ export class SeatControls {
       this.leanQuaternion.setFromRotationMatrix(look);
     }
     if (animate) {
-      this.startScript(walkScript(from, eye, this.yaw));
+      this.startScript(walkScript(from, eye, this.yaw, this.pitch, restYaw));
       this.events.onRustle?.();
     } else {
       this.endScript();
@@ -437,6 +540,10 @@ export class SeatControls {
         const kind = script.kind;
         this.script = null;
         this.freeYaw = this.freePitch = 0;
+        // Turns along the way may have wound the yaw a full circle round: unwind it (same direction).
+        const turns = Math.round((this.yaw - this.restYaw) / (Math.PI * 2)) * Math.PI * 2;
+        this.yaw -= turns;
+        this.targetYaw -= turns;
         if (kind === 'walk') this.events.onRustle?.();
         // Settle back to facing forward.
         if (!glancing) {

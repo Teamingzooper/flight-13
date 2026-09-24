@@ -289,7 +289,8 @@ export class Actor {
       const point = p.curve.getPointAt(u);
       const ahead = p.curve.getPointAt(Math.min(1, u + 0.02));
       this.root.position.copy(point);
-      if (ahead.distanceToSquared(point) > 1e-6 && p.t < 0.9) {
+      // Face forward to get up and to sit down; face the way you walk in between.
+      if (ahead.distanceToSquared(point) > 1e-6 && p.t > 0.12 && p.t < 0.8) {
         const facing = Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z));
         let d = facing - this.root.rotation.y;
         d = Math.atan2(Math.sin(d), Math.cos(d));
