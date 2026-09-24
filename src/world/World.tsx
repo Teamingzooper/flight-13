@@ -9,6 +9,7 @@ import { IconSound } from '../tv/icons';
 import { PhaseOverlay, reopenPhaseCard, usePhaseOverlayOpen } from '../tv/Overlays';
 import { usePacking } from '../tv/packing';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
+import { VoiceButton, useVoice } from '../tv/VoiceButton';
 import { cabinAudio } from './audio';
 import { Cabin3D, type SceneKind } from './Cabin3D';
 import { PackingHud } from './PackingHud';
@@ -193,6 +194,23 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     return () => removeEventListener('keydown', onKey);
   }, [leaning, preflight]);
 
+  // Voice chat plays from where people sit in the 3D cabin; M mutes you.
+  const voice = useVoice(flight);
+  useEffect(() => {
+    cabin.current?.setVoice(voice);
+    return () => cabin.current?.setVoice(null);
+  }, [voice]);
+  useEffect(() => {
+    if (!voice || voice.status !== 'on') return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (typing || e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'm' && e.key !== 'M')) return;
+      voice.setMuted(!voice.muted);
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [voice, voice?.status]);
+
   // Gestures by day: the bar at the bottom, or keys 1 to 5.
   const emoting = !!game.you && canEmote(kind, game.you.status) && !leaning && !scene && !ending && !cardOpen && !leavingOpen;
   useEffect(() => {
@@ -273,6 +291,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               <button class="hud-chip hud-button hud-icon" onClick={toggleMute} aria-label={muted ? 'Sound off' : 'Sound on'} title={muted ? 'Sound off' : 'Sound on'}>
                 <IconSound muted={muted} />
               </button>
+              <VoiceButton flight={flight} className="hud-chip hud-button" />
               <button class="hud-chip hud-button" onClick={onUse2D}>
                 2D screen
               </button>

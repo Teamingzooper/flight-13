@@ -85,6 +85,11 @@ export class ClientSession {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pose', ...pose } satisfies ClientMessage);
   }
 
+  /** Tell the host you turned voice chat on or off (so others know to send you their voices). */
+  sendVoice(on: boolean): void {
+    if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'voice', on } satisfies ClientMessage);
+  }
+
   /** Gesture (the host passes it on if you may). */
   sendEmote(emote: EmoteId): void {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'emote', emote } satisfies ClientMessage);

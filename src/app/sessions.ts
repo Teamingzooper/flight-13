@@ -3,8 +3,9 @@ import { ClientSession } from '../net/client';
 import { newFlightCode } from '../net/code';
 import { HostSession, newHostSnapshot } from '../net/host';
 import { startTicker } from '../net/ticker';
-import { MemoryHub } from '../net/transport';
+import { MemoryHub, type MediaChannel } from '../net/transport';
 import { trysteroTransport } from '../net/trystero';
+import { stopVoice } from '../net/voice';
 import { acquireHostLock, deleteHostSnapshot, loadHostSnapshot, saveHostSnapshot } from './hosting';
 import { loadProfile, rememberFlight } from './profile';
 
@@ -14,6 +15,8 @@ export interface OpenFlight {
   client: ClientSession;
   /** Present when this tab is the host. */
   host: HostSession | null;
+  /** Voice streams to the other browsers, and this browser's id among them. */
+  media: { channel: MediaChannel; selfId: string } | null;
 }
 
 export type ActiveFlight = OpenFlight | { kind: 'blocked'; code: string };
@@ -47,8 +50,9 @@ export function openFlight(code: string): ActiveFlight {
       return active.flight;
     }
     const hub = new MemoryHub();
+    const network = trysteroTransport(code);
     const host = new HostSession({
-      network: trysteroTransport(code),
+      network,
       local: hub.join('host'),
       snapshot: saved,
       persist: (snapshot) => saveHostSnapshot(snapshot),
@@ -66,7 +70,7 @@ export function openFlight(code: string): ActiveFlight {
       face: profile.face,
       tower: saved.controlTower,
     });
-    const flight: OpenFlight = { kind: 'ok', code, client, host };
+    const flight: OpenFlight = { kind: 'ok', code, client, host, media: network.media ? { channel: network.media, selfId: network.selfId } : null };
     exposeForDev(flight);
     active = {
       flight,
@@ -80,15 +84,16 @@ export function openFlight(code: string): ActiveFlight {
     return flight;
   }
 
+  const transport = trysteroTransport(code);
   const client = new ClientSession({
-    transport: trysteroTransport(code),
+    transport,
     code,
     token: profile.token,
     name: profile.name,
     look: profile.look,
     face: profile.face,
   });
-  const flight: OpenFlight = { kind: 'ok', code, client, host: null };
+  const flight: OpenFlight = { kind: 'ok', code, client, host: null, media: transport.media ? { channel: transport.media, selfId: transport.selfId } : null };
   exposeForDev(flight);
   active = { flight, stop: () => client.close() };
   return flight;
@@ -103,6 +108,7 @@ export function closeFlight(code: string): void {
   if (!active || active.flight.code !== code) return;
   const { stop } = active;
   active = null;
+  stopVoice(code);
   stop();
 }
 
@@ -112,6 +118,7 @@ export function endFlight(code: string): void {
   if (flight?.kind === 'ok' && flight.code === code && flight.host) {
     flight.host.endFlight();
     deleteHostSnapshot(code);
+    stopVoice(code);
     const current = active;
     active = null;
     setTimeout(() => current?.stop(), 400);

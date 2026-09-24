@@ -53,6 +53,8 @@ export interface ClientState {
   lobbyChat: LobbyMessage[];
   game: PlayerView | null;
   rev: number;
+  /** Who has voice chat on: network peer id → player id (for matching incoming voices to people). */
+  voice?: Record<string, string>;
 }
 
 export type HostCommand =
@@ -69,7 +71,9 @@ export type ClientMessage =
   | { t: 'command'; seq: number; command: HostCommand }
   | { t: 'pose'; yaw: number; pitch: number; lean: boolean }
   /** A gesture for everyone to see (daytime only; the host checks). */
-  | { t: 'emote'; emote: EmoteId };
+  | { t: 'emote'; emote: EmoteId }
+  /** You turned voice chat on or off. */
+  | { t: 'voice'; on: boolean };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
@@ -195,6 +199,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case 'emote':
       return isEmoteId(raw.emote) ? { t: 'emote', emote: raw.emote } : null;
+    case 'voice':
+      return typeof raw.on === 'boolean' ? { t: 'voice', on: raw.on } : null;
     default:
       return null;
   }

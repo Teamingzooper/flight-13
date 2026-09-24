@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { DESTINATIONS } from '../engine';
 import { formatCode } from '../net/code';
 import type { TVContext } from './context';
@@ -8,11 +9,14 @@ export function Header({
   onLeave,
   closeLabel = 'Leave the flight',
   onUse3D,
+  tools,
 }: {
   ctx: TVContext;
   onLeave: () => void;
   closeLabel?: string;
   onUse3D?: () => void;
+  /** Extra buttons beside the 3D switch (voice chat). */
+  tools?: ComponentChildren;
 }) {
   const { game, state, left } = ctx;
   const d = DESTINATIONS[game.settings.destination];
@@ -35,13 +39,14 @@ export function Header({
         {!ended && <div class={`tv-time${left < 10_000 ? ' urgent' : ''}`}>{clock(left)}</div>}
         <div class="label">{game.phase.night > 0 ? `Night ${game.phase.night} of ${game.phase.nights}` : 'Climbing'}</div>
       </div>
-      {onUse3D ? (
-        <button class="tv-view" onClick={onUse3D} title="Switch to the 3D cabin">
-          3D
-        </button>
-      ) : (
-        <span />
-      )}
+      <div class="tv-tools">
+        {tools}
+        {onUse3D && (
+          <button class="tv-view" onClick={onUse3D} title="Switch to the 3D cabin">
+            3D
+          </button>
+        )}
+      </div>
       <button class="tv-leave" onClick={onLeave} aria-label={closeLabel} title={closeLabel}>
         {closeLabel.startsWith('Back') ? '↩' : '✕'}
       </button>
