@@ -3,7 +3,7 @@
 The Pilot leaves his seat and flies Flight 13 from a real cockpit. He has much more control, and his card can now turn rogue. The user chose every power and wants all of them usable every night.
 
 There are two deploys:
-- **M13** covers the rules, the screens and bots. It is fully playable, and the cockpit appears only on the seat map.
+- **M13** covers the rules, the screens and bots, plus a plain flight deck room so the Pilot has a view. It is fully playable.
 - **M14** adds the 3D flight deck, PA voice and the cutscenes.
 
 ## Who the Pilot is
@@ -11,9 +11,8 @@ There are two deploys:
 - The Pilot card deals `pilot` (loyal, passengers) or the new `pilot_rogue` (saboteurs).
   - It turns rogue with the new host setting `pilotRogueChance`: default 0.3, with a slider like the Stewardess's.
   - `isPilot(role)` covers both. A rogue Pilot knows his teammates and gets the saboteur channel, like any saboteur.
-- `validateCards`:
-  - counts a Pilot card that could turn rogue towards the "saboteurs must start as a minority" check, as Stewardess cards are counted;
-  - allows at most one Pilot: "Only one Pilot fits on the flight deck."
+- The Pilot card only turns rogue while the saboteurs would still be outnumbered: `(saboteurs + 1) * 2 < players` at the deal. `validateCards` does not count it towards the minority check; counting it would rule out the 4–6 player presets.
+- `validateCards` allows at most one Pilot: "Only one Pilot fits on the flight deck."
 - His place is the cockpit: `seat = 'Cockpit'`. The grid gets `COCKPIT = 'Cockpit'` and `isCockpit(id)`.
   - `parsePlace('Cockpit')` is `{ row: -3, col: AISLE_COL }`, four rows in front of row 1. That is beyond the reach of every distance rule (blast 2, cuffs 2, whispers 2, Nurse 1, sweep 1).
   - It is not a seat: `isSeatInCabin`, `allSeats` and `emptySeats` never include it.
@@ -41,7 +40,7 @@ All four calls are available the same night. None of them work if the Pilot is b
 - **Change course** (new intent `course {change: 'hold' | 'shortcut' | null}`, once per flight, `PlayerState.courseUsed`): either Pilot may pick either change.
   - `hold` adds a night: `s.nights + 1`.
   - `shortcut` lands a night earlier: `s.nights - 1`. It is only allowed while `s.nights - 1 >= s.phase.night`, so it can never end the flight before tonight.
-  - It applies when seats change. Everyone hears: "The captain changed course. Flight 13 now lands after night 6."
+  - It applies when seats change. Everyone hears "The captain is holding: Flight 13 now lands after night 6." or "The captain is taking a shortcut: …"
 
 Resolution order in `resolveMoves`:
 1. course change
@@ -84,7 +83,7 @@ Early end: the Pilot never needs a move (it is always 'stay'), and he counts as 
 
 - `PlayerView`:
   - `jumpseat: string | null`: who is on the flight deck tonight (night_act only).
-  - `YouView` gains `roughAirUsed`, `courseUsed`, `knockedOut` (true while the Pilot is out tonight) and `onFlightDeck` (you are the guest tonight).
+  - `YouView` gains `roughAirUsed`, `courseUsed`, `knockedOut` (true while the Pilot is out tonight) and `inJumpSeat` (you are the guest tonight).
 - `OptionsView` gains:
   - `jumpseat: string[]`;
   - `roughair: number[]`: valid start rows, empty once used;
