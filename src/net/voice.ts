@@ -221,10 +221,16 @@ export class VoiceChat {
           if (peerId !== selfId && them && sendsTo(game.phase.kind, youAlive, them.status === 'alive')) wanted.add(peerId);
         }
       }
-      for (const peerId of wanted) if (!this.sentTo.has(peerId)) this.media.channel.addStream(this.mic, peerId);
-      for (const peerId of this.sentTo) if (!wanted.has(peerId)) this.media.channel.removeStream(this.mic, peerId);
-      this.sentTo.clear();
-      for (const peerId of wanted) this.sentTo.add(peerId);
+      for (const peerId of this.sentTo) {
+        // A dropped connection loses the stream: send it again once they are back.
+        if (!this.media.channel.isConnected(peerId)) this.sentTo.delete(peerId);
+        else if (!wanted.has(peerId)) {
+          this.media.channel.removeStream(this.mic, peerId);
+          this.sentTo.delete(peerId);
+        }
+      }
+      // (No direct connection to someone yet: try again next time round.)
+      for (const peerId of wanted) if (!this.sentTo.has(peerId) && this.media.channel.addStream(this.mic, peerId)) this.sentTo.add(peerId);
     }
 
     // Where you hear from.

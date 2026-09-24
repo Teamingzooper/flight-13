@@ -104,12 +104,13 @@ export function trysteroTransport(code: string): Transport {
     media: {
       addStream(stream, peerId) {
         const route = routeTo(peerId);
-        if (!route) return;
+        if (!route) return false;
         for (const sent of route.room.addStream(stream, { target: peerId })) {
           sent.catch(() => {
             // The peer dropped before the stream went through; it is added again if they come back.
           });
         }
+        return true;
       },
       removeStream(stream, peerId) {
         // Whichever route it went out on.
@@ -121,6 +122,7 @@ export function trysteroTransport(code: string): Transport {
           }
         }
       },
+      isConnected: (peerId) => routeTo(peerId) !== null,
       onPeerStream: (fn) => streams.on(fn),
     },
     close() {

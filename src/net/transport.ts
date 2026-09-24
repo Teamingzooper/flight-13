@@ -4,10 +4,12 @@ export type PeerHandler = (peerId: string) => void;
 
 /** Audio (or video) streams between peers, for voice chat. */
 export interface MediaChannel {
-  /** Start sending `stream` to one peer. */
-  addStream(stream: MediaStream, peerId: string): void;
+  /** Start sending `stream` to one peer; false if there is no connection to them yet. */
+  addStream(stream: MediaStream, peerId: string): boolean;
   /** Stop sending `stream` to one peer. */
   removeStream(stream: MediaStream, peerId: string): void;
+  /** There is a live connection to this peer (streams sent before a drop need sending again). */
+  isConnected(peerId: string): boolean;
   /** A peer started sending you a stream. */
   onPeerStream(fn: (stream: MediaStream, peerId: string) => void): Unsubscribe;
 }
