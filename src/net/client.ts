@@ -1,4 +1,5 @@
 import type { Intent, IntentResult, Look } from '../engine';
+import { isEmoteId, type EmoteId } from './emotes';
 import { PROTOCOL_VERSION, type ClientMessage, type ClientState, type HostCommand, type HostMessage, type Pose } from './protocol';
 import type { Transport } from './transport';
 
@@ -33,6 +34,9 @@ export class ClientSession {
   readonly poses = new Map<string, Pose>();
   /** Everyone's painted face by player id (missing = plain face). */
   readonly faces = new Map<string, string>();
+  /** Everyone's latest gesture, numbered so each one plays once (read every frame by the 3D view). */
+  readonly emotes = new Map<string, { emote: EmoteId; seq: number }>();
+  private emoteSeq = 0;
   private hostPeer: string | null = null;
   private seq = 0;
   private readonly pending = new Map<number, (result: IntentResult) => void>();
@@ -81,6 +85,11 @@ export class ClientSession {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pose', ...pose } satisfies ClientMessage);
   }
 
+  /** Gesture (the host passes it on if you may). */
+  sendEmote(emote: EmoteId): void {
+    if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'emote', emote } satisfies ClientMessage);
+  }
+
   /** Change your name, look or face while boarding. */
   updateProfile(name: string, look: Look, face = this.profile.face): void {
     this.profile = { name, look, face };
@@ -127,6 +136,9 @@ export class ClientSession {
         this.faces.clear();
         for (const [id, face] of Object.entries(msg.faces ?? {})) if (typeof face === 'string') this.faces.set(id, face);
         this.update({ facesAt: this.now() });
+        break;
+      case 'emote':
+        if (typeof msg.from === 'string' && isEmoteId(msg.emote)) this.emotes.set(msg.from, { emote: msg.emote, seq: ++this.emoteSeq });
         break;
       case 'poses':
         // The host always sends everyone's pose, so anyone missing has left.

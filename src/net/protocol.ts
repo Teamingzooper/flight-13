@@ -8,6 +8,7 @@ import {
   type PlayerView,
   type Settings,
 } from '../engine';
+import { isEmoteId, type EmoteId } from './emotes';
 import { cleanFace } from './face';
 
 export const PROTOCOL_VERSION = 1;
@@ -66,7 +67,9 @@ export type ClientMessage =
   | { t: 'intent'; seq: number; intent: Intent }
   | { t: 'lobbyChat'; seq: number; text: string }
   | { t: 'command'; seq: number; command: HostCommand }
-  | { t: 'pose'; yaw: number; pitch: number; lean: boolean };
+  | { t: 'pose'; yaw: number; pitch: number; lean: boolean }
+  /** A gesture for everyone to see (daytime only; the host checks). */
+  | { t: 'emote'; emote: EmoteId };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
@@ -76,7 +79,9 @@ export type HostMessage =
   /** Everyone's latest pose: player id → [yaw, pitch, lean 0/1]. */
   | { t: 'poses'; poses: Record<string, [number, number, number]> }
   /** Everyone's painted face (player id → face text); sent on joining and whenever one changes. */
-  | { t: 'faces'; faces: Record<string, string> };
+  | { t: 'faces'; faces: Record<string, string> }
+  /** Someone gestured. */
+  | { t: 'emote'; from: string; emote: EmoteId };
 
 type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -188,6 +193,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
         lean: raw.lean === true,
       };
     }
+    case 'emote':
+      return isEmoteId(raw.emote) ? { t: 'emote', emote: raw.emote } : null;
     default:
       return null;
   }

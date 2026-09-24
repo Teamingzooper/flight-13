@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { BOTTOM, HAIR_COLOR, HAIR_STYLES, SKIN, TOP } from '../../app/Avatar';
 import { paintFace } from '../../app/faceImage';
 import { grid, type DeathCause, type Look, type PlayerSummary, type SeatId } from '../../engine';
+import { EMOTE_BY_ID, type EmoteId } from '../../net/emotes';
 import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
@@ -221,6 +222,41 @@ function buildParts(): PartSpec[] {
   return parts;
 }
 
+/** One arm's joint angles: shoulder (x forward/up, y turn, z out) and elbow (x fold, z out). */
+interface ArmPose {
+  sx: number;
+  sy: number;
+  sz: number;
+  ex: number;
+  ez: number;
+}
+
+/**
+ * Where a gesture puts one arm `t` seconds in (side 0 is the left arm, 1 the right), or null to leave it be.
+ * `yaw` and `pitch` are where the head is looking, for pointing.
+ */
+function gesture(id: EmoteId, side: Side, t: number, yaw: number, pitch: number): ArmPose | null {
+  // Z rotation that swings this arm away from the body.
+  const out = side === 0 ? -1 : 1;
+  const right = side === 1;
+  switch (id) {
+    case 'wave':
+      return right ? { sx: 2.75, sy: 0, sz: out * 0.35, ex: 0.3, ez: Math.sin(t * 11) * 0.55 } : null;
+    // (Gestures stay above the seatbacks, so the rest of the cabin can see them.)
+    case 'point':
+      return right ? { sx: HALF_PI + 0.5 + pitch * 0.6, sy: yaw * 0.7, sz: 0, ex: 0.05, ez: 0 } : null;
+    case 'shrug':
+      return { sx: 0.9, sy: 0, sz: out * 0.6, ex: 1.45, ez: out * 0.55 };
+    case 'facepalm':
+      return right ? { sx: 1.35, sy: 0, sz: -out * 0.4, ex: 2.3, ez: 0 } : null;
+    case 'clap': {
+      // Hands meet in front of the chest about three times a second.
+      const apart = 0.5 + 0.5 * Math.cos(t * 20);
+      return { sx: 1.75, sy: 0, sz: -out * 0.2, ex: 0.95, ez: -out * (0.2 + apart * 0.4) };
+    }
+  }
+}
+
 /** One passenger's skeleton plus the animation state that drives it. */
 export class Actor {
   readonly joints = {} as Record<JointName, THREE.Object3D>;
@@ -266,6 +302,8 @@ export class Actor {
   private yaw = 0;
   private pitch = 0;
   private readonly slumpSide = Math.random() < 0.5 ? -1 : 1;
+  /** A gesture in progress (net/emotes). */
+  private emote: { id: EmoteId; from: number; seconds: number } | null = null;
   private readonly idleSeed = Math.random() * 100;
   /** A walk in progress; `free` walks (cutscenes) face where they go all the way and end on their feet. */
   private path: { curve: THREE.CatmullRomCurve3; t: number; seconds: number; free?: boolean; run?: boolean } | null = null;
@@ -378,6 +416,24 @@ export class Actor {
 
   get walking(): boolean {
     return this.path !== null;
+  }
+
+  /** Wave, point, shrug, facepalm or clap, starting now. */
+  playEmote(id: EmoteId, time: number): void {
+    this.emote = { id, from: time, seconds: EMOTE_BY_ID[id].seconds };
+  }
+
+  /** The gesture playing and how far in (and how strongly: it eases in and out), if any. */
+  private gestureNow(time: number): { id: EmoteId; t: number; amount: number } | null {
+    const g = this.emote;
+    if (!g) return null;
+    const t = time - g.from;
+    if (t >= g.seconds || this.dead || this.restrained) {
+      this.emote = null;
+      return null;
+    }
+    const amount = Math.min(1, t / 0.25, (g.seconds - t) / 0.35);
+    return { id: g.id, t, amount: amount * amount * (3 - 2 * amount) };
   }
 
   /** Walk (or run) from where you are through `points` in `seconds`, and stay standing at the end. */
@@ -514,7 +570,17 @@ export class Actor {
       this.slump * this.slumpSide * 0.25,
     );
     j.chest.scale.y = 1 + Math.sin(time * 1.6 + this.idleSeed) * 0.012 * alive;
-    j.head.rotation.set(this.pitch * 0.8 * alive - this.slump * 0.6 - this.bind * 0.25, this.yaw * 0.7 * alive, this.slump * this.slumpSide * 0.3, 'YXZ');
+    const gest = this.gestureNow(time);
+    // Heads join in: down into the palm, or a tilt with the shrug.
+    const headDown = gest?.id === 'facepalm' ? 0.45 * gest.amount : 0;
+    const headShake = gest?.id === 'facepalm' ? Math.sin(gest.t * 5) * 0.12 * gest.amount : 0;
+    const headTilt = gest?.id === 'shrug' ? 0.18 * gest.amount : 0;
+    j.head.rotation.set(
+      this.pitch * 0.8 * alive - this.slump * 0.6 - this.bind * 0.25 - headDown,
+      this.yaw * 0.7 * alive + headShake,
+      this.slump * this.slumpSide * 0.3 + headTilt,
+      'YXZ',
+    );
 
     for (const side of [0, 1] as Side[]) {
       const sign = side === 0 ? 1 : -1;
@@ -557,7 +623,18 @@ export class Actor {
       elbowZ = lerp(elbowZ, 0, this.push);
       shoulderX = lerp(shoulderX, 0.12, this.slump);
       elbowX = lerp(elbowX, 0.35, this.slump);
-      shoulder.rotation.set(shoulderX, 0, shoulderZ);
+      let shoulderY = 0;
+      const arm = gest ? gesture(gest.id, side, gest.t, this.yaw, this.pitch) : null;
+      if (gest && arm) {
+        shoulderX = lerp(shoulderX, arm.sx, gest.amount);
+        shoulderY = arm.sy * gest.amount;
+        shoulderZ = lerp(shoulderZ, arm.sz, gest.amount);
+        elbowX = lerp(elbowX, arm.ex, gest.amount);
+        elbowZ = lerp(elbowZ, arm.ez, gest.amount);
+      }
+      // (Turning a raised arm left or right happens last, so a pointing arm swings round with the head.)
+      shoulder.rotation.set(shoulderX, shoulderY, shoulderZ, 'YXZ');
+      shoulder.position.y = 0.07 + (gest?.id === 'shrug' ? 0.045 * gest.amount : 0);
       elbow.rotation.set(elbowX, 0, elbowZ);
     }
 

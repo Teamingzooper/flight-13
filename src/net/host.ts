@@ -28,6 +28,7 @@ import {
   type LobbyMessage,
   type Pose,
 } from './protocol';
+import { EMOTES, EMOTE_COOLDOWN_MS, canEmote, type EmoteId } from './emotes';
 import { FACE_TEMPLATES } from './face';
 import type { Transport } from './transport';
 
@@ -92,6 +93,8 @@ const LOBBY_GRACE_MS = 20_000;
 const LOBBY_CHAT_KEEP = 100;
 const LOBBY_CHAT_COOLDOWN_MS = 1000;
 const POSE_INTERVAL_MS = 120;
+/** Chance per tick (about 4 a second) that a bot gestures during the day: now and then, not constantly. */
+const BOT_EMOTE_CHANCE = 0.004;
 const BOT_NAMES = ['Ada', 'Bea', 'Cal', 'Dex', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou', 'Max', 'Nia', 'Oz', 'Pip'];
 const OK: IntentResult = { ok: true };
 const fail = (error: string): IntentResult => ({ ok: false, error });
@@ -105,6 +108,7 @@ export class HostSession {
   private readonly botPlans = new Map<string, BotPlan>();
   private readonly lobbyChatAt = new Map<string, number>();
   private readonly poses = new Map<string, Pose>();
+  private readonly emotedAt = new Map<string, number>();
   private posesChanged = false;
   private posesSentAt = -Infinity;
   private readonly botRng = { rng: 1 };
@@ -144,6 +148,7 @@ export class HostSession {
         dirty = true;
       }
       if (this.runBots(s.game, now)) dirty = true;
+      this.botEmotes(now);
     } else {
       for (const [id, at] of this.disconnectedAt) {
         if (now - at < LOBBY_GRACE_MS) continue;
@@ -249,6 +254,28 @@ export class HostSession {
           this.posesChanged = true;
         }
         break;
+      case 'emote':
+        if (peer.playerId) this.emote(peer.playerId, msg.emote, this.now());
+        break;
+    }
+  }
+
+  /** Pass a gesture on to everyone, if it is daytime and the passenger is still in play (and not spamming). */
+  private emote(playerId: string, emote: EmoteId, now: number): void {
+    const game = this.snapshot.game;
+    const p = game?.players.find((x) => x.id === playerId);
+    if (!game || !p || !canEmote(game.phase.kind, p.status)) return;
+    if (now - (this.emotedAt.get(playerId) ?? -Infinity) < EMOTE_COOLDOWN_MS) return;
+    this.emotedAt.set(playerId, now);
+    for (const [peerId, peer] of this.peers) if (peer.playerId || peer.tower) this.sendTo(peerId, { t: 'emote', from: playerId, emote });
+  }
+
+  /** Bots gesture now and then during the day, so the cabin feels alive. */
+  private botEmotes(now: number): void {
+    const game = this.snapshot.game;
+    if (!game || !canEmote(game.phase.kind, 'alive')) return;
+    for (const p of this.snapshot.players) {
+      if (p.bot && this.random() < BOT_EMOTE_CHANCE) this.emote(p.id, EMOTES[Math.floor(this.random() * EMOTES.length)].id, now);
     }
   }
 
