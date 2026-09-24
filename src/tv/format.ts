@@ -1,4 +1,4 @@
-import { ROLES, describeLocation, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
+import { ROLES, describeLocation, grid, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
 
 export function clock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -19,7 +19,13 @@ export function nameOf(game: PlayerView, id: string | null | undefined): string 
 export function nameWithSeat(game: PlayerView, id: string): string {
   const p = playerById(game, id);
   if (!p) return 'someone';
-  return p.seat ? `${p.name} (${p.seat})` : p.name;
+  return p.seat ? `${p.name} (${placeLabel(p.seat)})` : p.name;
+}
+
+/** A seat, or where the Stewardess is working ("crew, row 5"). */
+export function placeLabel(seat: string): string {
+  const row = grid.aisleRow(seat);
+  return row === null ? seat : `crew, row ${row}`;
 }
 
 export function shortName(name: string): string {
@@ -95,14 +101,16 @@ export function describeAction(game: PlayerView, action: NightAction): string {
     case 'inspect':
       return action.what === 'cart' ? 'inspect the drink cart' : 'inspect the lavatory';
     case 'serve':
-      return `serve ${nameWithSeat(game, action.target)} a drink`;
+      return `serve ${nameWithSeat(game, action.target)} a poisoned drink`;
+    case 'check':
+      return `check under the ${action.side === 'left' ? 'A, B and C' : 'D, E and F'} seats of your row`;
     case 'plant': {
       const where =
         action.where === 'seat' ? describeLocation({ kind: 'seat', seat: game.you?.seat ?? '?' }) : describeLocation({ kind: action.where });
       return `plant a bomb ${where}, set for the end of night ${game.phase.night + action.fuse}`;
     }
     case 'search':
-      return 'look under your seat';
+      return game.you?.inWashroom ? 'search the lavatory' : 'look under your seat';
     case 'cuff':
       return `handcuff ${nameWithSeat(game, action.target)}`;
   }

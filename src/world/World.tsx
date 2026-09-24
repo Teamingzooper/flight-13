@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OpenFlight } from '../app/sessions';
+import { grid } from '../engine';
 import type { ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { clock, phaseTitle } from '../tv/format';
@@ -216,11 +217,16 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     : locked
       ? 'Aim at your screen and click to use it · Esc frees the mouse'
       : 'Click to look around · click your screen (or press E) to use it';
+  const crewRow = grid.aisleRow(you?.seat);
   const hint =
     scene === 'walk'
-      ? `Walking to seat ${you?.seat ?? ''}…`
+      ? crewRow !== null
+        ? `Walking the cart to row ${crewRow}…`
+        : `Walking to seat ${you?.seat ?? ''}…`
       : scene === 'search'
-        ? 'Looking under your seat…'
+        ? you?.inWashroom
+          ? 'Searching the lavatory…'
+          : 'Looking under your seat…'
         : needsInput
           ? `Your move: ${useIt}`
           : idleHint;

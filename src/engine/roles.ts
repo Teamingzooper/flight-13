@@ -16,7 +16,8 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     name: 'Passenger',
     team: 'passengers',
     blurb: 'An ordinary traveller with sharp eyes.',
-    howTo: 'No special ability, but at night you can look under your seat for anything left behind. Change seats, watch closely, argue, and vote.',
+    howTo:
+      'No special ability, but at night you can look under your seat for anything left behind, and once per flight you can hide in the washroom for the night. Change seats, watch closely, argue, and vote.',
   },
   pilot: {
     id: 'pilot',
@@ -54,8 +55,9 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     id: 'stewardess_loyal',
     name: 'Loyal Stewardess',
     team: 'passengers',
-    blurb: 'Crew uniform, crew loyalties. Every drink is a chance to size someone up.',
-    howTo: 'Each night, serve a drink to anyone and learn which team they are on. The cart rolls to their row.',
+    blurb: 'Crew uniform, crew loyalties. You know every row by heart.',
+    howTo:
+      'You work the aisle, not a seat, and everyone can see you. Each night, walk the drink cart to any row, then check under the three seats on its left or its right for bombs. Nobody can walk past your cart.',
   },
   bomber: {
     id: 'bomber',
@@ -70,7 +72,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     name: 'Mastermind',
     team: 'saboteurs',
     blurb: 'Planned all of this. Looks completely harmless.',
-    howTo: 'Plant one bomb per game, just like a Bomber. The Stewardess sees you as a Passenger.',
+    howTo: "Plant one bomb per game, just like a Bomber, but hidden so well that the Stewardess's checks miss it.",
   },
   stewardess_rogue: {
     id: 'stewardess_rogue',
@@ -78,7 +80,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     team: 'saboteurs',
     blurb: 'Crew uniform, saboteur loyalties.',
     howTo:
-      'Each night, serve someone a poisoned drink. They fall sick at dawn and die the next dawn unless the Nurse treats them. The cart rolls to their row.',
+      'You work the aisle, not a seat, and everyone can see you. Each night, walk the drink cart to any row, then serve a poisoned drink to someone sitting in it. They fall sick at dawn and die the next dawn unless the Nurse treats them or they wash it out in the lavatory. Nobody can walk past your cart.',
   },
 };
 
@@ -86,11 +88,6 @@ export const SPECIAL_CARDS: readonly SpecialCard[] = ['bomber', 'mastermind', 's
 
 export function teamOf(role: RoleId): Team {
   return ROLES[role].team;
-}
-
-/** What the Stewardess learns: the Mastermind passes as a passenger. */
-export function apparentTeam(role: RoleId): Team {
-  return role === 'mastermind' ? 'passengers' : teamOf(role);
 }
 
 export function isSaboteur(role: RoleId): boolean {

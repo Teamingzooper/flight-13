@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apparentTeam, emptyCards, presetCards, teamOf, validateCards } from './roles';
+import { emptyCards, presetCards, teamOf, validateCards } from './roles';
 import { defaultSettings, phaseDurationMs, validateSettings } from './settings';
 
 describe('roles', () => {
@@ -20,10 +20,9 @@ describe('roles', () => {
     expect(validateCards({ ...emptyCards(), bomber: 2, stewardess: 1 }, 6, 0)).toBeNull();
   });
 
-  it('the Mastermind looks like a passenger to the Stewardess', () => {
+  it('the Mastermind is a saboteur', () => {
     expect(teamOf('mastermind')).toBe('saboteurs');
-    expect(apparentTeam('mastermind')).toBe('passengers');
-    expect(apparentTeam('stewardess_rogue')).toBe('saboteurs');
+    expect(teamOf('stewardess_rogue')).toBe('saboteurs');
   });
 });
 

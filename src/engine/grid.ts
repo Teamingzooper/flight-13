@@ -30,6 +30,27 @@ export function parseSeat(id: SeatId): Cell | null {
   return { row: Number(m[1]), col: COL_BY_LETTER[m[2]] };
 }
 
+/** The aisle beside row `row`, where the Stewardess works with the drink cart. */
+export function aisleSpot(row: number): SeatId {
+  return `Aisle ${row}`;
+}
+
+/** The row of an aisle spot such as "Aisle 5", or null for anything else. */
+export function aisleRow(id: SeatId | null | undefined): number | null {
+  const m = typeof id === 'string' ? /^Aisle ([1-9]\d?)$/.exec(id) : null;
+  return m ? Number(m[1]) : null;
+}
+
+export function isAisleSpot(id: SeatId | null | undefined): boolean {
+  return aisleRow(id) !== null;
+}
+
+/** A seat or an aisle spot as a grid cell. */
+export function parsePlace(id: SeatId): Cell | null {
+  const row = aisleRow(id);
+  return row === null ? parseSeat(id) : { row, col: AISLE_COL };
+}
+
 export function isSeatInCabin(id: SeatId, rows: number): boolean {
   const cell = parseSeat(id);
   return cell !== null && cell.row <= rows;
@@ -74,13 +95,30 @@ export function seatsWithin(centers: readonly Cell[], radius: number, rows: numb
   return allSeats(rows).filter((id) => distanceToAny(parseSeat(id)!, centers) <= radius);
 }
 
+/** Seats and aisle spots within `radius` of any of `centers` (who a blast would reach, crew included). */
+export function placesWithin(centers: readonly Cell[], radius: number, rows: number): SeatId[] {
+  const aisle = Array.from({ length: rows }, (_, i) => aisleSpot(i + 1)).filter((id) => distanceToAny(parsePlace(id)!, centers) <= radius);
+  return [...seatsWithin(centers, radius, rows), ...aisle];
+}
+
 export function isAisleSeat(id: SeatId): boolean {
   const cell = parseSeat(id);
   return cell !== null && (cell.col === 2 || cell.col === 4);
 }
 
-/** Stable front-to-back, left-to-right ordering key. */
+/** The seats either side of a row's aisle: left is A-C, right is D-F. */
+export function rowSeats(row: number, side?: 'left' | 'right'): SeatId[] {
+  const cols = side === 'left' ? [0, 1, 2] : side === 'right' ? [4, 5, 6] : SEAT_COLS;
+  return cols.map((col) => seatId({ row, col }));
+}
+
+/** The drink cart fills the aisle: nobody walks past its row (squeezing into or out of that row is fine). */
+export function cartBlocks(fromRow: number, toRow: number, cartRow: number): boolean {
+  return Math.min(fromRow, toRow) < cartRow && cartRow < Math.max(fromRow, toRow);
+}
+
+/** Stable front-to-back, left-to-right ordering key (aisle spots sort between C and D). */
 export function seatOrder(id: SeatId): number {
-  const cell = parseSeat(id);
+  const cell = parsePlace(id);
   return cell ? cell.row * 10 + cell.col : Number.MAX_SAFE_INTEGER;
 }

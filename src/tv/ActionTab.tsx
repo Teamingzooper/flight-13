@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, type NightAction, type PlayerView } from '../engine';
 import { CarryOn } from './CarryOn';
 import type { TVContext } from './context';
-import { describeAction, nameWithSeat, roleName, teamName, whenLabel } from './format';
+import { describeAction, nameWithSeat, placeLabel, roleName, shortName, teamName, whenLabel } from './format';
 import { SeatMap, type Spot } from './SeatMap';
 
 type TargetAction = Extract<NightAction, { target: string }>;
@@ -49,7 +49,8 @@ function RoleStrip({ game }: { game: PlayerView }) {
         <div class="role-name">{info.name}</div>
         <div class="role-meta">
           <span class={`team-tag ${you.team}`}>{teamName(you.team)}</span>
-          <span>Seat {you.seat ?? '—'}</span>
+          <span>{crewRow(game) !== null ? `Working row ${crewRow(game)}` : `Seat ${you.seat ?? '—'}`}</span>
+          <span>{you.washroomUsed ? 'Washroom trip used' : 'Washroom trip left'}</span>
         </div>
       </div>
       <p class="role-how">{info.howTo}</p>
@@ -60,18 +61,34 @@ function RoleStrip({ game }: { game: PlayerView }) {
       )}
       {you.poisoned && (
         <div class="callout red">
-          <b>You were poisoned.</b> Get the Nurse to sit next to you and treat you tonight, or you will not survive the next dawn.
+          <b>You were poisoned.</b> Get the Nurse to sit next to you and treat you tonight
+          {you.washroomUsed ? '' : ', or wash it out in the lavatory (your one trip this flight)'}, or you will not survive the next dawn.
         </div>
       )}
     </div>
   );
 }
 
+/** The row the Stewardess is working, or null for everyone else. */
+function crewRow(game: PlayerView): number | null {
+  const you = game.you;
+  return you && (you.role === 'stewardess_loyal' || you.role === 'stewardess_rogue') ? grid.aisleRow(you.seat) : null;
+}
+
 function Buckled({ game }: { game: PlayerView }) {
+  const turbulence = game.you!.buckled === 'turbulence';
   return (
     <div class="callout amber">
-      <b>Ding.</b> The seatbelt sign is on over your seat{game.you!.buckled === 'turbulence' ? ' because of turbulence' : ''}. You cannot move
-      or use an ability tonight.
+      {crewRow(game) !== null && !turbulence ? (
+        <>
+          <b>Ding.</b> The captain told the crew to stay put. You cannot walk the cart or use an ability tonight.
+        </>
+      ) : (
+        <>
+          <b>Ding.</b> The seatbelt sign is on over your seat{turbulence ? ' because of turbulence' : ''}. You cannot move or use an ability
+          tonight.
+        </>
+      )}
       {game.you!.items.includes('extender') && ' Your seatbelt extender can free you: see your carry-on below.'}
     </div>
   );
@@ -81,26 +98,80 @@ function MovePanel({ ctx }: { ctx: TVContext }) {
   const { game, send } = ctx;
   const you = game.you!;
   const chosen = game.mine?.move ?? null;
-  const options = new Set(game.options?.seats ?? []);
+  const row = crewRow(game);
+  const here = row !== null ? `row ${row}` : you.seat;
+  const options = new Set<string>(game.options?.seats ?? []);
+  if (game.options?.washroom === null) options.add('washroom');
+  const { cartRow, cartDestroyed } = game.cabin;
+  const yourRow = you.seat ? grid.parsePlace(you.seat)?.row ?? null : null;
+  const blocked = row === null && !cartDestroyed && yourRow !== null && (cartRow > yourRow || (cartRow < yourRow && cartRow > 1));
+  const status =
+    chosen === null
+      ? 'Choose before time runs out, or you stay put.'
+      : chosen === 'stay'
+        ? 'You will stay put.'
+        : chosen === 'washroom'
+          ? `You will spend the night locked in the lavatory, and be back ${row !== null ? `at row ${row}` : `in ${you.seat}`} by morning.`
+          : grid.isAisleSpot(chosen)
+            ? `You will walk the cart to row ${grid.aisleRow(chosen)}.`
+            : `You will move to ${chosen}.`;
   return (
     <div class="stack">
       <div class="panel-title">
-        Change seats?
-        <span class="muted">Tap an empty seat, or stay in {you.seat}.</span>
+        {row !== null ? 'Walk the cart?' : 'Change seats?'}
+        <span class="muted">
+          {row !== null
+            ? `Tap any row in the aisle, or stay at row ${row}. You can only work the six seats beside you.`
+            : `Tap an empty seat, or stay in ${you.seat}.`}
+        </span>
       </div>
       <SeatMap
         game={game}
         seatPick={{ options, selected: chosen && chosen !== 'stay' ? chosen : null, onPick: (seat) => void send({ kind: 'move', to: seat }) }}
       />
+      {blocked && (
+        <p class="muted cart-note">
+          The drink cart at row {cartRow} fills the aisle: nobody can walk past it{cartRow > (yourRow ?? 0) ? ', not even to the lavatory' : ''}.
+        </p>
+      )}
       <div class="row">
         <button class={`btn${chosen === 'stay' ? ' primary' : ''}`} onClick={() => void send({ kind: 'move', to: 'stay' })}>
-          Stay in {you.seat}
+          Stay {row !== null ? 'at' : 'in'} {here}
         </button>
-        <span class="muted">
-          {chosen === null ? 'Choose before time runs out, or you stay put.' : chosen === 'stay' ? 'You will stay put.' : `You will move to ${chosen}.`}
-        </span>
+        <span class="muted">{status}</span>
       </div>
+      <WashroomCard ctx={ctx} />
       {you.role === 'pilot' && <SeatbeltPicker ctx={ctx} />}
+    </div>
+  );
+}
+
+/** Once per flight: hide in the lavatory for the night instead of moving. */
+function WashroomCard({ ctx }: { ctx: TVContext }) {
+  const { game, send } = ctx;
+  const you = game.you!;
+  const why = game.options?.washroom ?? 'Not now.';
+  const chosen = game.mine?.move === 'washroom';
+  if (you.washroomUsed) return null;
+  return (
+    <div class={`ability-card washroom-card${chosen ? ' on' : ''}`}>
+      <div class="ability-title">Go to the washroom</div>
+      <p class="muted">
+        Once per flight, instead of moving. Lock yourself in the lavatory for the night: nobody can poison, cuff or treat you, a bomb at your seat
+        misses you, and any poison washes out. You can only search the lavatory tonight, and a bomb in there would still get you. Everyone
+        sees you go.
+      </p>
+      <div class="row">
+        <button class={`btn${chosen ? ' primary' : ''}`} disabled={why !== null} onClick={() => void send({ kind: 'move', to: 'washroom' })}>
+          {chosen ? '✓ Going tonight' : 'Spend the night in the lavatory'}
+        </button>
+        {why && <span class="muted">{why}</span>}
+        {chosen && (
+          <button class="btn ghost small" onClick={() => void send({ kind: 'move', to: 'stay' })}>
+            Never mind
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -138,6 +209,7 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   // Looking under your seat is answered at once and spends the night.
   if (you.searched) return <SearchResult game={game} />;
   const canSearch = actions.some((a) => a.kind === 'search');
+  if (you.inWashroom) return <WashroomNight ctx={ctx} actions={actions} />;
   let hasAbility = true;
   let body;
   switch (you.role) {
@@ -145,9 +217,17 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
       body = <TargetPicker ctx={ctx} title="Treat someone" actions={actions} empty="Nobody is within reach. Sit next to someone tomorrow night." />;
       break;
     case 'stewardess_loyal':
+      body = <RowCheckPicker ctx={ctx} actions={actions} />;
+      break;
     case 'stewardess_rogue':
       body = (
-        <TargetPicker ctx={ctx} title={you.role === 'stewardess_rogue' ? 'Serve a poisoned drink' : 'Serve a drink'} actions={actions} empty="Nobody to serve." />
+        <TargetPicker
+          ctx={ctx}
+          title="Serve a poisoned drink"
+          hint={`Only to someone sitting in row ${crewRow(game)}, beside your cart.`}
+          actions={actions}
+          empty={`Nobody is sitting in row ${crewRow(game)} tonight. Walk the cart to a busier row tomorrow night.`}
+        />
       );
       break;
     case 'investigator':
@@ -228,6 +308,95 @@ function TargetPicker({ ctx, title, hint, actions, empty }: { ctx: TVContext; ti
         ))}
       </div>
       <SeatMap game={game} playerPick={{ options: new Set(byTarget.keys()), selected, onPick: choose }} />
+    </div>
+  );
+}
+
+/** The loyal Stewardess checks under the three seats on one side of her row. */
+function RowCheckPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
+  const { game, send } = ctx;
+  const [focus, setFocus] = useState<'left' | 'right' | null>(null);
+  const row = crewRow(game);
+  const current = game.mine?.action ?? null;
+  const chosen = current?.kind === 'check' ? current.side : null;
+  if (row === null) return <p class="muted">Walk the cart to a row first.</p>;
+  const sides = (['left', 'right'] as const).map((side) => {
+    const seats = grid.rowSeats(row, side);
+    const sitters = seats.flatMap((seat) => {
+      const p = game.players.find((q) => q.seat === seat && q.status === 'alive');
+      return p ? [p.id === game.you?.id ? 'you' : shortName(p.name)] : [];
+    });
+    return { side, seats, sitters, action: actions.find((a) => a.kind === 'check' && a.side === side) };
+  });
+  const shown = focus ?? chosen ?? 'left';
+  return (
+    <div class="stack">
+      <div class="panel-title">
+        Check under the seats <span class="muted">One side of row {row} tonight. You find out at dawn.</span>
+      </div>
+      <div class="choice-grid two">
+        {sides.map((c) => (
+          <button
+            key={c.side}
+            class={`choice${chosen === c.side ? ' on' : ''}`}
+            disabled={!c.action}
+            onMouseEnter={() => setFocus(c.side)}
+            onMouseLeave={() => setFocus(null)}
+            onFocus={() => setFocus(c.side)}
+            onBlur={() => setFocus(null)}
+            onClick={() => c.action && void send({ kind: 'act', action: c.action })}
+          >
+            <span class="choice-head">
+              <b>
+                {c.side === 'left' ? 'Left' : 'Right'}: {c.seats.join(', ')}
+              </b>
+              <span class="choice-tag">{chosen === c.side ? '✓ Tonight' : 'Check'}</span>
+            </span>
+            <span class="choice-sub">{c.sitters.length ? `Sitting there: ${c.sitters.join(', ')}.` : 'Nobody sitting there.'}</span>
+          </button>
+        ))}
+      </div>
+      <SeatMap game={game} preview={new Set(grid.rowSeats(row, shown))} tone="check" />
+    </div>
+  );
+}
+
+/** Locked in the lavatory: search it (or, for a bomber, leave a bomb in it). */
+function WashroomNight({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
+  const { game, send } = ctx;
+  const mine = game.mine!;
+  const canPlant = actions.some((a) => a.kind === 'plant');
+  return (
+    <div class="stack">
+      <div class="callout green">
+        <b>You are locked in the lavatory.</b> Nobody can reach you tonight, and you will be back in your seat by morning.
+      </div>
+      {canPlant && <BombPicker ctx={ctx} actions={actions} />}
+      <div class="ability-card search-card">
+        <div class="ability-title">Search the lavatory</div>
+        <p class="muted">Check every panel for anything left behind. You find out at once, but it uses up your night{canPlant ? ' instead of planting' : ''}.</p>
+        <div class="row">
+          <button class={`btn${canPlant ? '' : ' primary'}`} onClick={() => void send({ kind: 'act', action: { kind: 'search' } })}>
+            Search it
+          </button>
+        </div>
+      </div>
+      <div class="done-row">
+        {mine.acted ? (
+          mine.action ? (
+            <span class="done-ok">✓ Tonight you will {describeAction(game, mine.action)}.</span>
+          ) : (
+            <span>You are waiting out the night.</span>
+          )
+        ) : (
+          <>
+            <span>Or just wait for morning.</span>
+            <button class="btn" onClick={() => void send({ kind: 'act', action: null })}>
+              Wait it out
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -330,12 +499,12 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
     );
   }
   const can = (w: BombSpot) => actions.some((a) => a.kind === 'plant' && a.where === w);
-  const place: BombSpot = can(where) ? where : 'seat';
+  const place: BombSpot = can(where) ? where : you.inWashroom ? 'lavatory' : 'seat';
   const placeName: Record<BombSpot, string> = { seat: `under ${you.seat}`, cart: 'on the drink cart', lavatory: 'in the lavatory' };
   const when = (f: 1 | 2) => `the end of night ${night + f}`;
   const blastOf = (spot: BombSpot) => {
     const centers = spot === 'seat' ? [grid.parseSeat(you.seat!)!] : spot === 'cart' ? [grid.cartCell(cartRow)] : grid.lavatoryCells(rows);
-    return new Set(grid.seatsWithin(centers, grid.BLAST_RADIUS, rows));
+    return new Set(grid.placesWithin(centers, grid.BLAST_RADIUS, rows));
   };
 
   if (planned && !editing) {
@@ -369,9 +538,9 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   }
 
   const blast = blastOf(place);
-  const caught = game.players.filter((p) => p.status === 'alive' && p.seat && blast.has(p.seat) && p.id !== you.id);
-  const youIn = !!you.seat && blast.has(you.seat);
-  const spots: { key: BombSpot; title: string; ok: string; no: string }[] = [
+  const caught = game.players.filter((p) => p.status === 'alive' && p.seat && blast.has(p.seat) && p.id !== you.id && p.id !== game.washroom);
+  const youIn = !!you.seat && blast.has(you.seat) && !you.inWashroom;
+  const allSpots: { key: BombSpot; title: string; ok: string; no: string }[] = [
     { key: 'seat', title: `Under your seat (${you.seat})`, ok: 'Hits everyone within 2 seats of it.', no: '' },
     {
       key: 'cart',
@@ -382,10 +551,12 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
     {
       key: 'lavatory',
       title: 'In the lavatory',
-      ok: 'Destroys it and hits the back rows.',
+      ok: you.inWashroom ? 'You are in it right now. It destroys the lavatory and hits the back rows.' : 'Destroys it and hits the back rows.',
       no: lavatoryDestroyed ? 'The lavatory is already destroyed.' : `Too far. Sit in row ${rows}, seats A–C, first.`,
     },
   ];
+  // From inside the lavatory, the lavatory is the only place within reach.
+  const spots = you.inWashroom ? allSpots.filter((c) => c.key === 'lavatory') : allSpots;
   const plant = async () => {
     const ok = await send({ kind: 'act', action: { kind: 'plant', where: place, fuse } });
     if (ok) setEditing(false);
@@ -427,7 +598,9 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
         spotPick={{ spots: new Set((['seat', 'cart', 'lavatory'] as const).filter(can)), selected: place, onPick: (spot) => setWhere(spot) }}
       />
       <p class={`blast-list${youIn ? ' warn' : ''}`}>
-        {caught.length ? `Caught in the blast right now: ${caught.map((p) => `${p.name} (${p.seat})`).join(', ')}.` : 'Nobody else is in the blast right now.'}
+        {caught.length
+          ? `Caught in the blast right now: ${caught.map((p) => `${p.name} (${placeLabel(p.seat!)})`).join(', ')}.`
+          : 'Nobody else is in the blast right now.'}
         {youIn ? ' So are you: move away before it goes off.' : ''}
       </p>
       <div class="row">
@@ -477,10 +650,18 @@ function SearchCard({ ctx, instead }: { ctx: TVContext; instead: boolean }) {
 function SearchResult({ game }: { game: PlayerView }) {
   const entry = [...game.log].reverse().find((e) => e.tag === 'search' && Array.isArray(e.to));
   const found = ((entry?.data?.bombs as string[] | undefined) ?? []).length > 0;
+  const lavatory = entry?.data?.lavatory === true;
+  const headline = lavatory
+    ? found
+      ? 'There is a bomb in the lavatory.'
+      : 'Nothing in the lavatory.'
+    : found
+      ? 'There is a bomb under your seat.'
+      : 'Nothing under your seat.';
   return (
     <div class="stack">
       <div class={`callout ${found ? 'red' : 'amber'}`}>
-        <b>{found ? 'There is a bomb under your seat.' : 'Nothing under your seat.'}</b> {entry?.text}
+        <b>{headline}</b> {entry?.text}
       </div>
       <div class="done-row">
         <span>Your night is spent. Wait for dawn{found ? ', and warn the cabin if you live to see it' : ''}.</span>

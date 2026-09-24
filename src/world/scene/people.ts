@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { BOTTOM, HAIR_COLOR, HAIR_STYLES, SKIN, TOP } from '../../app/Avatar';
 import { paintFace } from '../../app/faceImage';
-import type { DeathCause, Look, PlayerSummary, SeatId } from '../../engine';
+import { grid, type DeathCause, type Look, type PlayerSummary, type SeatId } from '../../engine';
 import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
@@ -235,8 +235,12 @@ export class Actor {
   hideHead = false;
   /** Where a restrained passenger stands in the rear galley. */
   restSpot: THREE.Vector3 | null = null;
-  /** Not drawn at all (your own body while the camera crouches to search). */
+  /** Not drawn at all (your own body while the camera crouches to search, or someone in the lavatory). */
   hidden = false;
+  /** Crew: on their feet in the aisle, hands on the drink cart. */
+  crew = false;
+  /** Gone to the lavatory for the night (drawn until they reach the door). */
+  away = false;
   /** Moved by your camera instead of its own path (your own walk to a new seat). */
   private driven: { x: number; z: number; yaw: number; walk: number; phase: number } | null = null;
   /** Latest pose from the network (or your own camera). */
@@ -249,6 +253,8 @@ export class Actor {
   handsUp = false;
   duck = false;
   private stand = 0;
+  private push = 0;
+  private floor = 0;
   private surrender = 0;
   private brace = 0;
   private walkAmount = 0;
@@ -309,20 +315,35 @@ export class Actor {
     j.spine.scale.set(w, 1, w);
   }
 
-  /** Sit in a seat, walking there if asked. */
+  /** Sit in a seat (or, for crew, stand behind the cart), walking there if asked. */
   place(seat: SeatId, animate: boolean): void {
     const { x, z } = seatPose(seat);
     const walk = animate && this.seat !== null && !this.restrained;
     this.seat = seat;
+    this.crew = grid.isAisleSpot(seat);
     this.restrained = false;
     this.restSpot = null;
-    this.moveTo(new THREE.Vector3(x, 0, z + 0.06), walk);
+    this.moveTo(new THREE.Vector3(x, 0, z + (this.crew ? 0 : 0.06)), walk);
+  }
+
+  /** Off to the lavatory for the night: walk to its door, then out of sight. */
+  goAway(door: THREE.Vector3): void {
+    this.away = true;
+    this.moveTo(door, true);
+  }
+
+  /** Out of the lavatory and back to your seat. */
+  comeBack(): void {
+    this.away = false;
+    this.hidden = false;
+    if (this.seat) this.place(this.seat, true);
   }
 
   /** Stand in the rear galley, hands tied; walks there from the seat when asked. */
   restrainAt(spot: THREE.Vector3, animate: boolean): void {
     const walk = animate && this.seat !== null && !this.restrained;
     this.restrained = true;
+    this.crew = false;
     this.seat = null;
     this.restSpot = spot.clone();
     this.moveTo(spot, walk);
@@ -338,6 +359,12 @@ export class Actor {
     }
     const from = this.root.position.clone();
     const dir = Math.sign(target.z - from.z) || 1;
+    if (Math.abs(from.x) < 0.05 && Math.abs(target.x) < 0.05) {
+      // Along the aisle and nowhere else (crew walking the cart).
+      const curve = new THREE.CatmullRomCurve3([from, target]);
+      this.path = { curve, t: 0, seconds: 0.8 + curve.getLength() / 1.1 };
+      return;
+    }
     const curve = new THREE.CatmullRomCurve3([
       from,
       new THREE.Vector3(from.x * 0.45, 0, from.z),
@@ -434,11 +461,17 @@ export class Actor {
       if (p.t >= 1) {
         this.path = null;
         this.root.rotation.y = 0;
+        // In through the lavatory door.
+        if (this.away) this.hidden = true;
       }
     }
 
-    const wantsStand = d || this.restrained || this.standing || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
+    const wantsStand =
+      d || this.restrained || this.standing || this.crew || this.away || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
     this.stand = approach(this.stand, this.dead ? 0 : wantsStand, 5, dt);
+    // Crew push the cart with both hands; a stewardess who dies in the aisle ends up on the floor.
+    this.push = approach(this.push, this.crew && !this.dead && !d ? 1 : 0, 5, dt);
+    this.floor = approach(this.floor, this.crew && this.dead ? 1 : 0, 3, dt);
     const running = this.path?.run ? 1.8 : 1;
     this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? running : 0, 6, dt);
     // Your own legs keep step with the camera's footfalls.
@@ -474,7 +507,7 @@ export class Actor {
     const s = this.stand;
     const alive = 1 - this.slump;
     const swing = Math.sin(this.walkPhase) * this.walkAmount;
-    j.hips.position.y = lerp(0.5, 0.92, s) + Math.abs(Math.sin(this.walkPhase)) * 0.02 * this.walkAmount;
+    j.hips.position.y = lerp(lerp(0.5, 0.92, s), 0.14, this.floor) + Math.abs(Math.sin(this.walkPhase)) * 0.02 * this.walkAmount;
     j.spine.rotation.set(
       lerp(0.1, 0.03, s) - this.reach * 0.16 - this.slump * 0.75 - this.bind * 0.05 - this.brace * 0.8,
       this.yaw * 0.3 * alive,
@@ -486,7 +519,8 @@ export class Actor {
     for (const side of [0, 1] as Side[]) {
       const sign = side === 0 ? 1 : -1;
       j[`hip${side}`].rotation.x = lerp(HALF_PI, 0, s) + swing * 0.5 * sign;
-      j[`knee${side}`].rotation.x = lerp(-HALF_PI, 0, s) - Math.max(0, Math.sin(this.walkPhase + (side === 0 ? 0 : Math.PI))) * 0.7 * this.walkAmount;
+      j[`knee${side}`].rotation.x =
+        lerp(lerp(-HALF_PI, 0, s), -0.2, this.floor) - Math.max(0, Math.sin(this.walkPhase + (side === 0 ? 0 : Math.PI))) * 0.7 * this.walkAmount;
       j[`ankle${side}`].rotation.x = lerp(0, 0, s);
 
       const shoulder = j[`shoulder${side}`];
@@ -516,6 +550,11 @@ export class Actor {
       shoulderZ = lerp(shoulderZ, -sign * 0.2, this.brace);
       elbowX = lerp(elbowX, 1.9, this.brace);
       elbowZ = lerp(elbowZ, 0, this.brace);
+      // Hands on the cart's handle, just ahead and below.
+      shoulderX = lerp(shoulderX, 0.72, this.push);
+      shoulderZ = lerp(shoulderZ, -sign * 0.12, this.push);
+      elbowX = lerp(elbowX, 0.4, this.push);
+      elbowZ = lerp(elbowZ, 0, this.push);
       shoulderX = lerp(shoulderX, 0.12, this.slump);
       elbowX = lerp(elbowX, 0.35, this.slump);
       shoulder.rotation.set(shoulderX, 0, shoulderZ);
@@ -600,7 +639,13 @@ export class People {
    * Match the cabin to the game: create, seat, walk, kill or restrain passengers.
    * `rearSpot(i)` gives where the i-th restrained passenger stands; `faces` has painted faces by player.
    */
-  sync(players: PlayerSummary[], youId: string | null, rearSpot: (index: number) => THREE.Vector3, faces: ReadonlyMap<string, string> | null = null): void {
+  sync(
+    players: PlayerSummary[],
+    youId: string | null,
+    rearSpot: (index: number) => THREE.Vector3,
+    faces: ReadonlyMap<string, string> | null = null,
+    away: { id: string; door: THREE.Vector3 } | null = null,
+  ): void {
     const seen = new Set<string>();
     for (const id of [...this.rearSlots.keys()]) {
       if (players.find((p) => p.id === id)?.status !== 'restrained') this.rearSlots.delete(id);
@@ -636,6 +681,10 @@ export class People {
       } else if (p.seat && (actor.seat !== p.seat || actor.restrained)) {
         actor.place(p.seat, true);
       }
+      // Off to the lavatory for the night, and back at dawn (those who died in there stay out of sight).
+      const gone = away?.id === p.id && p.id !== youId && p.status === 'alive';
+      if (gone && !actor.away) actor.goAway(away!.door);
+      else if (!gone && actor.away && p.status !== 'dead') actor.comeBack();
       const dead = p.status === 'dead';
       if (dead !== actor.dead || p.cause !== actor.cause) {
         actor.dead = dead;

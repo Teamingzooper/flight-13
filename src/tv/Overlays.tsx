@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Avatar } from '../app/Avatar';
 import { Credits } from '../meta/Credits';
-import { DESTINATIONS, ITEMS, ROLES, type PlayerView } from '../engine';
+import { DESTINATIONS, ITEMS, ROLES, grid, type PlayerView } from '../engine';
 import { ACHIEVEMENTS } from '../meta/achievements';
 import { settlementFor } from '../meta/bag';
 import { ItemIcon } from '../meta/ItemIcon';
@@ -113,7 +113,7 @@ function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void
           </div>
           <div>
             <div class="label">Seat</div>
-            <div class="pass-big">{you.seat}</div>
+            <div class="pass-big">{you.seat && grid.isAisleSpot(you.seat) ? 'Crew' : you.seat}</div>
           </div>
           <div>
             <div class="label">Role</div>

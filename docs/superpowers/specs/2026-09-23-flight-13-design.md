@@ -125,7 +125,7 @@ The host chooses how many of each special card to include; everyone else is a **
 | Pilot | `seatbelt(target)`: target cannot move or act tonight | `night_move` | Not self; not the same target as the previous night |
 | Nurse | `treat(target)`: target cannot die tonight, existing poison is cured, poison applied tonight fails | `night_act` | Target within distance 1; self-treat once per game |
 | Investigator | `sweep`: finds seat bombs within distance 1 of own seat; or `inspect(cart \| lavatory)` | `night_act` | Inspect requires adjacency to that object (and it must not be destroyed) |
-| Stewardess (loyal) | `serve(target)`: learns target's team; the cart rolls to target's row | `night_act` | Any other living player |
+| Stewardess (loyal) | Works the aisle, not a seat (see M10). `check(side)`: looks under the three seats on the left or right of her row for bombs (misses the Mastermind's); the cart rolls with her | `night_act` | Her own row |
 
 ### Saboteur team
 
@@ -135,7 +135,7 @@ Saboteurs know each other (names and roles), share a private night chat, and see
 |---|---|---|---|
 | Bomber | `plant(where, fuse)` once per game; `where` ∈ own seat, cart, lavatory; `fuse` ∈ {1, 2} | `night_act` | Cart: own seat adjacent to the cart. Lavatory: own seat adjacent to the lavatory. Target object not destroyed |
 | Mastermind | Same as Bomber; appears as **Passenger team** to the Stewardess | `night_act` | Same as Bomber |
-| Stewardess (rogue) | `serve(target)`: poisons target (fails if treated); the cart rolls to target's row | `night_act` | Any other living player |
+| Stewardess (rogue) | Works the aisle, not a seat (see M10). `serve(target)`: poisons someone sitting in her row (fails if treated); the cart rolls with her | `night_act` | Anyone in her row |
 
 - **Stewardess card:** its team is rolled when roles are dealt — rogue with probability
   `stewardessRogueChance` (default 0.5). Both versions look identical from outside: the cart moves

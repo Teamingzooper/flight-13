@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock, shortName } from './format';
+import { clock, placeLabel, shortName } from './format';
 
 describe('tv formatting', () => {
   it('formats countdowns', () => {
@@ -12,5 +12,10 @@ describe('tv formatting', () => {
   it('shortens names for seat cells', () => {
     expect(shortName('Ann Marie')).toBe('Ann');
     expect(shortName('Bartholomew')).toBe('Bartho…');
+  });
+
+  it('labels the Stewardess by the row she works', () => {
+    expect(placeLabel('12C')).toBe('12C');
+    expect(placeLabel('Aisle 5')).toBe('crew, row 5');
   });
 });

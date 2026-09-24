@@ -3,8 +3,8 @@ import { isNightPhase, isWhisperPhase, phaseDue } from './engine';
 import { WHISPER_RADIUS, distance } from './grid';
 import { possibleItemUses, type ItemUse } from './items';
 import { isSaboteur, teamOf } from './roles';
-import { checkSeatbelt, possibleActions } from './rules';
-import { activePlayers, cellOf, emptySeats, getPlayer, isActive } from './state';
+import { checkSeatbelt, checkWashroom, possibleActions, possibleMoves } from './rules';
+import { activePlayers, cellOf, getPlayer, inWashroom, isActive } from './state';
 import type {
   Award,
   BombLocation,
@@ -17,6 +17,7 @@ import type {
   ItemId,
   LogEntry,
   Look,
+  MoveTarget,
   NightAction,
   PhaseKind,
   PlayerState,
@@ -73,10 +74,14 @@ export interface YouView {
   usedItems: ItemId[];
   /** You are done packing. */
   packed: boolean;
+  /** You already spent your one night in the washroom. */
+  washroomUsed: boolean;
+  /** You are locked in the lavatory right now. */
+  inWashroom: boolean;
 }
 
 export interface MineView {
-  move: SeatId | 'stay' | null;
+  move: MoveTarget | null;
   seatbelt: string | null;
   action: NightAction | null;
   acted: boolean;
@@ -86,7 +91,10 @@ export interface MineView {
 
 /** Legal choices for the current phase, computed by the host so the UI never re-implements rules. */
 export interface OptionsView {
+  /** Seats you can move to (aisle spots for crew): empty, and not past the drink cart. */
   seats: SeatId[];
+  /** Why you cannot go to the washroom tonight, or null if you can. */
+  washroom: string | null;
   seatbelt: string[];
   actions: NightAction[];
   whisper: string[];
@@ -116,6 +124,8 @@ export interface PlayerView {
   settings: Settings;
   players: PlayerSummary[];
   cabin: Cabin;
+  /** Who is locked in the lavatory right now. */
+  washroom: string | null;
   blackout: boolean;
   bombs: BombView[];
   mine: MineView | null;
@@ -140,7 +150,8 @@ function optionsFor(s: GameState, me: PlayerState): OptionsView {
   const buckled = s.night.buckled[me.id] !== undefined;
   const others = activePlayers(s).filter((p) => p.id !== me.id);
   return {
-    seats: kind === 'night_move' && !buckled ? emptySeats(s) : [],
+    seats: kind === 'night_move' && !buckled ? possibleMoves(s, me) : [],
+    washroom: kind !== 'night_move' ? 'The washroom is for the night.' : buckled ? 'You are buckled in tonight.' : checkWashroom(s, me),
     seatbelt:
       kind === 'night_move' && !buckled && me.role === 'pilot'
         ? others.filter((t) => checkSeatbelt(s, me, t.id) === null).map((t) => t.id)
@@ -226,6 +237,8 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     items: [...me.items],
     usedItems: [...me.usedItems],
     packed: s.packed[me.id] === true,
+    washroomUsed: me.washroomUsed,
+    inWashroom: inWashroom(s, me.id),
   };
 
   const mine: MineView | null = me && {
@@ -257,6 +270,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     settings: s.settings,
     players,
     cabin: s.cabin,
+    washroom: s.phase.kind === 'night_act' ? s.night.washroom : null,
     blackout: s.blackoutNight === s.phase.night && BLACKOUT_PHASES.has(s.phase.kind),
     bombs,
     mine,

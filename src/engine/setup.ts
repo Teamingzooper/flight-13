@@ -1,7 +1,7 @@
 import { DESTINATIONS } from './destinations';
-import { allSeats, rowsFor } from './grid';
+import { aisleSpot, allSeats, rowsFor } from './grid';
 import { nextFloat, shuffle, type RngHolder } from './rng';
-import { presetCards, validateCards } from './roles';
+import { isStewardess, presetCards, validateCards } from './roles';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
 import type { Cards, DayChoices, GameState, Look, NightChoices, RoleId, Settings } from './types';
@@ -20,7 +20,20 @@ export interface CreateGameOptions {
 }
 
 export function emptyNight(): NightChoices {
-  return { moves: {}, seatbelts: {}, actions: {}, buckled: {}, anomaly: null, searched: {}, asleep: {}, mirrors: {}, flashlights: {}, freed: {}, defused: {} };
+  return {
+    moves: {},
+    seatbelts: {},
+    actions: {},
+    buckled: {},
+    anomaly: null,
+    searched: {},
+    asleep: {},
+    mirrors: {},
+    flashlights: {},
+    freed: {},
+    defused: {},
+    washroom: null,
+  };
 }
 
 export function emptyDay(): DayChoices {
@@ -90,14 +103,23 @@ export function createGame(opts: CreateGameOptions): GameState {
     awards: null,
   };
   const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance);
-  const seats = shuffle(s, allSeats(rows)).slice(0, players.length);
+  const seats = shuffle(s, allSeats(rows));
+  // Crew work the aisle instead of sitting: the first starts at the front with the cart, the rest spread out behind.
+  const crew = roles.filter(isStewardess).length;
+  let crewPlaced = 0;
+  const placeFor = (role: RoleId) => {
+    if (!isStewardess(role)) return seats.pop()!;
+    const row = crew === 1 ? 1 : 1 + Math.round((crewPlaced * (rows - 1)) / (crew - 1));
+    crewPlaced++;
+    return aisleSpot(row);
+  };
   s.players = players.map((np, i) => ({
     id: np.id,
     name: np.name,
     look: { ...np.look },
     role: roles[i],
     status: 'alive',
-    seat: seats[i],
+    seat: placeFor(roles[i]),
     cause: null,
     outNight: null,
     poisonedNight: null,
@@ -111,6 +133,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     items: [],
     usedItems: [],
     poisonedBy: null,
+    washroomUsed: false,
   }));
   for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };
   return s;

@@ -16,7 +16,7 @@ function waitingFor(game: PlayerView, item: ItemId): string {
   if (info.when === 'day' && !day) return 'Day only';
   switch (item) {
     case 'defuser':
-      return 'Find a bomb under your seat first';
+      return 'Find a bomb within reach first';
     case 'pills':
       return kind === 'night_move' ? 'After seats change' : 'No neighbour to give one to';
     case 'extender':

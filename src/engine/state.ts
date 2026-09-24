@@ -1,4 +1,4 @@
-import { allSeats, parseSeat } from './grid';
+import { allSeats, parsePlace } from './grid';
 import { ROLES } from './roles';
 import { normalizeSettings, phaseDurationMs } from './settings';
 import type { Bomb, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
@@ -25,10 +25,16 @@ export function emptySeats(s: GameState): SeatId[] {
   return allSeats(s.cabin.rows).filter((id) => !taken.has(id));
 }
 
+/** Where a player is on the grid: their seat, or the Stewardess's aisle spot. */
 export function cellOf(p: PlayerState): Cell {
-  const cell = p.seat ? parseSeat(p.seat) : null;
+  const cell = p.seat ? parsePlace(p.seat) : null;
   if (!cell) throw new Error(`${p.name} has no seat`);
   return cell;
+}
+
+/** Locked in the lavatory tonight: out of everyone's reach, and away from their seat. */
+export function inWashroom(s: GameState, id: string): boolean {
+  return s.phase.kind === 'night_act' && s.night.washroom === id;
 }
 
 export function newId(s: GameState): number {
@@ -87,6 +93,7 @@ export function normalizeGame(s: GameState): GameState {
   s.night.flashlights ??= {};
   s.night.freed ??= {};
   s.night.defused ??= {};
+  s.night.washroom ??= null;
   s.day.doubled ??= {};
   for (const b of s.bombs) b.defused ??= false;
   for (const p of s.players) {
@@ -95,6 +102,7 @@ export function normalizeGame(s: GameState): GameState {
     p.items ??= [];
     p.usedItems ??= [];
     p.poisonedBy ??= null;
+    p.washroomUsed ??= false;
   }
   return s;
 }

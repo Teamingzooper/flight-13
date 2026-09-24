@@ -1,13 +1,13 @@
 import { DESTINATIONS } from './destinations';
-import { BLAST_RADIUS, SWEEP_RADIUS, cartCell, distance, lavatoryCells, parseSeat, seatOrder, seatsWithin } from './grid';
+import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, lavatoryCells, parseSeat, rowSeats, seatOrder } from './grid';
 import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
-import { ROLES, apparentTeam, isSaboteur } from './roles';
+import { ROLES, isSaboteur, isStewardess } from './roles';
 import { checkAction, checkMove, checkSeatbelt } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, isActive, label, newId, readNote, removeFromPlay, statsOf } from './state';
-import type { Anomaly, Bomb, BombLocation, Cell, GameState, NightAction, PlayerState, SeatId } from './types';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, readNote, removeFromPlay, statsOf } from './state';
+import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
 
@@ -67,33 +67,91 @@ export function resolveMoves(s: GameState, now: number): void {
       continue;
     }
     s.night.buckled[target.id] ??= 'pilot';
-    addLog(s, now, [target.id], 'buckled', 'Ding. The seatbelt sign lit up over your seat. You are stuck here tonight and cannot use an ability.');
+    addLog(
+      s,
+      now,
+      [target.id],
+      'buckled',
+      isStewardess(target.role)
+        ? 'Ding. The captain told the crew to stay put. You are stuck at your post tonight and cannot use an ability.'
+        : 'Ding. The seatbelt sign lit up over your seat. You are stuck here tonight and cannot use an ability.',
+    );
     addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} buckled in ${target.name}.`);
   }
 
-  const claims = new Map<SeatId, PlayerState[]>();
+  // Every move is checked against the cabin as it was when the lights went out, then all happen at once.
+  const claims = new Map<MoveTarget, PlayerState[]>();
   for (const p of activePlayers(s)) {
     const to = s.night.moves[p.id];
     if (!to || to === 'stay' || s.night.buckled[p.id]) continue;
     if (checkMove(s, p, to) !== null) continue;
     claims.set(to, [...(claims.get(to) ?? []), p]);
   }
-  for (const seat of [...claims.keys()].sort((a, b) => seatOrder(a) - seatOrder(b))) {
-    const claimants = claims.get(seat)!;
+  for (const to of [...claims.keys()].sort((a, b) => seatOrder(a) - seatOrder(b))) {
+    const claimants = claims.get(to)!;
     const winner = claimants.length === 1 ? claimants[0] : pick(s, claimants);
-    const from = winner.seat;
-    winner.seat = seat;
-    addLog(s, now, 'end', 'move', `Night ${n}: ${winner.name} moved from ${from} to ${seat}.`, { player: winner.id, from, to: seat });
-    for (const loser of claimants) {
-      if (loser !== winner) addLog(s, now, [loser.id], 'bumped', `Someone beat you to ${seat}. You stayed in ${loser.seat}.`);
+    if (to === 'washroom') goToWashroom(s, winner, now);
+    else {
+      const from = winner.seat;
+      winner.seat = to;
+      const text = isAisleSpot(to)
+        ? `Night ${n}: Stewardess ${winner.name} walked from row ${aisleRow(from)} to row ${aisleRow(to)}.`
+        : `Night ${n}: ${winner.name} moved from ${from} to ${to}.`;
+      addLog(s, now, 'end', 'move', text, { player: winner.id, from, to });
     }
+    for (const loser of claimants) {
+      if (loser === winner) continue;
+      addLog(s, now, [loser.id], 'bumped', to === 'washroom' ? `Someone beat you to the lavatory. You stayed in ${loser.seat}.` : `Someone beat you to ${to}. You stayed in ${loser.seat}.`);
+    }
+  }
+
+  // The drink cart rolls with the Stewardess (the first one still working, if there are several).
+  const crew = activePlayers(s).find((p) => isStewardess(p.role) && isAisleSpot(p.seat));
+  const row = crew ? aisleRow(crew.seat) : null;
+  if (row !== null && !s.cabin.cartDestroyed && row !== s.cabin.cartRow) {
+    s.cabin.cartRow = row;
+    addLog(s, now, 'all', 'cart', `The drink cart is now at row ${row}.`);
   }
 }
 
-/** Look under your own seat. Only an earlier occupant can have left a bomb there, so the answer is final. */
+/** Lock yourself in the lavatory for the night: out of reach, and any poison washed out. */
+function goToWashroom(s: GameState, p: PlayerState, now: number): void {
+  const n = s.phase.night;
+  s.night.washroom = p.id;
+  p.washroomUsed = true;
+  const cured = p.poisonedNight !== null;
+  p.poisonedNight = null;
+  p.poisonedBy = null;
+  addLog(
+    s,
+    now,
+    [p.id],
+    'washroom',
+    `You slipped into the lavatory and locked the door. Nobody can reach you tonight, and you will be back in ${p.seat} by morning.${
+      cured ? ' You rinsed the poison out at the sink and already feel better.' : ''
+    }`,
+    { cured },
+  );
+  addLog(s, now, 'all', 'washroom', `${p.name} went to the lavatory. The door is locked for the night.`, { player: p.id });
+  addLog(s, now, 'end', 'washroom', `Night ${n}: ${p.name} spent the night in the lavatory${cured ? ' and washed out the poison' : ''}.`);
+}
+
+/** Look under your own seat (or search the lavatory you are locked in). The answer is final. */
 export function searchSeat(s: GameState, p: PlayerState, now: number): void {
   const n = s.phase.night;
   s.night.searched[p.id] = true;
+  if (inWashroom(s, p.id)) {
+    const found = s.bombs.filter((b) => !b.exploded && !b.defused && b.location.kind === 'lavatory');
+    for (const b of found) if (!p.knownBombIds.includes(b.id)) p.knownBombIds.push(b.id);
+    statsOf(s, p.id).found += found.length;
+    const text =
+      found.length === 0
+        ? 'You searched every corner of the lavatory. Paper towels, a spare roll, nothing else.'
+        : `Behind the mirror panel you found a bomb, ${fuseText(found[0], n)}. You are locked in here with it.`;
+    addLog(s, now, [p.id], 'search', text, { bombs: found.map((b) => b.id), lavatory: true });
+    addLog(s, now, 'end', 'search', `Night ${n}: ${p.name} searched the lavatory${found.length ? ' and found a bomb' : ''}.`);
+    return;
+  }
   const found = s.bombs.filter((b) => !b.exploded && !b.defused && b.location.kind === 'seat' && b.location.seat === p.seat);
   for (const b of found) if (!p.knownBombIds.includes(b.id)) p.knownBombIds.push(b.id);
   statsOf(s, p.id).found += found.length;
@@ -240,6 +298,7 @@ export function resolveNight(s: GameState, now: number): void {
   for (const { actor, action } of acts) {
     if (action.kind !== 'serve' || actor.role !== 'stewardess_rogue') continue;
     const t = playerById(action.target);
+    visit(t.id, `${actor.name} served you a drink`);
     addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`);
     if (treated.has(t.id)) {
       rescued(t.id);
@@ -257,8 +316,32 @@ export function resolveNight(s: GameState, now: number): void {
     }
   }
 
-  // 5. Investigations (the cart is where it stood during night_act).
+  // 5. Investigations (the cart is where it stood during night_act), and the loyal Stewardess's checks.
   const live = s.bombs.filter((b) => !b.exploded && !b.defused);
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'check') continue;
+    const row = aisleRow(actor.seat)!;
+    const seats = rowSeats(row, action.side);
+    // The Mastermind hides a bomb too well for a glance from the aisle.
+    const found = live.filter(
+      (b) => b.location.kind === 'seat' && seats.includes(b.location.seat) && getPlayer(s, b.planterId)?.role !== 'mastermind',
+    );
+    for (const seat of seats) {
+      const sitter = activePlayers(s).find((p) => p.seat === seat && !inWashroom(s, p.id));
+      if (sitter) visit(sitter.id, `${actor.name} checked under your seat`);
+    }
+    for (const b of found) if (!actor.knownBombIds.includes(b.id)) actor.knownBombIds.push(b.id);
+    statsOf(s, actor.id).found += found.length;
+    const what = `under ${seats.slice(0, 2).join(', ')} and ${seats[2]}`;
+    const text =
+      found.length === 0
+        ? `You worked row ${row} and checked ${what}. No bombs.`
+        : `You worked row ${row}, checked ${what} and found ${found.length === 1 ? 'a bomb' : `${found.length} bombs`}: ${found
+            .map((b) => `${describeLocation(b.location)}, ${fuseText(b, n)}`)
+            .join('; ')}.`;
+    addLog(s, now, [actor.id], 'check', text, { bombs: found.map((b) => b.id), seats });
+    addLog(s, now, 'end', 'check', `Night ${n}: Stewardess ${actor.name} checked ${what}${found.length ? ' and found a bomb' : ''}.`);
+  }
   for (const { actor, action } of acts) {
     if (action.kind !== 'sweep' && action.kind !== 'inspect') continue;
     let found: Bomb[];
@@ -283,30 +366,10 @@ export function resolveNight(s: GameState, now: number): void {
     addLog(s, now, 'end', action.kind, `Night ${n}: Investigator ${actor.name} checked ${what}${found.length ? ' and found a bomb' : ''}.`);
   }
 
-  // 6. Loyal results, then the cart rolls to each served row.
-  for (const { actor, action } of acts) {
-    if (action.kind !== 'serve') continue;
-    const t = playerById(action.target);
-    visit(t.id, `${actor.name} served you a drink`);
-    if (actor.role === 'stewardess_loyal') {
-      const team = apparentTeam(t.role);
-      addLog(
-        s,
-        now,
-        [actor.id],
-        'serve',
-        `You served ${t.name} (${t.seat}). They are on the ${team === 'saboteurs' ? 'Saboteur' : 'Passenger'} team.`,
-        { player: t.id, team },
-      );
-      addLog(s, now, 'end', 'serve', `Night ${n}: Stewardess ${actor.name} checked ${t.name}.`);
-    }
-    if (!s.cabin.cartDestroyed) s.cabin.cartRow = cellOf(t).row;
-  }
+  // 6. A runaway cart leaves the Stewardess behind (she catches up with it when she next walks).
   if (s.night.anomaly === 'runaway_cart' && !s.cabin.cartDestroyed) {
     s.cabin.cartRow = 1 + nextInt(s, rows);
     addLog(s, now, 'all', 'anomaly', `In the dark, the drink cart broke loose and rolled to row ${s.cabin.cartRow}.`, { anomaly: 'runaway_cart' });
-  } else if (s.cabin.cartRow !== cartRowAtAct) {
-    addLog(s, now, 'all', 'cart', `The drink cart is now at row ${s.cabin.cartRow}.`);
   }
 
   // 6b. Bombs defused tonight are found out at dawn (the planter's seat is a clue).
@@ -334,10 +397,11 @@ export function resolveNight(s: GameState, now: number): void {
     if (bomb.location.kind === 'cart') s.cabin.cartDestroyed = true;
     if (bomb.location.kind === 'lavatory') s.cabin.lavatoryDestroyed = true;
     s.incidentAtDawn = true;
-    const blast = new Set(seatsWithin(centers, BLAST_RADIUS, rows));
     const victims: PlayerState[] = [];
     for (const p of activePlayers(s)) {
-      if (!p.seat || !blast.has(p.seat)) continue;
+      // Whoever is locked in the lavatory is only caught by a bomb in there with them.
+      const caught = inWashroom(s, p.id) ? bomb.location.kind === 'lavatory' : !!p.seat && distanceToAny(cellOf(p), centers) <= BLAST_RADIUS;
+      if (!caught) continue;
       if (treated.has(p.id)) {
         rescued(p.id);
         addLog(s, now, [p.id], 'saved', 'You were caught in the blast, but the treatment you got tonight kept you alive.');

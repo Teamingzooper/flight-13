@@ -128,7 +128,7 @@ export function buildSeats(rows: number): SeatParts {
     screenMatrix: (seat) => screenMatrices.get(seat)?.clone() ?? new THREE.Matrix4(),
     hideScreen(seat) {
       if (hidden === seat) return;
-      if (hidden) screenMesh.setMatrixAt(screenIndex.get(hidden)!, screenMatrices.get(hidden)!);
+      if (hidden && screenIndex.has(hidden)) screenMesh.setMatrixAt(screenIndex.get(hidden)!, screenMatrices.get(hidden)!);
       hidden = seat;
       if (seat && screenIndex.has(seat)) screenMesh.setMatrixAt(screenIndex.get(seat)!, zero);
       screenMesh.instanceMatrix.needsUpdate = true;

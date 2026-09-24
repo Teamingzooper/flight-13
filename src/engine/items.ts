@@ -1,5 +1,6 @@
-import { distance, isSeatInCabin, parseSeat, seatsWithin } from './grid';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, isActive, statsOf } from './state';
+import { aisleRow, distance, isSeatInCabin, parseSeat, rowSeats, seatsWithin } from './grid';
+import { isStewardess } from './roles';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, statsOf } from './state';
 import type { Bomb, GameState, ItemId, PhaseKind, PlayerState, SeatId } from './types';
 
 /** Items that fit in a carry-on. */
@@ -25,7 +26,13 @@ export const ITEMS: Record<ItemId, ItemInfo> = {
     automatic: true,
     blurb: 'The next time your drink is poisoned, the poison does nothing.',
   },
-  defuser: { id: 'defuser', name: 'Defuser', when: 'night', automatic: false, blurb: 'Disarm a bomb you found under your seat.' },
+  defuser: {
+    id: 'defuser',
+    name: 'Defuser',
+    when: 'night',
+    automatic: false,
+    blurb: 'Disarm a bomb you found within reach: under your seat, in the lavatory while you are in it, or (crew) anywhere in your row.',
+  },
   extender: {
     id: 'extender',
     name: 'Seatbelt extender',
@@ -98,11 +105,22 @@ export function consumeItem(p: PlayerState, item: ItemId): boolean {
   return true;
 }
 
-/** A bomb you know is under the seat you sit in, still live. */
-function knownBombUnderSeat(s: GameState, p: PlayerState): Bomb | undefined {
-  return s.bombs.find(
-    (b) => !b.exploded && !b.defused && b.location.kind === 'seat' && b.location.seat === p.seat && p.knownBombIds.includes(b.id),
-  );
+/** Where a defuser reaches: under your seat, the lavatory you are locked in, or every seat in the Stewardess's row. */
+function withinReach(s: GameState, p: PlayerState, b: Bomb): boolean {
+  if (inWashroom(s, p.id)) return b.location.kind === 'lavatory';
+  if (b.location.kind !== 'seat') return false;
+  const row = isStewardess(p.role) ? aisleRow(p.seat) : null;
+  return row === null ? b.location.seat === p.seat : rowSeats(row).includes(b.location.seat);
+}
+
+/** A live bomb you know about and can reach. */
+function defusableBomb(s: GameState, p: PlayerState): Bomb | undefined {
+  return s.bombs.find((b) => !b.exploded && !b.defused && p.knownBombIds.includes(b.id) && withinReach(s, p, b));
+}
+
+/** Where a defused bomb was, for the log. */
+function bombPlace(b: Bomb): string {
+  return b.location.kind === 'seat' ? `under ${b.location.seat}` : b.location.kind === 'lavatory' ? 'in the lavatory' : 'on the drink cart';
 }
 
 export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string | null {
@@ -117,10 +135,11 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
   if (info.when === 'day' && !DAY.has(kind)) return `Your ${name} is for use during the day.`;
   switch (use.item) {
     case 'defuser':
-      return knownBombUnderSeat(s, p) ? null : 'You have not found a bomb under your seat.';
+      return defusableBomb(s, p) ? null : 'You have not found a bomb within reach.';
     case 'extender':
       return s.night.freed[p.id] ? 'Your extender is already clicked in.' : null;
     case 'flashlight': {
+      if (inWashroom(s, p.id)) return 'You are locked in the lavatory tonight.';
       if (s.night.flashlights[p.id]) return 'You already used a flashlight tonight.';
       const seat = use.seat;
       if (typeof seat !== 'string' || !isSeatInCabin(seat, s.cabin.rows)) return 'Pick a seat to look under.';
@@ -130,9 +149,11 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
     }
     case 'pills': {
       if (kind !== 'night_act') return 'Slip it once seats have changed.';
+      if (inWashroom(s, p.id)) return 'You are locked in the lavatory tonight.';
       const t = use.target === undefined ? undefined : getPlayer(s, use.target);
       if (!t || !isActive(t) || !t.seat) return 'Pick someone who is still in play.';
       if (t.id === p.id) return 'Those are for someone else.';
+      if (inWashroom(s, t.id)) return `${t.name} is locked in the lavatory tonight.`;
       if (distance(cellOf(t), cellOf(p)) > 1) return `${t.name} is too far away. Pick a neighbour.`;
       return null;
     }
@@ -170,12 +191,12 @@ export function useItem(s: GameState, p: PlayerState, use: ItemUse, now: number)
   consumeItem(p, use.item);
   switch (use.item) {
     case 'defuser': {
-      const bomb = knownBombUnderSeat(s, p)!;
+      const bomb = defusableBomb(s, p)!;
       bomb.defused = true;
       s.night.defused[bomb.id] = p.id;
       statsOf(s, p.id).defused++;
-      addLog(s, now, [p.id], 'item', `You cut the wires. The bomb under ${p.seat} is dead.`, { bomb: bomb.id });
-      addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} defused the bomb under ${p.seat}.`);
+      addLog(s, now, [p.id], 'item', `You cut the wires. The bomb ${bombPlace(bomb)} is dead.`, { bomb: bomb.id });
+      addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} defused the bomb ${bombPlace(bomb)}.`);
       break;
     }
     case 'extender': {

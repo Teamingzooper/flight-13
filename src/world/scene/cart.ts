@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { rowZ } from '../layout';
+import { TABLET, rowZ } from '../layout';
+import { SCREEN_H, SCREEN_W } from './seats';
+
+/** The crew tablet's screen on the cart, in the cart's own space. */
+const TABLET_LOCAL = new THREE.Matrix4().compose(
+  new THREE.Vector3(0, TABLET.y, TABLET.z),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(TABLET.tilt, 0, 0)),
+  new THREE.Vector3(1, 1, 1),
+);
 
 /** The aluminium drink trolley that rolls down the aisle. */
 export class Cart {
@@ -23,10 +31,17 @@ export class Cart {
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.035, 0.03), dark);
     handle.position.set(0, 0.95, 0.38);
     this.group.add(body, tray, handle);
+    // The crew tablet, propped on a little stand at the handle end (the Stewardess's screen).
+    const tablet = new THREE.Mesh(new RoundedBoxGeometry(SCREEN_W + 0.03, SCREEN_H + 0.03, 0.014, 2, 0.006), dark);
+    tablet.applyMatrix4(new THREE.Matrix4().multiplyMatrices(TABLET_LOCAL, new THREE.Matrix4().makeTranslation(0, 0, -0.009)));
+    // Behind the screen (the Stewardess stands on the +z side).
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.15, 10), dark);
+    pole.position.set(0, 1.1, TABLET.z - 0.035);
+    this.group.add(tablet, pole);
     const colors = ['#d23b3b', '#e6e6e6', '#2f6fd1', '#f2b134', '#3fae6b'];
     for (let i = 0; i < 7; i++) {
       const can = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.11, 12), new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: 0.3, metalness: 0.5 }));
-      can.position.set(-0.09 + (i % 3) * 0.09, 1.085, -0.22 + Math.floor(i / 3) * 0.14);
+      can.position.set(-0.09 + (i % 3) * 0.09, 1.085, -0.3 + Math.floor(i / 3) * 0.12);
       this.group.add(can);
     }
     const wheelGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 12);
@@ -51,6 +66,17 @@ export class Cart {
       this.z = this.targetZ;
       this.placed = true;
     }
+  }
+
+  /** Where the tablet's screen is right now (it rolls with the cart). */
+  tabletMatrix(out = new THREE.Matrix4()): THREE.Matrix4 {
+    this.group.updateMatrixWorld();
+    return out.multiplyMatrices(this.group.matrixWorld, TABLET_LOCAL);
+  }
+
+  /** Where the tablet's screen will be once the cart stops at `row`. */
+  static tabletAt(row: number, out = new THREE.Matrix4()): THREE.Matrix4 {
+    return out.makeTranslation(0, 0, rowZ(row)).multiply(TABLET_LOCAL);
   }
 
   update(dt: number, time: number): void {
