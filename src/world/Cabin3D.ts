@@ -37,6 +37,8 @@ export interface Cabin3DOptions {
   onPose?: (pose: Pose) => void;
   /** A captain's announcement to show as a caption. */
   onCaption?: (text: string) => void;
+  /** Your camera started (true) or finished (false) walking to a new seat. */
+  onWalk?: (walking: boolean) => void;
 }
 
 interface Built {
@@ -115,6 +117,7 @@ export class Cabin3D {
   private nextBump = 0;
   private gearUp = false;
   private engine = CRUISE;
+  private walking = false;
   private readonly unlockAudio = () => cabinAudio.unlock();
 
   constructor(
@@ -225,6 +228,16 @@ export class Cabin3D {
     this.controls.setLeaning(on);
   }
 
+  /** Capture the mouse for looking around (desktop only; the browser may insist on a click first). */
+  lockPointer(): void {
+    this.controls.requestLock();
+  }
+
+  /** Give the mouse back, e.g. while a window is open. */
+  unlockPointer(): void {
+    this.controls.releaseLock();
+  }
+
   /** Where remote poses come from (the client's live map). */
   setPoseSource(poses: Map<string, Pose>): void {
     this.poseSource = poses;
@@ -310,7 +323,7 @@ export class Cabin3D {
   }
 
   private tap(ndc: THREE.Vector2): void {
-    if (this.hitsScreen(ndc)) this.opts.onScreenClick();
+    if (!this.controls.walking && this.hitsScreen(ndc)) this.opts.onScreenClick();
     else this.controls.requestLock();
   }
 
@@ -352,6 +365,10 @@ export class Cabin3D {
     this.flash *= Math.exp(-dt * 5);
     this.flashEl.style.opacity = this.flash > 0.01 ? String(this.flash) : '0';
     this.controls.update(dt, time);
+    if (this.controls.walking !== this.walking) {
+      this.walking = this.controls.walking;
+      this.opts.onWalk?.(this.walking);
+    }
     this.cart.update(dt, time);
     this.applyPoses(time);
     this.people.update(dt, time);
