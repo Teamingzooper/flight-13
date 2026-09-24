@@ -7,7 +7,8 @@ import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
 
-const MAX_ACTORS = 17;
+/** Sixteen passengers, and a few more for the police in an ending. */
+const MAX_ACTORS = 22;
 const SOOT = new THREE.Color('#120f0d');
 const HALF_PI = Math.PI / 2;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -33,7 +34,7 @@ type JointName =
   | 'ankle0'
   | 'ankle1';
 
-type Paint = 'top' | 'upper' | 'sleeve' | 'bottom' | 'skin' | 'shoe' | 'eye' | 'hair';
+type Paint = 'top' | 'upper' | 'sleeve' | 'bottom' | 'skin' | 'shoe' | 'eye' | 'hair' | 'gun';
 
 interface PartSpec {
   geometry: THREE.BufferGeometry;
@@ -48,6 +49,8 @@ interface PartSpec {
   hair?: number;
   /** Top style (Look.topStyle) this part belongs to. */
   outfit?: number;
+  /** Only drawn while the actor holds a pistol. */
+  armed?: boolean;
 }
 
 const m = (x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) =>
@@ -141,6 +144,18 @@ function hoodGeometry(): THREE.BufferGeometry {
   return merge(collar, hood);
 }
 
+/** A pistol in the right hand: grip in the fist, barrel along the pointing arm (down the wrist's -y). */
+function pistolGeometry(): THREE.BufferGeometry {
+  const slide = new THREE.BoxGeometry(0.042, 0.21, 0.055);
+  slide.translate(0, -0.06, 0.03);
+  const grip = new THREE.BoxGeometry(0.036, 0.05, 0.12);
+  grip.rotateX(-0.25);
+  grip.translate(0, 0.03, -0.03);
+  const guard = new THREE.BoxGeometry(0.01, 0.05, 0.04);
+  guard.translate(0, -0.01, -0.015);
+  return merge(slide, grip, guard);
+}
+
 /** The head's shape on the head joint: a slightly tall sphere. */
 export const HEAD_CENTER_Y = 0.1;
 export const HEAD_SCALE = new THREE.Vector3(0.92, 1.08, 1);
@@ -199,6 +214,7 @@ function buildParts(): PartSpec[] {
     },
   ];
   parts.push({ geometry: hoodGeometry(), material: cloth, joints: ['chest'], local: [m()], paint: 'top', head: true, outfit: 2 });
+  parts.push({ geometry: pistolGeometry(), material: dark, joints: ['wrist1'], local: [m(0, -0.06, 0.012)], paint: 'gun', armed: true });
   hairGeometries().forEach((geometry, index) => {
     if (geometry) parts.push({ geometry, material: hair, joints: ['head'], local: [m()], paint: 'hair', head: true, hair: index });
   });
@@ -226,7 +242,15 @@ export class Actor {
   /** Latest pose from the network (or your own camera). */
   pose: Pose | null = null;
   pointAt: THREE.Vector3 | null = null;
+  /** Cutscenes: stay on your feet, look at a point, hold a pistol, hands up, or duck and brace. */
+  standing = false;
+  gaze: THREE.Vector3 | null = null;
+  armed = false;
+  handsUp = false;
+  duck = false;
   private stand = 0;
+  private surrender = 0;
+  private brace = 0;
   private walkAmount = 0;
   private walkPhase = 0;
   private reach = 0;
@@ -237,7 +261,8 @@ export class Actor {
   private pitch = 0;
   private readonly slumpSide = Math.random() < 0.5 ? -1 : 1;
   private readonly idleSeed = Math.random() * 100;
-  private path: { curve: THREE.CatmullRomCurve3; t: number; seconds: number } | null = null;
+  /** A walk in progress; `free` walks (cutscenes) face where they go all the way and end on their feet. */
+  private path: { curve: THREE.CatmullRomCurve3; t: number; seconds: number; free?: boolean; run?: boolean } | null = null;
   private readonly aim = new THREE.Quaternion();
 
   constructor(look: Look) {
@@ -328,6 +353,20 @@ export class Actor {
     return this.path !== null;
   }
 
+  /** Walk (or run) from where you are through `points` in `seconds`, and stay standing at the end. */
+  walkAlong(points: THREE.Vector3[], seconds: number, run = false): void {
+    this.driven = null;
+    this.standing = true;
+    const start = this.root.position.clone();
+    this.path = { curve: new THREE.CatmullRomCurve3([start, ...points], false, 'centripetal', 0.5), t: 0, seconds, free: true, run };
+  }
+
+  /** Where the eyes are, in the same space as the root. */
+  eyes(out = new THREE.Vector3()): THREE.Vector3 {
+    this.joints.head.updateWorldMatrix(true, false);
+    return out.set(0, 0.11, -0.06).applyMatrix4(this.joints.head.matrixWorld);
+  }
+
   /** Follow the camera rig (or stop following it and sit where you belong). */
   drive(d: { x: number; z: number; yaw: number; walk: number; phase: number } | null): void {
     if (d) {
@@ -359,6 +398,22 @@ export class Actor {
       this.root.position.set(d.x, 0, d.z);
       this.root.rotation.y = d.yaw;
       moving = d.walk > 0.05;
+    } else if (this.path?.free) {
+      // A cutscene walk: set off, keep going, face the way you go, stop on your feet.
+      const p = this.path;
+      p.t = Math.min(1, p.t + dt / p.seconds);
+      const ease = p.run ? 0.08 : 0.15;
+      const u = p.t < ease ? (p.t * p.t) / (2 * ease * (1 - ease)) : p.t > 1 - ease ? 1 - (1 - p.t) ** 2 / (2 * ease * (1 - ease)) : (p.t - ease / 2) / (1 - ease);
+      const point = p.curve.getPointAt(Math.min(1, Math.max(0, u)));
+      const ahead = p.curve.getPointAt(Math.min(1, Math.max(0, u) + 0.02));
+      this.root.position.copy(point);
+      if (ahead.distanceToSquared(point) > 1e-6) {
+        const facing = Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z));
+        const turn = Math.atan2(Math.sin(facing - this.root.rotation.y), Math.cos(facing - this.root.rotation.y));
+        this.root.rotation.y += turn * Math.min(1, dt * 10);
+      }
+      moving = p.t < 0.97;
+      if (p.t >= 1) this.path = null;
     } else if (this.path) {
       const p = this.path;
       p.t = Math.min(1, p.t + dt / p.seconds);
@@ -382,12 +437,15 @@ export class Actor {
       }
     }
 
-    const wantsStand = d || this.restrained || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
+    const wantsStand = d || this.restrained || this.standing || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
     this.stand = approach(this.stand, this.dead ? 0 : wantsStand, 5, dt);
-    this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? 1 : 0, 6, dt);
+    const running = this.path?.run ? 1.8 : 1;
+    this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? running : 0, 6, dt);
     // Your own legs keep step with the camera's footfalls.
     if (d) this.walkPhase = d.phase;
-    else this.walkPhase += dt * 7 * this.walkAmount;
+    else this.walkPhase += dt * 7 * Math.min(1, this.walkAmount) * (this.walkAmount > 1.2 ? 1.7 : 1);
+    this.surrender = approach(this.surrender, this.handsUp && !this.dead ? 1 : 0, 5, dt);
+    this.brace = approach(this.brace, this.duck && !this.dead ? 1 : 0, 5, dt);
     const wantsReach = !this.dead && !this.restrained && this.stand < 0.2 && this.pose?.lean ? 1 : 0;
     this.reach = approach(this.reach, wantsReach, 5, dt);
     this.point = approach(this.point, this.pointAt && !this.dead && !this.restrained ? 1 : 0, 4, dt);
@@ -398,8 +456,17 @@ export class Actor {
     const idleYaw = Math.sin(time * 0.21 + this.idleSeed) * 0.45 + Math.sin(time * 0.53 + this.idleSeed * 2) * 0.15;
     const idlePitch = -0.12 + Math.sin(time * 0.37 + this.idleSeed) * 0.08;
     const posed = this.pose && !this.path && !d ? this.pose : null;
-    const targetYaw = posed ? Math.max(-1.6, Math.min(1.6, posed.yaw)) : this.path || d ? 0 : idleYaw;
-    const targetPitch = posed ? posed.pitch : this.path || d ? -0.08 : idlePitch;
+    let targetYaw = posed ? Math.max(-1.6, Math.min(1.6, posed.yaw)) : this.path || d ? 0 : idleYaw;
+    let targetPitch = posed ? posed.pitch : this.path || d ? -0.08 : idlePitch;
+    // Looking at something (in cutscenes): turn the head (and a little of the body) towards it.
+    if (this.gaze && !this.dead) {
+      const eye = this.root.position.clone().add(new THREE.Vector3(0, this.stand > 0.5 ? 1.6 : 1.18, 0));
+      const to = this.gaze.clone().sub(eye);
+      const heading = Math.atan2(-to.x, -to.z) - this.root.rotation.y;
+      targetYaw = Math.max(-1.7, Math.min(1.7, Math.atan2(Math.sin(heading), Math.cos(heading))));
+      targetPitch = Math.max(-0.9, Math.min(0.6, Math.atan2(to.y, Math.hypot(to.x, to.z))));
+    }
+    if (this.brace > 0.01) targetPitch = lerp(targetPitch, -0.7, this.brace);
     this.yaw = approach(this.yaw, targetYaw, 10, dt);
     this.pitch = approach(this.pitch, targetPitch, 10, dt);
 
@@ -408,7 +475,11 @@ export class Actor {
     const alive = 1 - this.slump;
     const swing = Math.sin(this.walkPhase) * this.walkAmount;
     j.hips.position.y = lerp(0.5, 0.92, s) + Math.abs(Math.sin(this.walkPhase)) * 0.02 * this.walkAmount;
-    j.spine.rotation.set(lerp(0.1, 0.03, s) - this.reach * 0.16 - this.slump * 0.75 - this.bind * 0.05, this.yaw * 0.3 * alive, this.slump * this.slumpSide * 0.25);
+    j.spine.rotation.set(
+      lerp(0.1, 0.03, s) - this.reach * 0.16 - this.slump * 0.75 - this.bind * 0.05 - this.brace * 0.8,
+      this.yaw * 0.3 * alive,
+      this.slump * this.slumpSide * 0.25,
+    );
     j.chest.scale.y = 1 + Math.sin(time * 1.6 + this.idleSeed) * 0.012 * alive;
     j.head.rotation.set(this.pitch * 0.8 * alive - this.slump * 0.6 - this.bind * 0.25, this.yaw * 0.7 * alive, this.slump * this.slumpSide * 0.3, 'YXZ');
 
@@ -436,6 +507,15 @@ export class Actor {
       shoulderZ = lerp(shoulderZ, sign * 0.03, this.bind);
       elbowX = lerp(elbowX, 0, this.bind);
       elbowZ = lerp(elbowZ, sign * 1.35, this.bind);
+      // Hands up (held at gunpoint), or hands over the head (bracing, heads down).
+      shoulderX = lerp(shoulderX, 2.55, this.surrender);
+      shoulderZ = lerp(shoulderZ, -sign * 0.45, this.surrender);
+      elbowX = lerp(elbowX, 0.45, this.surrender);
+      elbowZ = lerp(elbowZ, 0, this.surrender);
+      shoulderX = lerp(shoulderX, 2.3, this.brace);
+      shoulderZ = lerp(shoulderZ, -sign * 0.2, this.brace);
+      elbowX = lerp(elbowX, 1.9, this.brace);
+      elbowZ = lerp(elbowZ, 0, this.brace);
       shoulderX = lerp(shoulderX, 0.12, this.slump);
       elbowX = lerp(elbowX, 0.35, this.slump);
       shoulder.rotation.set(shoulderX, 0, shoulderZ);
@@ -465,6 +545,8 @@ export class People {
   private readonly meshes: THREE.InstancedMesh[];
   private readonly actors = new Map<string, Actor>();
   private readonly slots = new Map<string, number>();
+  /** Actors who are not players (the police, in an ending): `sync` leaves them alone. */
+  private readonly extras = new Set<string>();
   private readonly free: number[] = [];
   /** Stable standing spot per restrained passenger. */
   private readonly rearSlots = new Map<string, number>();
@@ -495,6 +577,23 @@ export class People {
 
   actor(id: string): Actor | undefined {
     return this.actors.get(id);
+  }
+
+  /** Someone who is not a player, standing at `at` (the police, in an ending). Null if the cabin is full. */
+  extra(id: string, look: Look, at: THREE.Vector3, face = ''): Actor | null {
+    const existing = this.actors.get(id);
+    if (existing) return existing;
+    const slot = this.free.pop();
+    if (slot === undefined) return null;
+    const actor = new Actor(look);
+    actor.standing = true;
+    actor.root.position.copy(at);
+    this.actors.set(id, actor);
+    this.slots.set(id, slot);
+    this.extras.add(id);
+    this.paint(id);
+    if (face) this.setFace(id, actor, face);
+    return actor;
   }
 
   /**
@@ -545,7 +644,7 @@ export class People {
       }
     }
     for (const id of [...this.actors.keys()]) {
-      if (seen.has(id)) continue;
+      if (seen.has(id) || this.extras.has(id)) continue;
       this.hide(id);
       this.setFace(id, this.actors.get(id)!, '');
       this.free.push(this.slots.get(id)!);
@@ -587,6 +686,7 @@ export class People {
           (part.head && actor.hideHead) ||
           (part.hair !== undefined && part.hair !== look.hair % HAIR_STYLES.length) ||
           (part.outfit !== undefined && part.outfit !== look.topStyle) ||
+          (part.armed && !actor.armed) ||
           // A painted face brings its own eyes.
           (part.paint === 'eye' && actor.face !== '');
         if (hidden) {
@@ -663,6 +763,7 @@ export class People {
       shoe: '#1c1d22',
       eye: '#141414',
       hair: HAIR_COLOR[look.hairColor] ?? HAIR_COLOR[0],
+      gun: '#16181c',
     };
     this.parts.forEach((part, index) => {
       const mesh = this.meshes[index];

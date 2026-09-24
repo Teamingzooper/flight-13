@@ -43,6 +43,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [aim, setAim] = useState(false);
   const [leavingOpen, setLeavingOpen] = useState(false);
   const [skipped, setSkipped] = useState(false);
+  /** The ending cutscene is playing: the end screen waits for it. */
+  const [ending, setEnding] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [caption, setCaption] = useState<{ text: string; who: string; id: number } | null>(null);
   const [muted, toggleMute] = useMuted();
@@ -62,10 +64,10 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   // Let the lights come up (and a blast play out) before the morning report covers the cabin.
   const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
   const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 5200 : 1500) : 0);
-  const cardOpen = usePhaseOverlayOpen(game) && !holdReport;
+  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !ending;
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen;
-  const mouseFree = windowOpen || preflight;
+  const mouseFree = windowOpen || preflight || ending;
 
   useEffect(() => {
     try {
@@ -81,6 +83,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         },
         onPack: (item) => packingRef.current.add(item),
         onUnpack: (slot) => packingRef.current.remove(slot),
+        onEnding: setEnding,
       });
       c.setPoseSource(flight.client.poses);
       c.setFaceSource(flight.client.faces);
@@ -130,6 +133,18 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, [kind]);
+  // The ending can be skipped the same way.
+  useEffect(() => {
+    if (!ending) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        cabin.current?.skipEnding();
+      }
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [ending]);
 
   const wasOpen = useRef(mouseFree);
   useEffect(() => {
@@ -220,7 +235,12 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               Skip to your seat ›
             </button>
           )}
-          <div class={`hud-top${kind === 'boarding' && !skipped ? ' hidden' : ''}`}>
+          {ending && (
+            <button class="hud-chip hud-button boarding-skip" onClick={() => cabin.current?.skipEnding()}>
+              Skip ›
+            </button>
+          )}
+          <div class={`hud-top${(kind === 'boarding' && !skipped) || ending ? ' hidden' : ''}`}>
             <div class="hud-chip hud-phase">
               <span class="hud-title">{phaseTitle(game)}</span>
               {kind !== 'ended' && <span class={`hud-clock${ctx.left < 10_000 ? ' urgent' : ''}`}>{clock(ctx.left)}</span>}
@@ -237,7 +257,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               </button>
             </div>
           </div>
-          {!TOUCH && !preflight && <div class={`crosshair${aim ? ' on' : ''}`} />}
+          {!TOUCH && !preflight && !ending && <div class={`crosshair${aim ? ' on' : ''}`} />}
           {kind === 'packing' && you && !cardOpen && <PackingHud game={game} packing={packing} onRole={reopenPhaseCard} />}
           {caption && (
             <div class="hud-caption" key={caption.id} role="status">
@@ -245,14 +265,14 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               {caption.text}
             </div>
           )}
-          {preflight ? null : TOUCH && hasScreen ? (
+          {preflight || ending ? null : TOUCH && hasScreen ? (
             <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={openScreen}>
               {hint}
             </button>
           ) : (
             <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
           )}
-          {!holdReport && (
+          {!holdReport && !ending && (
             <div class="hud-overlay">
               <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
             </div>
