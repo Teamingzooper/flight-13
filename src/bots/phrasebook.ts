@@ -144,8 +144,9 @@ export function say(kind: LineKind, fill: Fill, t: Tone, rng: () => number): str
   if (options.length === 0) return null;
   const template = options[Math.floor(rng() * options.length)];
   const filled = template.replace(/\{(\w+)\}/g, (_, key: string) => fill[key as keyof Fill] ?? '');
-  // A reason slotted in after a full stop starts a sentence.
-  const shaped = tone(filled, t, kind, fill, rng).replace(/([.!?]\s+)([a-z])/g, (_, stop: string, c: string) => stop + c.toUpperCase());
+  // (Announcements over the PA keep their captain's voice, whatever the bot's tone.)
+  const shaped = (kind === 'pa_cameras' || kind === 'pa_quiet' ? filled : tone(filled, t, kind, fill, rng))
+    // A reason slotted in after a full stop starts a sentence..replace(/([.!?]\s+)([a-z])/g, (_, stop: string, c: string) => stop + c.toUpperCase());
   return fit(shaped.charAt(0).toUpperCase() + shaped.slice(1));
 }
 
