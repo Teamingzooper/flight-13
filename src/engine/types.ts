@@ -365,6 +365,23 @@ export interface GameState {
   stats: Record<string, PlayerStats>;
   /** Credits per player, set when the game ends. */
   awards: Record<string, Award> | null;
+  /** The flight recorder: each night as it happened, shown to everyone once the flight is over. */
+  recorder: NightRecord[];
+}
+
+/** One night on the flight recorder. */
+export interface NightRecord {
+  night: number;
+  /** Where everyone in play sat (before any handcuffs). */
+  seats: Record<string, SeatId>;
+  /** Who spent the night in the lavatory, and who was up in the jump seat. */
+  washroom: string | null;
+  jumpseat: string | null;
+  cartRow: number;
+  /** What was done in the dark, in the order the night resolved it (after pills and handcuffs). */
+  acts: { actor: string; action: NightAction }[];
+  /** Carry-on items used in the dark. */
+  items: { user: string; item: 'flashlight' | 'pills'; seat?: SeatId; target?: string }[];
 }
 
 export type Intent =

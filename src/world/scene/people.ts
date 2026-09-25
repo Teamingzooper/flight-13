@@ -772,6 +772,15 @@ export class People {
     for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 
+  /** Kill (or bring back) an extra: the flight recorder's stand-ins fall when the reel reaches their death. */
+  setDead(id: string, dead: boolean, cause: DeathCause | null): void {
+    const actor = this.actors.get(id);
+    if (!actor || !this.extras.has(id) || (actor.dead === dead && actor.cause === cause)) return;
+    actor.dead = dead;
+    actor.cause = cause;
+    this.paint(id);
+  }
+
   /** Players the cameras leave out while their stand-ins sit in for them (empty when no tape plays). */
   setCameraHide(ids: Iterable<string>): void {
     this.cameraHide = new Set(ids);

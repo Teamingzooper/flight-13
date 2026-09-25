@@ -15,6 +15,7 @@ import { VoiceButton, useVoice } from '../tv/VoiceButton';
 import { cabinAudio } from './audio';
 import { Cabin3D, type SceneKind } from './Cabin3D';
 import { CockpitConsole } from './CockpitConsole';
+import { RecorderScreen } from './RecorderScreen';
 import { CONTROLS, atTheControls, controlAction, controlStatus, tapeReady, type ConsoleMode, type ControlId } from './cockpit';
 import { PackingHud } from './PackingHud';
 
@@ -58,6 +59,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [aimControl, setAimControl] = useState<ControlId | null>(null);
   const [consoleMode, setConsoleMode] = useState<ConsoleMode | null>(null);
   const [deckCard, setDeckCard] = useState<'course' | 'pa' | null>(null);
+  /** The flight recorder, played in the cabin after landing. */
+  const [recorderOpen, setRecorderOpen] = useState(false);
   const onControl = useRef<(id: ControlId) => void>(() => {});
   const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
@@ -84,7 +87,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const cutscene = ending || (kind === 'ended' && !!cabin.current?.endingAhead(game));
   const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !cutscene && scene !== 'search';
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
-  const windowOpen = leaning || cardOpen || leavingOpen || consoleMode !== null || deckCard !== null;
+  const windowOpen = leaning || cardOpen || leavingOpen || consoleMode !== null || deckCard !== null || recorderOpen;
   const mouseFree = windowOpen || preflight || cutscene;
 
   useEffect(() => {
@@ -199,7 +202,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     return () => clearTimeout(id);
   }, [caption]);
 
-  const deckOpen = consoleMode !== null || deckCard !== null;
+  const deckOpen = consoleMode !== null || deckCard !== null || recorderOpen;
+  const closeRecorder = () => {
+    setRecorderOpen(false);
+    reopenPhaseCard();
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
@@ -208,6 +215,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       if (deckOpen && e.key === 'Escape') {
         setConsoleMode(null);
         setDeckCard(null);
+        if (recorderOpen) closeRecorder();
         return;
       }
       if (typing || deckOpen) return;
@@ -225,12 +233,13 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [leaning, preflight, deckOpen, onAir]);
+  }, [leaning, preflight, deckOpen, onAir, recorderOpen]);
 
   // A new phase puts the console and the cards away (the calls they make belong to the phase before).
   useEffect(() => {
     setConsoleMode(null);
     setDeckCard(null);
+    setRecorderOpen(false);
   }, [kind, game.phase.night]);
 
   // Voice chat plays from where people sit in the 3D cabin; M mutes you.
@@ -411,6 +420,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               <CockpitConsole ctx={ctx} cabin={cabin.current} mode={consoleMode} onClose={() => setConsoleMode(null)} />
             </div>
           )}
+          {recorderOpen && kind === 'ended' && cabin.current && (
+            <div class="hud-overlay deck-overlay">
+              <RecorderScreen ctx={ctx} cabin={cabin.current} onClose={closeRecorder} />
+            </div>
+          )}
           {deckCard && (
             <div class="hud-overlay deck-overlay">
               <div class="deck-card">
@@ -479,7 +493,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           )}
           {!holdReport && !cutscene && scene !== 'search' && (
             <div class="hud-overlay">
-              <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
+              <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} onRecorder={() => setRecorderOpen(true)} />
             </div>
           )}
           {leavingOpen && (

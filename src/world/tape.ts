@@ -1,21 +1,31 @@
-import { grid, type LogEntry, type PlayerView, type SeatId, type Sighting } from '../engine';
+import { grid, type Cell, type LogEntry, type PlayerView, type SeatId, type Sighting } from '../engine';
 
 /**
  * Last night's tape from the Pilot's cabin cameras: who to put back in their seats, and what each of them does
  * when, with a caption and a night clock. Pure; Cabin3D plays it with stand-ins only the camera sees.
  */
 
+/** What a clip shows: something the cameras could see, or (on the flight recorder) a caption, a blast, a death or a verdict. */
+export type ClipKind = Sighting['kind'] | 'caption' | 'blast' | 'slump' | 'restrained';
+
 export interface Clip {
   /** Seconds from the start of the tape. */
   at: number;
   dur: number;
+  /** Who acts ('' for nobody: a caption). */
   actor: string;
-  kind: Sighting['kind'];
+  kind: ClipKind;
   target?: string;
   seat?: SeatId;
   text: string;
-  /** The time on the camera's clock, like "02:14". */
+  /** The time on the camera's clock, like "02:14" (or MORNING, or DAY). */
   clock: string;
+  /** The row the flight recorder's camera looks at (the Pilot's tape keeps its three rows). */
+  row?: number;
+  /** Who falls when this clip plays: a blast's victims, or a poison death. */
+  victims?: string[];
+  /** Where a blast went off. */
+  cells?: Cell[];
 }
 
 export interface Tape {

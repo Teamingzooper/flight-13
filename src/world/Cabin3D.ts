@@ -71,6 +71,11 @@ export interface ConsoleView {
   screen: HTMLElement;
   startRow: number;
   tape: Tape | null;
+  /**
+   * The flight recorder at the end of the flight: shown from any seat, only the reel's stand-ins appear (nobody from
+   * the cabin as it is now), and the camera follows each clip's row.
+   */
+  recorder?: boolean;
 }
 
 export type SceneKind = 'walk' | 'search' | 'glance';
@@ -198,6 +203,8 @@ export class Cabin3D {
   /** The console's own camera (the monitor's keeps its small frame). */
   private readonly consoleCam = new THREE.PerspectiveCamera(62, 1.6, 0.05, 30);
   private tape: { plan: Tape; start: number; cast: Map<string, Actor> } | null = null;
+  /** The row the flight recorder's camera is on (the last clip that named one). */
+  private followRow: number | null = null;
   /** Where everyone sat on the night the cameras last ran (the tape puts them back there). */
   private nightSeats: { night: number; seats: Map<string, SeatId> } | null = null;
   private disposed = false;
@@ -1217,13 +1224,13 @@ export class Cabin3D {
   /** Open the camera console (or close it: null). A new tape starts playing from the top. */
   setConsole(view: ConsoleView | null): void {
     const tape = view?.tape ?? null;
-    if (tape !== (this.tape?.plan ?? null)) this.loadTape(tape);
+    if (tape !== (this.tape?.plan ?? null)) this.loadTape(tape, !!view?.recorder);
     this.consoleView = view;
   }
 
-  /** Play the tape on the console again from the top. */
-  replayTape(): void {
-    if (this.tape) this.tape.start = this.time;
+  /** Play the tape on the console again from the top (or from `at` seconds in). */
+  replayTape(at = 0): void {
+    if (this.tape) this.tape.start = this.time - at;
   }
 
   /** Seconds into the tape on the console, or null when none plays. */
@@ -1248,10 +1255,11 @@ export class Cabin3D {
   }
 
   /** Put the tape's cast back in their seats as stand-ins only the cameras see (or clear them away). */
-  private loadTape(plan: Tape | null): void {
+  private loadTape(plan: Tape | null, everyone = false): void {
     if (this.tape) for (const id of this.tape.cast.keys()) this.people.dropExtra(`tape:${id}`);
     this.people.setCameraHide([]);
     this.tape = null;
+    this.followRow = null;
     if (!plan) return;
     const players = new Map((this.lastView?.players ?? []).map((p) => [p.id, p]));
     const cast = new Map<string, Actor>();
@@ -1265,7 +1273,8 @@ export class Cabin3D {
       actor.place(seat, false);
       cast.set(id, actor);
     }
-    this.people.setCameraHide(cast.keys());
+    // The flight recorder shows that night alone: nobody from the cabin as it is now (the dead, the restrained).
+    this.people.setCameraHide(everyone ? (this.lastView?.players ?? []).map((p) => p.id) : cast.keys());
     this.tape = { plan, start: this.time, cast };
   }
 
@@ -1282,8 +1291,19 @@ export class Cabin3D {
       actor.standing = false;
       actor.pose = { yaw: 0, pitch: -0.45, lean: false };
     }
+    // The flight recorder's dead fall as the reel reaches them, and stay down.
+    const fallen = new Map<string, 'explosion' | 'poison'>();
+    for (const c of tape.plan.clips) {
+      if (!c.victims || t < c.at + 0.6) continue;
+      for (const id of c.victims) fallen.set(id, c.kind === 'blast' ? 'explosion' : 'poison');
+    }
+    for (const id of tape.cast.keys()) {
+      const cause = fallen.get(id) ?? null;
+      this.people.setDead(`tape:${id}`, cause !== null, cause);
+    }
     const clip = clipAt(tape.plan, t);
     const into = clip ? t - clip.at : 0;
+    if (clip?.row) this.followRow = clip.row;
     // Each clip settles in and out, so one person's move reads before the next begins.
     if (clip && into > 0.35 && into < clip.dur - 0.45) this.actOut(clip, into);
   }
@@ -1292,6 +1312,13 @@ export class Cabin3D {
     const tape = this.tape!;
     const actor = tape.cast.get(clip.actor);
     if (!actor) return;
+    // The day's verdict: on their feet, hands up, as they are led away.
+    if (clip.kind === 'restrained') {
+      actor.standing = true;
+      actor.handsUp = true;
+      actor.pose = null;
+      return;
+    }
     const seatAt = (id: string | undefined, y: number) => {
       const seat = id ? tape.plan.seats.get(id) : undefined;
       if (!seat) return null;
@@ -1366,7 +1393,7 @@ export class Cabin3D {
   private drawConsole(): void {
     const view = this.consoleView;
     const built = this.built;
-    if (!view || !built || this.seatKey !== 'Cockpit') return;
+    if (!view || !built || (!view.recorder && this.seatKey !== 'Cockpit')) return;
     const box = this.renderer.domElement.getBoundingClientRect();
     const r = view.screen.getBoundingClientRect();
     const w = Math.round(r.width);
@@ -1375,7 +1402,9 @@ export class Cabin3D {
     const x = Math.round(r.left - box.left);
     const y = Math.round(box.bottom - r.bottom);
     const cam = this.consoleCam;
-    aimConsoleCamera(cam, Math.max(1, Math.min(view.startRow, built.rows - 2)));
+    // The flight recorder cuts to wherever the clip happens (a row ahead, so it is in the middle of the picture).
+    const start = view.recorder && this.followRow !== null ? this.followRow - 1 : view.startRow;
+    aimConsoleCamera(cam, Math.max(1, Math.min(start, built.rows - 2)));
     cam.aspect = w / h;
     cam.updateProjectionMatrix();
     const renderer = this.renderer;
@@ -1392,11 +1421,16 @@ export class Cabin3D {
     renderer.setViewport(x, y, w, h);
     renderer.setScissor(x, y, w, h);
     renderer.clear();
+    // The flight recorder shows the cabin before any of it happened: no dropped masks, no scorch marks yet.
+    const effects = built.effects.group;
+    const effectsShown = effects.visible;
+    if (view.recorder) effects.visible = false;
     const draw = () => renderer.render(this.scene, cam);
     // Last night's tape looks like night, whatever the time now: lights down, dark windows.
     if (this.tape && !isNightPhase(this.lastView?.phase.kind ?? 'day_discuss')) {
       built.lighting.withMode('night', () => built.windows.withShade(0.06, draw));
     } else draw();
+    effects.visible = effectsShown;
     renderer.setScissorTest(false);
     const size = renderer.getSize(new THREE.Vector2());
     renderer.setViewport(0, 0, size.x, size.y);

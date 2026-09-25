@@ -111,6 +111,7 @@ export function normalizeGame(s: GameState): GameState {
   s.packed ??= {};
   s.stats ??= {};
   s.awards ??= null;
+  s.recorder ??= [];
   s.night.searched ??= {};
   s.night.asleep ??= {};
   s.night.mirrors ??= {};

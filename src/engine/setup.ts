@@ -110,6 +110,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     packed: {},
     stats: {},
     awards: null,
+    recorder: [],
   };
   const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
   const seats = shuffle(s, allSeats(rows));

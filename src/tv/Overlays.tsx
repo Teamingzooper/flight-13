@@ -9,6 +9,7 @@ import { ItemIcon } from '../meta/ItemIcon';
 import { useBag } from '../meta/store';
 import type { TVContext } from './context';
 import { morningReport, roleName, teamName, whenLabel } from './format';
+import { RecorderView } from './RecorderView';
 import { Tally } from './VoteTab';
 
 /** Which phase overlay was dismissed, shared by the 3D view and the TV so it only shows once. */
@@ -60,7 +61,8 @@ export function usePhaseOverlayOpen(game: PlayerView): boolean {
   return cardShowing(game, closed);
 }
 
-export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
+/** `onRecorder`: in 3D, watch the flight recorder in the cabin (the end screen steps aside for it). */
+export function PhaseOverlay({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () => void; onRecorder?: () => void }) {
   const { game } = ctx;
   const [closed, setClosed] = useDismissed();
   if (!cardShowing(game, closed)) return null;
@@ -73,7 +75,19 @@ export function PhaseOverlay({ ctx, onLeave }: { ctx: TVContext; onLeave: () => 
     case 'verdict':
       return <VerdictCard game={game} faces={ctx.flight.client.faces} onClose={close} />;
     case 'ended':
-      return <EndScreen ctx={ctx} onLeave={onLeave} />;
+      return (
+        <EndScreen
+          ctx={ctx}
+          onLeave={onLeave}
+          onRecorder={
+            onRecorder &&
+            (() => {
+              close();
+              onRecorder();
+            })
+          }
+        />
+      );
     default:
       return null;
   }
@@ -248,9 +262,9 @@ function Earnings({ game }: { game: PlayerView }) {
   );
 }
 
-function EndScreen({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
+function EndScreen({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () => void; onRecorder?: () => void }) {
   const { game, state, flight } = ctx;
-  const [view, setView] = useState<'roles' | 'blackbox'>('roles');
+  const [view, setView] = useState<'roles' | 'blackbox' | 'recorder'>('roles');
   const r = game.result;
   const summary = game.log.filter((e) => e.tag === 'gameover').at(-1)?.text ?? '';
   const blackBox = game.log.filter((e) => e.to === 'end');
@@ -271,8 +285,13 @@ function EndScreen({ ctx, onLeave }: { ctx: TVContext; onLeave: () => void }) {
           <button class={view === 'blackbox' ? 'on' : ''} onClick={() => setView('blackbox')}>
             Black box
           </button>
+          <button class={view === 'recorder' ? 'on' : ''} onClick={() => setView('recorder')}>
+            Flight recorder
+          </button>
         </div>
-        {view === 'roles' ? (
+        {view === 'recorder' ? (
+          <RecorderView game={game} onWatch3D={onRecorder} />
+        ) : view === 'roles' ? (
           <ul class="role-reveal">
             {game.players.map((p) => (
               <li key={p.id} class={p.team ?? ''}>
