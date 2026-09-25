@@ -2,7 +2,7 @@ import { destinationOf } from './destinations';
 import { COCKPIT, aisleSpot, allSeats } from './grid';
 import { PLANES, rowsFor } from './planes';
 import { nextFloat, shuffle, type RngHolder } from './rng';
-import { isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
+import { ROLES, giveRole, isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
 import type { Cards, DayChoices, GameState, Look, NightChoices, RoleId, Settings } from './types';
@@ -18,6 +18,8 @@ export interface CreateGameOptions {
   players: NewPlayer[];
   seed: number;
   now: number;
+  /** A player who picked their own role (the host); if it cannot be done this flight, they get a random one. */
+  chosen?: { player: string; role: RoleId };
 }
 
 export function emptyNight(): NightChoices {
@@ -115,7 +117,12 @@ export function createGame(opts: CreateGameOptions): GameState {
     awards: null,
     recorder: [],
   };
-  const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
+  let roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
+  // The host may have picked their own role: they get it, out of the same deck (see giveRole).
+  const chosen = opts.chosen;
+  const chooser = chosen ? players.findIndex((p) => p.id === chosen.player) : -1;
+  const refused = chosen && chooser >= 0 ? giveRole(roles, chooser, chosen.role) : null;
+  if (Array.isArray(refused)) roles = refused;
   const seats = shuffle(s, allSeats(rows, cols));
   // Crew work the aisle instead of sitting: the first starts at the front with the cart, the rest spread out behind.
   const crew = roles.filter(isStewardess).length;
@@ -153,6 +160,9 @@ export function createGame(opts: CreateGameOptions): GameState {
     knockedOutNight: null,
   }));
   for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };
+  if (chosen && typeof refused === 'string') {
+    addLog(s, now, [chosen.player], 'info', `You could not be the ${ROLES[chosen.role].name} this flight (${refused}), so your role was dealt at random.`);
+  }
   return s;
 }
 

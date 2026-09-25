@@ -154,6 +154,37 @@ describe('boarding', () => {
   });
 });
 
+describe('the host picking their own role', () => {
+  it('keeps the pick to the host, tells the others there is one, and deals it at takeoff', async () => {
+    const { captain, board } = flight();
+    const ann = board('Ann');
+    await settle();
+    for (let i = 0; i < 3; i++) await captain.command({ kind: 'addBot' });
+    expect(await ann.command({ kind: 'myRole', role: 'bomber' })).toEqual({ ok: false, error: 'Only the host can do that.' });
+    expect(await captain.command({ kind: 'myRole', role: 'jester' as never })).toEqual({ ok: false, error: 'Unknown role.' });
+    expect(await captain.command({ kind: 'myRole', role: 'bomber' })).toEqual({ ok: true });
+    await settle();
+    expect(captain.snapshot.state!.myRole).toBe('bomber');
+    expect(ann.snapshot.state!.myRole).toBeUndefined();
+    expect(ann.snapshot.state!.hostPicksRole).toBe(true);
+    expect(await captain.command({ kind: 'takeoff' })).toEqual({ ok: true });
+    await settle();
+    expect(captain.snapshot.state!.game!.you!.role).toBe('bomber');
+    expect(await captain.command({ kind: 'myRole', role: null })).toEqual({ ok: false, error: 'Roles are dealt once the doors close.' });
+  });
+
+  it('deals the host at random again once they go back to Random', async () => {
+    const { captain } = flight();
+    await settle();
+    for (let i = 0; i < 4; i++) await captain.command({ kind: 'addBot' });
+    await captain.command({ kind: 'myRole', role: 'nurse' });
+    expect(await captain.command({ kind: 'myRole', role: null })).toEqual({ ok: true });
+    await settle();
+    expect(captain.snapshot.state!.myRole).toBeNull();
+    expect(captain.snapshot.state!.hostPicksRole).toBeUndefined();
+  });
+});
+
 describe('in flight', () => {
   it('plays a whole flight over the network with bots, then boards again', async () => {
     const { host, captain, board, advance } = flight();
