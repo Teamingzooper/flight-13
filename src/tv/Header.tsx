@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { DESTINATIONS } from '../engine';
+import { destinationOf } from '../engine';
 import { formatCode } from '../net/code';
 import type { TVContext } from './context';
 import { clock, phaseHint, phaseTitle } from './format';
@@ -19,7 +19,7 @@ export function Header({
   tools?: ComponentChildren;
 }) {
   const { game, state, left } = ctx;
-  const d = DESTINATIONS[game.settings.destination];
+  const d = destinationOf(game.settings);
   const ended = game.phase.kind === 'ended';
   return (
     <header class="tv-header">
@@ -28,7 +28,7 @@ export function Header({
           FLIGHT <b>13</b>
         </span>
         <span class="tv-logo-sub">
-          {formatCode(state.code)} → {d.id}
+          {formatCode(state.code)} → {d.code}
         </span>
       </div>
       <div class="tv-phase">

@@ -3,19 +3,26 @@ import { useState } from 'preact/hooks';
 import {
   BOT_CHATTERS,
   BOT_SKILLS,
+  CUSTOM_LIMITS,
   DESTINATIONS,
   DESTINATION_ORDER,
   MAX_PLAYERS,
   MIN_PLAYERS,
   SPECIAL_CARDS,
   TIMERS,
+  TWISTS,
+  bombsFor,
   countSpecials,
+  defaultCustomDestination,
+  destinationOf,
+  hasTwist,
   presetCards,
   validateCards,
   validateSettings,
   type BotChatter,
   type BotSkill,
   type Cards,
+  type CustomDestination,
   type Settings,
   type SpecialCard,
   type TimerPreset,
@@ -32,7 +39,7 @@ const CARD_NAME: Record<SpecialCard, [string, string]> = {
 };
 
 const CARD_NOTE: Record<SpecialCard, string> = {
-  bomber: 'Saboteur. One bomb per game.',
+  bomber: 'Saboteur. A bomb for every three nights.',
   mastermind: 'Saboteur. A bomber who looks innocent.',
   stewardess: 'Team decided at takeoff (odds below).',
   pilot: 'Passenger. Buckles someone in each night.',
@@ -59,11 +66,13 @@ const BOT_CHATTER_NAMES: Record<BotChatter, string> = { quiet: 'Quiet', normal: 
 const BOT_SKILL_NAMES: Record<BotSkill, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
 export function describeRules(s: Settings): string[] {
-  const d = DESTINATIONS[s.destination];
+  const d = destinationOf(s);
   const t = TIMERS[s.timers];
-  const discuss = Math.round(t.day_discuss * (d.twist === 'redeye' ? 0.6 : 1));
+  const discuss = Math.round(t.day_discuss * (hasTwist(d, 'redeye') ? 0.6 : 1));
+  const bombs = bombsFor(d.nights);
   return [
-    `${d.city} (${d.id}): ${d.nights} nights. ${d.blurb}`,
+    `${d.city} (${d.code}): ${d.nights} nights. ${d.blurb}`,
+    `Each Bomber carries ${bombs === 1 ? 'one bomb' : `${bombs} bombs`} (one for every three nights) and plants at most one a night.`,
     s.rolesMode === 'auto'
       ? 'Roles are balanced automatically for however many passengers board.'
       : `Roles: ${describeCards(s.cards)}. Everyone else is a Passenger.`,
@@ -91,6 +100,67 @@ function Toggle({ checked, onChange, title, hint }: { checked: boolean; onChange
   );
 }
 
+/** The host's own destination: a city, its code, how many nights, and any mix of effects. */
+function CustomDestinationFields({ value, onChange }: { value: CustomDestination; onChange: (patch: Partial<CustomDestination>) => void }) {
+  const bombs = bombsFor(value.nights);
+  return (
+    <div class="custom-dest">
+      <div class="custom-dest-names">
+        <label class="field">
+          <span class="label">City</span>
+          <input
+            class="input"
+            value={value.city}
+            maxLength={CUSTOM_LIMITS.cityLength}
+            placeholder="Atlantis"
+            onInput={(e) => onChange({ city: e.currentTarget.value })}
+          />
+        </label>
+        <label class="field code">
+          <span class="label">Code</span>
+          <input
+            class="input"
+            value={value.code}
+            placeholder="ATL"
+            autocapitalize="characters"
+            spellcheck={false}
+            onInput={(e) => {
+              // Letters only, upper-case, three at most (filtered before trimming, so a pasted "k3fx" reads KFX).
+              const code = e.currentTarget.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+              e.currentTarget.value = code;
+              onChange({ code });
+            }}
+          />
+        </label>
+      </div>
+      <label class="field">
+        <span class="label">
+          Nights: {value.nights} <span class="muted">· each Bomber gets {bombs === 1 ? 'one bomb' : `${bombs} bombs`}</span>
+        </span>
+        <input
+          type="range"
+          min={CUSTOM_LIMITS.minNights}
+          max={CUSTOM_LIMITS.maxNights}
+          value={value.nights}
+          onInput={(e) => onChange({ nights: Number(e.currentTarget.value) })}
+        />
+      </label>
+      <div class="field">
+        <span class="label">Effects</span>
+        {TWISTS.map((t) => (
+          <Toggle
+            key={t.id}
+            checked={value.twists.includes(t.id)}
+            onChange={(on) => onChange({ twists: TWISTS.map((x) => x.id).filter((id) => (id === t.id ? on : value.twists.includes(id))) })}
+            title={t.name}
+            hint={`${t.blurb[0].toUpperCase()}${t.blurb.slice(1)}.`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsForm({
   initial,
   submitLabel,
@@ -111,6 +181,8 @@ export function SettingsForm({
     setS((prev) => ({ ...prev, ...patch }));
     setError(null);
   };
+  const custom = s.customDestination ?? defaultCustomDestination();
+  const setCustom = (patch: Partial<CustomDestination>) => set({ customDestination: { ...custom, ...patch } });
   const setCard = (card: SpecialCard, delta: number) =>
     set({ cards: { ...s.cards, [card]: Math.max(0, Math.min(MAX_PLAYERS, s.cards[card] + delta)) } });
 
@@ -146,14 +218,26 @@ export function SettingsForm({
             const d = DESTINATIONS[id];
             return (
               <button type="button" key={id} class={`dest${s.destination === id ? ' on' : ''}`} aria-pressed={s.destination === id} onClick={() => set({ destination: id })}>
-                <span class="dest-code">{id}</span>
+                <span class="dest-code">{d.code}</span>
                 <span class="dest-city">{d.city}</span>
                 <span class="dest-nights">{d.nights} nights</span>
                 <span class="dest-blurb">{d.blurb}</span>
               </button>
             );
           })}
+          <button
+            type="button"
+            class={`dest custom${s.destination === 'custom' ? ' on' : ''}`}
+            aria-pressed={s.destination === 'custom'}
+            onClick={() => set({ destination: 'custom', customDestination: custom })}
+          >
+            <span class="dest-code">{custom.code || '???'}</span>
+            <span class="dest-city">{custom.city.trim() || 'Your own'}</span>
+            <span class="dest-nights">{custom.nights} nights</span>
+            <span class="dest-blurb">Custom: name it, pick the nights and mix the effects.</span>
+          </button>
         </div>
+        {s.destination === 'custom' && <CustomDestinationFields value={custom} onChange={setCustom} />}
       </section>
 
       <section class="settings-section two">

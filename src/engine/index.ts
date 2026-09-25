@@ -24,11 +24,22 @@ export {
   countSpecials,
   type RoleInfo,
 } from './roles';
-export { DESTINATIONS, DESTINATION_ORDER, type Destination } from './destinations';
+export {
+  DESTINATIONS,
+  DESTINATION_ORDER,
+  TWISTS,
+  CUSTOM_LIMITS,
+  bombsFor,
+  defaultCustomDestination,
+  destinationOf,
+  hasTwist,
+  type Destination,
+} from './destinations';
 export {
   defaultSettings,
   normalizeSettings,
   validateSettings,
+  validateCustomDestination,
   NOTE_MAX_LENGTH,
   phaseDurationMs,
   TIMERS,

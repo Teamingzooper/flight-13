@@ -169,7 +169,7 @@ describe('carry-on items', () => {
     expect(use(s, 'p1', { item: 'pills', target: 'bomber' })).toEqual({ ok: true });
     advanceTo(s, 'dawn', 1);
     expect(s.bombs).toEqual([]);
-    expect(player(s, 'bomber').bombUsed).toBe(false);
+    expect(player(s, 'bomber').bombsPlanted).toBe(0);
     expect(logTexts(s, 'bomber')).toContain('You dozed off before you could do anything. Someone must have slipped something into your water.');
   });
 
@@ -231,7 +231,7 @@ describe('carry-on items', () => {
     act(s, 'marshal', { kind: 'cuff', target: 'bomber' });
     act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 });
     advanceTo(s, 'dawn', 1);
-    expect(player(s, 'bomber')).toMatchObject({ status: 'alive', bombUsed: true, usedItems: ['bobbypin'] });
+    expect(player(s, 'bomber')).toMatchObject({ status: 'alive', bombsPlanted: 1, usedItems: ['bobbypin'] });
     expect(player(s, 'marshal').cuffsUsed).toBe(true);
     expect(logTexts(s, 'bomber')).toContain('Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
     expect(logTexts(s, 'marshal')).toContain('You handcuffed bomber (4B), but they picked the lock and slipped free. Your cuffs are gone.');

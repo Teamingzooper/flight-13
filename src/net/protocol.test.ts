@@ -43,6 +43,21 @@ describe('protocol sanitising', () => {
     expect(cleanSettings({ ...s, botSkill: 'hard' })).toEqual({ ...s, botSkill: 'hard' });
   });
 
+  it('rebuilds a custom destination and rejects a bad one', () => {
+    const s = { ...defaultSettings(), destination: 'custom' as const, customDestination: { city: 'Atlantis', code: 'ATL', nights: 7, twists: ['triangle' as const] } };
+    expect(cleanSettings(JSON.parse(JSON.stringify(s)))).toEqual(s);
+    // The code is stored upper-case, the city trimmed, and unknown effects dropped.
+    const messy = { ...s, customDestination: { city: '  Atlantis ', code: 'atl', nights: 7, twists: ['triangle', 'storm'] } };
+    expect(cleanSettings(messy)).toEqual(s);
+    expect(cleanSettings({ ...s, customDestination: null })).toBeNull();
+    expect(cleanSettings({ ...s, customDestination: { ...s.customDestination, code: 'AT1' } })).toBeNull();
+    expect(cleanSettings({ ...s, customDestination: { ...s.customDestination, nights: 40 } })).toBeNull();
+    expect(cleanSettings({ ...s, customDestination: { ...s.customDestination, city: '' } })).toBeNull();
+    // A saved custom destination rides along while a real one is picked; junk there is just dropped.
+    expect(cleanSettings({ ...s, destination: 'HNL' })).toEqual({ ...s, destination: 'HNL' });
+    expect(cleanSettings({ ...s, destination: 'HNL', customDestination: 'junk' })).toEqual({ ...s, destination: 'HNL', customDestination: null });
+  });
+
   it('parses client messages defensively', () => {
     expect(parseClientMessage({ t: 'join', v: 1, token: 'abcdefgh12', name: ' Ann ', look: {}, tower: 'yes' })).toEqual({
       t: 'join',

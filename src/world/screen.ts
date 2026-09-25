@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TOP } from '../app/Avatar';
-import { DESTINATIONS, grid, isNightPhase, type PlayerView } from '../engine';
+import { destinationOf, grid, isNightPhase, type PlayerView } from '../engine';
 import { formatCode } from '../net/code';
 import { clock, phaseTitle } from '../tv/format';
 
@@ -52,7 +52,7 @@ export class LiveScreen {
     g.font = `600 18px ${FONT}`;
     g.fillStyle = '#93a4c4';
     g.textAlign = 'right';
-    g.fillText(`${formatCode(code)} → ${DESTINATIONS[game.settings.destination].id}`, W - 22, 27);
+    g.fillText(`${formatCode(code)} → ${destinationOf(game.settings).code}`, W - 22, 27);
     g.textAlign = 'left';
 
     // Phase and countdown.

@@ -1,4 +1,4 @@
-import { DESTINATIONS } from './destinations';
+import { destinationOf } from './destinations';
 import { isSaboteur } from './roles';
 import { activePlayers } from './state';
 import type { GameResult, GameState } from './types';
@@ -27,7 +27,7 @@ export function landingResult(s: GameState): GameResult {
 }
 
 export function resultText(s: GameState, r: GameResult): string {
-  const city = DESTINATIONS[s.settings.destination].city;
+  const city = destinationOf(s.settings).city;
   switch (r.reason) {
     case 'eliminated':
       return 'Every saboteur has been dealt with. Passengers win!';

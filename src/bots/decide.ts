@@ -1,4 +1,4 @@
-import { grid, type BotSkill, type Intent, type MoveTarget, type NightAction, type PlayerView, type RoleId, type SeatId } from '../engine';
+import { grid, type BotSkill, type Cell, type Intent, type MoveTarget, type NightAction, type PlayerView, type RoleId, type SeatId } from '../engine';
 import type { Order } from './hear';
 import type { Knowledge } from './knowledge';
 import { suspects, type Beliefs, type Reason } from './mind';
@@ -89,16 +89,18 @@ function seatNextTo(view: PlayerView, seat: SeatId | null): SeatId | null {
   return near[0] ?? null;
 }
 
-/** A seat out of the blast, if my own seat bomb goes off tonight and I am sitting too close to it. */
+/** A seat out of the blast, if one of my own seat bombs goes off tonight and I am sitting too close to it. */
 function clearOfMyBomb(view: PlayerView, k: Knowledge, rng: Rng): SeatId | null {
-  const mine = k.bombs.find((bomb) => bomb.planterId === k.me.id && !bomb.exploded && !bomb.defused && bomb.detonateNight === view.phase.night);
-  if (!mine || mine.location.kind !== 'seat') return null;
-  const at = grid.parseSeat(mine.location.seat);
+  const blasts = k.bombs
+    .filter((bomb) => bomb.planterId === k.me.id && !bomb.exploded && !bomb.defused && bomb.detonateNight === view.phase.night)
+    .map((bomb) => (bomb.location.kind === 'seat' ? grid.parseSeat(bomb.location.seat) : null))
+    .filter((c): c is Cell => !!c);
   const here = k.me.seat ? grid.parseSeat(k.me.seat) : null;
-  if (!at || !here || grid.distance(here, at) > grid.BLAST_RADIUS) return null;
+  const safe = (c: Cell) => blasts.every((at) => grid.distance(c, at) > grid.BLAST_RADIUS);
+  if (!here || safe(here)) return null;
   const away = (view.options?.seats ?? []).filter((s) => {
     const c = grid.parseSeat(s);
-    return c && grid.distance(c, at) > grid.BLAST_RADIUS;
+    return c && safe(c);
   });
   return away.length ? away[Math.floor(rng() * away.length)] : null;
 }
@@ -210,7 +212,7 @@ export function followOrder(view: PlayerView, k: Knowledge, order: Order): Order
       if (order.seat && seats.includes(order.seat)) return { ok: true, move: order.seat };
       return { ok: false, why: `can't get to ${order.seat ?? 'that seat'} tonight` };
     case 'plant': {
-      if (k.me.bombUsed) return { ok: false, why: "my bomb's already out" };
+      if (k.me.bombsLeft <= 0) return { ok: false, why: "I'm out of bombs" };
       if (!actions.some((a) => a.kind === 'plant') && kind === 'night_act') return { ok: false, why: "I can't plant from here" };
       const elsewhere = order.where === 'seat' && order.seat && order.seat !== k.me.seat;
       if (kind === 'night_move') {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DESTINATIONS, ROLES, grid, isPilot, type GameResult, type PlayerSummary, type PlayerView } from '../engine';
+import { ROLES, destinationOf, grid, isPilot, type GameResult, type PlayerSummary, type PlayerView } from '../engine';
 import { captainName } from '../tv/format';
 import { cabinAudio } from './audio';
 import { BULKHEAD_Z, FLIGHT_DECK, eyePosition } from './layout';
@@ -115,7 +115,7 @@ export class EndingDirector {
     this.kind = endingFor(game.result!);
     this.players = game.players;
     this.you = game.players.find((p) => p.id === game.you?.id) ?? null;
-    this.city = DESTINATIONS[game.settings.destination].city;
+    this.city = destinationOf(game.settings).city;
     this.tags.className = 'world-tags';
     // Under the black between shots.
     ctx.container.insertBefore(this.tags, ctx.container.querySelector('.world-fade'));

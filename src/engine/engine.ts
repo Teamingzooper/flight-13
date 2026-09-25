@@ -1,6 +1,6 @@
 import { computeAwards } from './awards';
 import { resolveVote, startDay } from './day';
-import { DESTINATIONS } from './destinations';
+import { destinationOf } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
 import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
@@ -250,7 +250,7 @@ function advance(s: GameState, now: number): void {
 function finishDay(s: GameState, now: number): void {
   if (s.result) return endGame(s, now);
   if (s.phase.night >= s.nights) {
-    addLog(s, now, 'all', 'landing', `Flight 13 has landed in ${DESTINATIONS[s.settings.destination].city}.`);
+    addLog(s, now, 'all', 'landing', `Flight 13 has landed in ${destinationOf(s.settings).city}.`);
     s.result = landingResult(s);
     return endGame(s, now);
   }

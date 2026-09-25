@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, isPilot, type NightAction, type PlayerView } from '../engine';
+import { NOTE_MAX_LENGTH, ROLES, bombsFor, describeLocation, destinationOf, grid, isPilot, type NightAction, type PlayerView } from '../engine';
 import { CarryOn } from './CarryOn';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, placeLabel, roleName, shortName, teamName, whenLabel } from './format';
@@ -481,17 +481,23 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   const [where, setWhere] = useState<BombSpot>(planned?.where ?? 'seat');
   const [fuse, setFuse] = useState<1 | 2>(planned?.fuse ?? 2);
   const [editing, setEditing] = useState(false);
-  if (you.bombUsed) {
-    const bomb = game.bombs.find((b) => !b.exploded && b.planterId === you.id);
+  const total = bombsFor(destinationOf(game.settings).nights);
+  const ticking = game.bombs.filter((b) => !b.exploded && !b.defused && b.planterId === you.id);
+  const tickingText = ticking.map((b) => `${describeLocation(b.location)} (the end of night ${b.detonateNight})`).join(', ');
+  if (you.bombsLeft <= 0 && !planned) {
     return (
       <p class="muted">
-        Your bomb is already planted{bomb ? ` ${describeLocation(bomb.location)}, set to go off at the end of night ${bomb.detonateNight}` : ''}. Stay
-        hidden, and stay out of the blast.
+        {total === 1 ? 'Your bomb is' : `All ${total} of your bombs are`} planted{tickingText ? `. Still ticking: ${tickingText}` : ''}. Stay hidden, and stay out of
+        the blast.
       </p>
     );
   }
   const can = (w: BombSpot) => actions.some((a) => a.kind === 'plant' && a.where === w);
-  const place: BombSpot = can(where) ? where : you.inWashroom ? 'lavatory' : 'seat';
+  // One live bomb per spot: yours (or a teammate's) may already be there.
+  const taken = (w: BombSpot) =>
+    game.bombs.some((b) => !b.exploded && !b.defused && b.location.kind === w && (b.location.kind !== 'seat' || b.location.seat === you.seat));
+  // The chosen spot, or the first one open tonight (your seat may already have a bomb under it).
+  const place: BombSpot = can(where) ? where : ((['seat', 'cart', 'lavatory'] as const).find(can) ?? (you.inWashroom ? 'lavatory' : 'seat'));
   const placeName: Record<BombSpot, string> = { seat: `under ${you.seat}`, cart: 'on the drink cart', lavatory: 'in the lavatory' };
   const when = (f: 1 | 2) => `the end of night ${night + f}`;
   const blastOf = (spot: BombSpot) => {
@@ -533,18 +539,26 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   const caught = game.players.filter((p) => p.status === 'alive' && p.seat && blast.has(p.seat) && p.id !== you.id && p.id !== game.washroom);
   const youIn = !!you.seat && blast.has(you.seat) && !you.inWashroom;
   const allSpots: { key: BombSpot; title: string; ok: string; no: string }[] = [
-    { key: 'seat', title: `Under your seat (${you.seat})`, ok: 'Hits everyone within 2 seats of it.', no: '' },
+    { key: 'seat', title: `Under your seat (${you.seat})`, ok: 'Hits everyone within 2 seats of it.', no: taken('seat') ? 'There is already a bomb under it.' : '' },
     {
       key: 'cart',
       title: 'On the drink cart',
       ok: `At row ${cartRow} now; it goes off wherever the cart has rolled to.`,
-      no: cartDestroyed ? 'The cart is gone.' : `Too far. Sit in an aisle seat next to the cart (row ${cartRow}) first.`,
+      no: cartDestroyed
+        ? 'The cart is gone.'
+        : taken('cart')
+          ? 'There is already a bomb on it.'
+          : `Too far. Sit in an aisle seat next to the cart (row ${cartRow}) first.`,
     },
     {
       key: 'lavatory',
       title: 'In the lavatory',
       ok: you.inWashroom ? 'You are in it right now. It destroys the lavatory and hits the back rows.' : 'Destroys it and hits the back rows.',
-      no: lavatoryDestroyed ? 'The lavatory is already destroyed.' : `Too far. Sit in row ${rows}, seats A–C, first.`,
+      no: lavatoryDestroyed
+        ? 'The lavatory is already destroyed.'
+        : taken('lavatory')
+          ? 'There is already a bomb in it.'
+          : `Too far. Sit in row ${rows}, seats A–C, first.`,
     },
   ];
   // From inside the lavatory, the lavatory is the only place within reach.
@@ -556,8 +570,12 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   return (
     <div class="stack">
       <div class="panel-title">
-        Plant your bomb <span class="muted">One per game. Choose where and when, then plant it.</span>
+        {total === 1 ? 'Plant your bomb' : 'Plant a bomb'}{' '}
+        <span class="muted">
+          {total === 1 ? 'One per game.' : `${you.bombsLeft} of ${total} left, one a night.`} Choose where and when, then plant it.
+        </span>
       </div>
+      {ticking.length > 0 && <p class="muted">Already ticking: {tickingText}.</p>}
       <div class="step-label">Where</div>
       <div class="choice-grid">
         {spots.map((c) => {
@@ -596,7 +614,7 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
         {youIn ? ' So are you: move away before it goes off.' : ''}
       </p>
       <div class="row">
-        <button class="btn danger" onClick={() => void plant()}>
+        <button class="btn danger" disabled={!can(place)} onClick={() => void plant()}>
           Plant it {placeName[place]} for {when(fuse)}
         </button>
         {planned && (

@@ -1,6 +1,6 @@
-import { DESTINATIONS } from './destinations';
+import { CUSTOM_LIMITS, DESTINATIONS, destinationOf, hasTwist } from './destinations';
 import { emptyCards } from './roles';
-import type { BotChatter, BotSkill, PhaseKind, Settings, TimerPreset } from './types';
+import type { BotChatter, BotSkill, CustomDestination, PhaseKind, Settings, TimerPreset, Twist } from './types';
 
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 16;
@@ -38,6 +38,7 @@ export const BOT_SKILLS: readonly BotSkill[] = ['easy', 'normal', 'hard'];
 export function defaultSettings(): Settings {
   return {
     destination: 'LHR',
+    customDestination: null,
     maxPassengers: 10,
     rolesMode: 'auto',
     cards: emptyCards(),
@@ -71,7 +72,7 @@ export function phaseDurationMs(settings: Settings, kind: PhaseKind): number {
     case 'ended':
       return 0;
     case 'day_discuss': {
-      const factor = DESTINATIONS[settings.destination].twist === 'redeye' ? 0.6 : 1;
+      const factor = hasTwist(destinationOf(settings), 'redeye') ? 0.6 : 1;
       return Math.round(TIMERS[settings.timers].day_discuss * factor) * 1000;
     }
     default:
@@ -79,8 +80,26 @@ export function phaseDurationMs(settings: Settings, kind: PhaseKind): number {
   }
 }
 
+const TWIST_IDS: readonly Twist[] = ['turbulence', 'redeye', 'triangle'];
+
+/** Why a host-made destination is not allowed, or null. */
+export function validateCustomDestination(c: CustomDestination | null): string | null {
+  if (!c) return 'Describe your destination.';
+  const city = c.city.trim();
+  if (city.length < 1 || city.length > CUSTOM_LIMITS.cityLength) return `The city needs 1 to ${CUSTOM_LIMITS.cityLength} characters.`;
+  if (!/^[A-Z]{3}$/.test(c.code)) return 'The code must be three letters.';
+  if (!Number.isInteger(c.nights) || c.nights < CUSTOM_LIMITS.minNights || c.nights > CUSTOM_LIMITS.maxNights) {
+    return `A flight lasts ${CUSTOM_LIMITS.minNights} to ${CUSTOM_LIMITS.maxNights} nights.`;
+  }
+  if (!Array.isArray(c.twists) || c.twists.some((t) => !TWIST_IDS.includes(t)) || new Set(c.twists).size !== c.twists.length) return 'Unknown effect.';
+  return null;
+}
+
 export function validateSettings(s: Settings): string | null {
-  if (!DESTINATIONS[s.destination]) return 'Unknown destination.';
+  if (s.destination === 'custom') {
+    const bad = validateCustomDestination(s.customDestination);
+    if (bad) return bad;
+  } else if (!DESTINATIONS[s.destination]) return 'Unknown destination.';
   if (!Number.isInteger(s.maxPassengers) || s.maxPassengers < MIN_PLAYERS || s.maxPassengers > MAX_PLAYERS) {
     return `Max passengers must be between ${MIN_PLAYERS} and ${MAX_PLAYERS}.`;
   }

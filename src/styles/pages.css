@@ -1287,3 +1287,34 @@
     grid-column: 2;
   }
 }
+
+.dest.custom {
+  border-style: dashed;
+}
+
+.dest.custom.on {
+  border-style: solid;
+}
+
+.custom-dest {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #0b1428;
+}
+
+.custom-dest-names {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 12px;
+}
+
+.custom-dest .field.code .input {
+  font: 700 22px/1 var(--display);
+  letter-spacing: 0.12em;
+  color: var(--amber);
+  text-transform: uppercase;
+}

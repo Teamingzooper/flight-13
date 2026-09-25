@@ -124,9 +124,9 @@ export function settleGame(bag: Bag, view: PlayerView, random: () => number): Ba
   if (!you || !view.result || view.phase.kind !== 'ended' || settlementFor(bag, view.gameId)) return bag;
   const award = view.awards?.[you.id] ?? { credits: 0, lines: [] };
   const won = view.result.winner === you.team;
-  const landed = planeLands(view.result) && !bag.stats.landed.includes(view.settings.destination)
-    ? [...bag.stats.landed, view.settings.destination]
-    : bag.stats.landed;
+  // Only the five real destinations count toward landing everywhere.
+  const where = view.settings.destination;
+  const landed = planeLands(view.result) && where !== 'custom' && !bag.stats.landed.includes(where) ? [...bag.stats.landed, where] : bag.stats.landed;
   const stats = { flights: bag.stats.flights + 1, wins: bag.stats.wins + (won ? 1 : 0), landed };
   const context = { view, won, team: you.team, mine: view.stats?.[you.id] ?? null, flights: stats.flights, landed };
   const unlocked = ACHIEVEMENTS.filter((a) => !bag.achievements[a.id] && a.check(context));

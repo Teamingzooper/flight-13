@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { CHAT_MAX_LENGTH, DESTINATIONS, checkTakeoff, type IntentResult } from '../../engine';
+import { CHAT_MAX_LENGTH, checkTakeoff, destinationOf, type IntentResult } from '../../engine';
 import { formatCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
 import { Avatar } from '../Avatar';
@@ -20,7 +20,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
     const result = await request;
     if (!result.ok) showToast(result.error);
   };
-  const dest = DESTINATIONS[state.settings.destination];
+  const dest = destinationOf(state.settings);
   const me = state.players.find((p) => p.id === state.you) ?? null;
   const takeoffError = checkTakeoff(
     state.settings,
@@ -60,7 +60,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
             <span>Destination</span>
             <b>{dest.city}</b>
             <span class="muted">
-              {dest.id} · {dest.nights} nights
+              {dest.code} · {dest.nights} nights
             </span>
           </div>
           <p class="muted">{dest.blurb}</p>

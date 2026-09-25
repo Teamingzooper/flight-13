@@ -1,17 +1,17 @@
-import { DESTINATIONS, isNightPhase, type PlayerView } from '../engine';
+import { destinationOf, isNightPhase, type PlayerView } from '../engine';
 import type { TVContext } from './context';
 import { whenLabel } from './format';
 
 export function FlightTab({ ctx }: { ctx: TVContext }) {
   const { game } = ctx;
-  const d = DESTINATIONS[game.settings.destination];
+  const d = destinationOf(game.settings);
   const log = game.log.filter((e) => e.to === 'all').slice().reverse();
   return (
     <div class="tab flight-tab">
-      <FlightMap progress={flightProgress(game)} city={d.city} code={d.id} />
+      <FlightMap progress={flightProgress(game)} city={d.city} code={d.code} />
       <div class="flight-facts">
         <span>
-          <b>{d.city}</b> ({d.id})
+          <b>{d.city}</b> ({d.code})
         </span>
         <span>{game.phase.night > 0 ? `Night ${game.phase.night} of ${game.phase.nights}` : 'Just took off'}</span>
         <span class="muted">{d.blurb}</span>

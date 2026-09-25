@@ -17,7 +17,15 @@ export type SpecialCard = 'bomber' | 'mastermind' | 'stewardess' | 'pilot' | 'nu
 export type Cards = Record<SpecialCard, number>;
 
 export type DestinationId = 'LAS' | 'LHR' | 'HNL' | 'HND' | 'BDA';
-export type Twist = 'none' | 'turbulence' | 'redeye' | 'triangle';
+export type Twist = 'turbulence' | 'redeye' | 'triangle';
+
+/** A destination the host made up: a city, a three-letter code, how many nights, and any mix of twists. */
+export interface CustomDestination {
+  city: string;
+  code: string;
+  nights: number;
+  twists: Twist[];
+}
 /** How much the bots talk. */
 export type BotChatter = 'quiet' | 'normal' | 'lively';
 /** How well the bots reason (and lie). */
@@ -28,7 +36,9 @@ export type TimerPreset = 'quick' | 'standard' | 'relaxed';
 export type VoteMode = 'daily' | 'afterIncident';
 
 export interface Settings {
-  destination: DestinationId;
+  destination: DestinationId | 'custom';
+  /** The host's own destination, when `destination` is 'custom'. */
+  customDestination: CustomDestination | null;
   maxPassengers: number;
   rolesMode: 'auto' | 'custom';
   cards: Cards;
@@ -111,7 +121,8 @@ export interface PlayerState {
   outNight: number | null;
   /** Night the player was poisoned, or null. */
   poisonedNight: number | null;
-  bombUsed: boolean;
+  /** Bombs planted so far (a Bomber or the Mastermind gets one for every three nights of the flight). */
+  bombsPlanted: number;
   selfTreatUsed: boolean;
   lastSeatbeltTarget: string | null;
   /** Role made public (on death or restraint when the setting is on). */

@@ -1,4 +1,4 @@
-import { DESTINATIONS, isNightPhase, type Cell, type GameResult, type PlayerView } from '../engine';
+import { destinationOf, isNightPhase, type Cell, type GameResult, type PlayerView } from '../engine';
 import { captainName } from '../tv/format';
 
 /** Something the cabin should play: a sound, an effect, a camera move or a captain announcement. */
@@ -26,7 +26,7 @@ const clip = (text: string) => (text.length > CAPTION_MAX ? `${text.slice(0, CAP
 export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
   const cues: Cue[] = [];
   const kind = next.phase.kind;
-  const city = DESTINATIONS[next.settings.destination].city;
+  const city = destinationOf(next.settings).city;
   const welcome = () => cues.push({ kind: 'takeoff' }, pa(`Welcome aboard Flight 13 to ${city}. We land in ${next.phase.nights} nights. Cabin crew, arm doors and cross-check.`));
 
   if (!prev) {

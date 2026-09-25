@@ -4,7 +4,7 @@ import { WHISPER_RADIUS, distance } from './grid';
 import { possibleItemUses, type ItemUse } from './items';
 import { isPilot, isSaboteur, teamOf } from './roles';
 import { checkCourse, checkJumpseat, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
-import { activePlayers, cellOf, getPlayer, inWashroom, isActive, isGuest } from './state';
+import { activePlayers, bombsLeft, cellOf, getPlayer, inWashroom, isActive, isGuest } from './state';
 import type {
   Award,
   BombLocation,
@@ -61,7 +61,8 @@ export interface YouView {
   seat: SeatId | null;
   poisoned: boolean;
   buckled: 'pilot' | 'turbulence' | 'rough' | null;
-  bombUsed: boolean;
+  /** Bombs you still carry (Bombers and the Mastermind: one for every three nights of the flight). */
+  bombsLeft: number;
   selfTreatUsed: boolean;
   lastSeatbeltTarget: string | null;
   /** Your black box note (read out if you die or are restrained). */
@@ -248,7 +249,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     seat: me.seat,
     poisoned: me.poisonedNight !== null && isActive(me),
     buckled: isNightPhase(s.phase.kind) ? s.night.buckled[me.id] ?? null : null,
-    bombUsed: me.bombUsed,
+    bombsLeft: bombsLeft(s, me),
     selfTreatUsed: me.selfTreatUsed,
     lastSeatbeltTarget: me.lastSeatbeltTarget,
     note: me.note ?? '',
