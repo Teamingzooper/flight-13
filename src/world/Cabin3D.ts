@@ -1270,7 +1270,12 @@ export class Cabin3D {
       const actor = this.people.extra(`tape:${id}`, p.look, new THREE.Vector3(at.x, 0, at.z), this.faceSource?.get(id) ?? '', true);
       if (!actor) continue;
       actor.standing = false;
-      actor.place(seat, false);
+      // On the flight recorder, whoever changed seats that night walks there from where they sat the night before.
+      const before = plan.from?.get(id);
+      if (before && before !== seat && !grid.isCockpit(before)) {
+        actor.place(before, false);
+        actor.place(seat, true);
+      } else actor.place(seat, false);
       cast.set(id, actor);
     }
     // The flight recorder shows that night alone: nobody from the cabin as it is now (the dead, the restrained).

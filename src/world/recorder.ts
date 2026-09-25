@@ -8,6 +8,8 @@ import { tapeClock, type Clip, type ClipKind, type Tape } from './tape';
  */
 
 export const REEL_INTRO = 1.8;
+/** A longer opening when people change seats, so they have walked to their new ones before anything happens. */
+export const REEL_MOVES_INTRO = 4.5;
 export const REEL_OUTRO = 1.2;
 const LENGTH: Partial<Record<ClipKind, number>> = { caption: 2.6, blast: 3.4, slump: 2.8, restrained: 3.0 };
 const ACT = 3.2;
@@ -62,8 +64,8 @@ function whoIn(text: string, ids: readonly string[], name: (id: string) => strin
 
 type Draft = Omit<Clip, 'at' | 'dur' | 'clock'> & { when: 'night' | 'dawn' | 'day' };
 
-/** One night's reel. */
-export function planReel(game: PlayerView, record: NightRecord): Tape {
+/** One night's reel (`before`: the night before, so the reel can show who changed seats). */
+export function planReel(game: PlayerView, record: NightRecord, before?: NightRecord): Tape {
   const n = record.night;
   const byId = new Map(game.players.map((p) => [p.id, p]));
   const name = (id: string) => byId.get(id)?.name ?? '';
@@ -129,11 +131,29 @@ export function planReel(game: PlayerView, record: NightRecord): Tape {
     return { when: e.tag === 'verdict' ? 'day' : 'dawn', actor: '', kind: 'caption', text };
   }
 
+  // Who changed seats since the night before: the reel opens with them walking there.
+  const from = before ? new Map(Object.entries(before.seats)) : undefined;
+  const movers = from ? [...seats].filter(([id, seat]) => from.has(id) && from.get(id) !== seat && !grid.isCockpit(seat)) : [];
+  const moved = movers.length > 0;
+
   // Captions without a place of their own keep the camera where it was.
   let row = drafts.find((d) => d.row)?.row ?? 1;
   const nights = drafts.filter((d) => d.when === 'night').length;
-  let t = REEL_INTRO;
+  let t = moved ? REEL_MOVES_INTRO : REEL_INTRO;
   let k = 0;
+  const opening: Clip[] = moved
+    ? [
+        {
+          at: 0.3,
+          dur: REEL_MOVES_INTRO - 0.3,
+          actor: '',
+          kind: 'caption',
+          text: `Seats change: ${movers.map(([id, seat]) => `${name(id)} to ${seat}`).join(', ')}.`,
+          clock: 'LIGHTS OUT',
+          row: rowOf(movers[0][1]) ?? row,
+        },
+      ]
+    : [];
   const clips: Clip[] = drafts.map(({ when, ...d }) => {
     row = d.row ?? row;
     const dur = LENGTH[d.kind] ?? ACT;
@@ -145,11 +165,13 @@ export function planReel(game: PlayerView, record: NightRecord): Tape {
 
   const away = new Set([record.washroom, record.jumpseat].filter((id): id is string => !!id));
   const cast = [...seats].filter(([id, seat]) => !away.has(id) && !grid.isCockpit(seat)).map(([id, seat]) => ({ id, seat }));
-  const rows = [...new Set(clips.map((c) => c.row!))];
-  return { night: n, rows, clips, cast, seats, length: t + REEL_OUTRO };
+  const all = [...opening, ...clips];
+  const rows = [...new Set(all.map((c) => c.row!))];
+  return { night: n, rows, clips: all, cast, seats, length: t + REEL_OUTRO, ...(moved && from ? { from } : {}) };
 }
 
 /** Every night of a finished flight, in order (none until it is over). */
 export function planReels(game: PlayerView): Tape[] {
-  return (game.recorder ?? []).map((record) => planReel(game, record));
+  const records = game.recorder ?? [];
+  return records.map((record, i) => planReel(game, record, records[i - 1]));
 }
