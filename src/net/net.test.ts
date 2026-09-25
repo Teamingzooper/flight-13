@@ -37,7 +37,7 @@ function flight(opts: { controlTower?: boolean; maxPassengers?: number } = {}) {
   });
   const board = (name: string, token = `${name.toLowerCase()}-token-0001`) =>
     new ClientSession({ transport: network.join(), code: 'TEST', token, name, look: LOOK, now: () => now });
-  return { host, captain, board, advance: (ms: number) => void (now += ms) };
+  return { host, captain, board, network, advance: (ms: number) => void (now += ms) };
 }
 
 /** Press through the current phase the way an idle human would. */
@@ -56,6 +56,22 @@ async function passTurn(c: ClientSession): Promise<void> {
     await c.sendIntent({ kind: 'vote', target: 'skip' });
   }
 }
+
+describe('moving to another device', () => {
+  it("a passenger's seat moves, but not the seat of the browser that runs the flight", async () => {
+    const { captain, board, network } = flight();
+    const ann = board('Ann');
+    await settle();
+    expect(await captain.requestMove()).toEqual({ ok: false, error: 'This browser runs the flight, so it has to stay here. Your seat cannot move.' });
+    const ticket = await ann.requestMove();
+    if (!ticket.ok) throw new Error(ticket.error);
+    const seat = ann.snapshot.state!.you;
+    const phone = new ClientSession({ transport: network.join(), code: 'TEST', token: 'ann-phone-token-1', name: 'Phone', look: LOOK, move: ticket.ticket });
+    await settle();
+    expect(phone.snapshot.state?.you).toBe(seat);
+    expect(ann.snapshot.status).toBe('refused');
+  });
+});
 
 describe('boarding', () => {
   it('passengers join and share a manifest; only the in-page client is the host', async () => {

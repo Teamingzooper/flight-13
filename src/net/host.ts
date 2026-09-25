@@ -68,6 +68,8 @@ export interface HostSnapshot {
   pausedAt?: number | null;
   /** The pause is the server's own: everyone left, and the flight waits for someone to come back. */
   idlePaused?: boolean;
+  /** Tickets to move a seat to another device: the seat (null: the control tower's captaincy), until when. */
+  moves?: Record<string, { playerId: string | null; until: number }>;
 }
 
 export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
@@ -125,6 +127,8 @@ interface BotPlan {
 }
 
 const LOBBY_GRACE_MS = 20_000;
+/** How long a link to move your seat to another device works. */
+export const MOVE_TICKET_MS = 10 * 60_000;
 /** How long a server flight waits for its captain before someone else aboard takes over. */
 export const CAPTAIN_GRACE_MS = 60_000;
 const LOBBY_CHAT_KEEP = 100;
@@ -139,6 +143,13 @@ const BOT_NAMES = [
   'Ana', 'Ben', 'Dot', 'Gil', 'Kai', 'Liv', 'Moe', 'Ned', 'Ola', 'Rex', 'Sal', 'Tam', 'Uma', 'Vic', 'Wes', 'Zoe',
 ];
 const OK: IntentResult = { ok: true };
+
+/** A ticket nobody could guess: 20 base-32 letters and digits (100 bits). */
+function randomTicket(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  return Array.from(bytes, (b) => alphabet[b & 31]).join('');
+}
 const fail = (error: string): IntentResult => ({ ok: false, error });
 
 export class HostSession {
@@ -366,6 +377,11 @@ export class HostSession {
           this.changed();
         }
         break;
+      case 'move': {
+        const result = this.moveTicket(peer);
+        this.sendTo(peerId, result.ok ? { t: 'ack', seq: msg.seq, ok: true, ticket: result.ticket } : { t: 'ack', seq: msg.seq, ok: false, error: result.error });
+        break;
+      }
       case 'pa': {
         const on = msg.on && this.mayPa(peer);
         if (!!peer.pa !== on) {
@@ -423,6 +439,7 @@ export class HostSession {
       this.refuse(peerId, 'This flight is running a different version of Flight 13. Reload the page.');
       return;
     }
+    if (msg.move && !this.moveSeat(peerId, msg.move, msg.token)) return;
     if (this.serverHosted) {
       // On the server nobody is trusted by where they connect from: the captain is who holds the booking token.
       peer.token = msg.token;
@@ -446,7 +463,7 @@ export class HostSession {
       if (s.players.length >= s.settings.maxPassengers) return this.refuse(peerId, 'This flight is full.');
       player = { id: `p${s.nextId++}`, token: msg.token, name: this.uniqueName(msg.name, null), look: msg.look, face: msg.face, bot: false };
       s.players.push(player);
-    } else if (!s.game) {
+    } else if (!s.game && !msg.move) {
       player.name = this.uniqueName(msg.name, player.id);
       player.look = msg.look;
       player.face = msg.face;
@@ -462,6 +479,55 @@ export class HostSession {
     peer.facesSent = '';
     this.disconnectedAt.delete(player.id);
     this.changed();
+  }
+
+  /**
+   * A ticket to move your seat (your name, role, everything) to another device: the other device opens a link with it
+   * and joins in your place. On the server, the captain can move too (a control tower captain moves the tower).
+   */
+  private moveTicket(peer: Peer): { ok: true; ticket: string } | { ok: false; error: string } {
+    const s = this.snapshot;
+    const tower = peer.tower && peer.trusted && this.serverHosted;
+    if (!peer.playerId && !tower) return { ok: false, error: 'Join the flight first.' };
+    if (peer.trusted && !this.serverHosted) return { ok: false, error: 'This browser runs the flight, so it has to stay here. Your seat cannot move.' };
+    const now = this.now();
+    const moves = (s.moves ??= {});
+    for (const [ticket, move] of Object.entries(moves)) if (move.until <= now) delete moves[ticket];
+    const ticket = randomTicket();
+    moves[ticket] = { playerId: tower ? null : peer.playerId, until: now + MOVE_TICKET_MS };
+    this.changed();
+    return { ok: true, ticket };
+  }
+
+  /** Someone joined with a move ticket: the seat is theirs now, and the old device leaves. False if it failed. */
+  private moveSeat(peerId: string, ticket: string, token: string): boolean {
+    const s = this.snapshot;
+    const move = s.moves?.[ticket];
+    if (s.moves) delete s.moves[ticket];
+    const seat = move && move.until > this.now() && move.playerId !== null ? this.player(move.playerId) : undefined;
+    const captaincy = !!move && move.until > this.now() && move.playerId === null && this.serverHosted;
+    if (!captaincy && (!seat || seat.bot)) {
+      this.refuse(peerId, 'That link to move your seat has expired. Get a new one on your other device.');
+      return false;
+    }
+    if (s.players.some((p) => p !== seat && !p.bot && p.token === token)) {
+      this.refuse(peerId, 'This device already has its own seat on this flight. Open the link on a different device.');
+      return false;
+    }
+    const from = seat ? seat.token : s.hostToken;
+    if (from === s.hostToken) s.hostToken = token;
+    if (seat) seat.token = token;
+    for (const [otherId, other] of this.peers) {
+      if (otherId === peerId) continue;
+      if ((seat && other.playerId === seat.id) || (!seat && other.tower && other.trusted)) {
+        other.playerId = null;
+        other.tower = false;
+        other.trusted = false;
+        this.refuse(otherId, 'You moved to another device. This screen has left the flight.');
+      }
+    }
+    this.changed();
+    return true;
   }
 
   private intent(peer: Peer, intent: Intent): IntentResult {

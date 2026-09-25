@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings, type Look } from '../engine';
 import { ClientSession } from './client';
-import { CAPTAIN_GRACE_MS, HostSession, newHostSnapshot } from './host';
+import { CAPTAIN_GRACE_MS, MOVE_TICKET_MS, HostSession, newHostSnapshot } from './host';
 import { MemoryHub } from './transport';
 
 const LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 };
@@ -26,9 +26,9 @@ function serverFlight(opts: { controlTower?: boolean } = {}) {
     random: () => (seed = (seed * 997 + 0.123) % 1),
     defer: (fn) => void setTimeout(fn, 0),
   });
-  const board = (name: string, token = `${name.toLowerCase()}-token-0001`) => {
+  const board = (name: string, token = `${name.toLowerCase()}-token-0001`, move?: string) => {
     const transport = hub.join();
-    const client = new ClientSession({ transport, code: 'TEST', token, name, look: LOOK, now: () => now });
+    const client = new ClientSession({ transport, code: 'TEST', token, name, look: LOOK, move, now: () => now });
     return { client, leave: () => client.close() };
   };
   return { host, board, advance: (ms: number) => void (now += ms), ended: () => ended };
@@ -109,5 +109,73 @@ describe('server flights', () => {
     expect(ended()).toBe(1);
     expect(ann.client.snapshot.status).toBe('refused');
     expect(ann.client.snapshot.reason).toBe('The captain ended this flight.');
+  });
+
+  it('moves a seat to another device mid-flight: same seat and role, and the old screen leaves', async () => {
+    const { host, board } = serverFlight();
+    const cap = board('Cap', CAPTAIN);
+    const laptop = board('Ann');
+    await settle();
+    for (let i = 0; i < 4; i++) await cap.client.command({ kind: 'addBot' });
+    await cap.client.command({ kind: 'takeoff' });
+    await settle();
+    const seat = laptop.client.snapshot.state!.you;
+    const role = laptop.client.snapshot.state!.game!.you!.role;
+    const ticket = await laptop.client.requestMove();
+    if (!ticket.ok) throw new Error(ticket.error);
+    const phone = board('Phone default', 'ann-phone-token-01', ticket.ticket);
+    await settle();
+    expect(phone.client.snapshot.state!.you).toBe(seat);
+    expect(phone.client.snapshot.state!.game!.you!.role).toBe(role);
+    expect(phone.client.snapshot.state!.players.find((p) => p.id === seat)!.name).toBe('Ann');
+    expect(laptop.client.snapshot.status).toBe('refused');
+    expect(laptop.client.snapshot.reason).toBe('You moved to another device. This screen has left the flight.');
+    // Used once: the ticket is gone, and the phone's own token finds the seat from now on.
+    expect(host.snapshot.moves).toEqual({});
+    phone.leave();
+    await settle();
+    const again = board('Phone default', 'ann-phone-token-01');
+    await settle();
+    expect(again.client.snapshot.state!.you).toBe(seat);
+  });
+
+  it('the captaincy moves with the captain', async () => {
+    const { board } = serverFlight();
+    const cap = board('Cap', CAPTAIN);
+    await settle();
+    const ticket = await cap.client.requestMove();
+    if (!ticket.ok) throw new Error(ticket.error);
+    const phone = board('Cap', 'cap-phone-token-01', ticket.ticket);
+    await settle();
+    expect(phone.client.snapshot.state!.isHost).toBe(true);
+    expect(cap.client.snapshot.status).toBe('refused');
+  });
+
+  it('a control tower moves to another screen', async () => {
+    const { board } = serverFlight({ controlTower: true });
+    const tower = board('Tower', CAPTAIN);
+    await settle();
+    const ticket = await tower.client.requestMove();
+    if (!ticket.ok) throw new Error(ticket.error);
+    const tv = board('Tv', 'tower-tv-token-001', ticket.ticket);
+    await settle();
+    expect(tv.client.snapshot.state!.you).toBeNull();
+    expect(tv.client.snapshot.state!.isHost).toBe(true);
+    expect(tower.client.snapshot.status).toBe('refused');
+  });
+
+  it('an old or used ticket does not work', async () => {
+    const { board, advance } = serverFlight();
+    board('Cap', CAPTAIN);
+    const ann = board('Ann');
+    await settle();
+    const ticket = await ann.client.requestMove();
+    if (!ticket.ok) throw new Error(ticket.error);
+    advance(MOVE_TICKET_MS + 1);
+    const late = board('Late', 'late-token-000001', ticket.ticket);
+    await settle();
+    expect(late.client.snapshot.status).toBe('refused');
+    expect(late.client.snapshot.reason).toMatch(/expired/);
+    expect(ann.client.snapshot.status).toBe('joined');
   });
 });

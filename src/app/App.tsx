@@ -8,6 +8,6 @@ export function App() {
   const route = useRoute();
   if (route.name === 'book') return <Book />;
   if (route.name === 'dutyFree') return <DutyFree />;
-  if (route.name === 'flight') return <Flight code={route.code} />;
+  if (route.name === 'flight') return <Flight code={route.code} move={route.move} />;
   return <Home />;
 }
