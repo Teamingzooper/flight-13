@@ -24,6 +24,8 @@ By default browsers connect to each other directly, which some networks block. T
 Cloudflare Worker) carries every message instead, so any network works; the host's browser still runs the game. Voice
 chat needs direct connections, so it is off while playing through the relay.
 
+It is deployed at `wss://flight13-relay.flight-13-relay.workers.dev` (the repo's `RELAY_URL` variable). To deploy your own:
+
 1. Make a free Cloudflare account, then in `server/` run `npx wrangler login` and `npx wrangler deploy`.
 2. Copy the address it prints (`https://flight13-relay.YOURNAME.workers.dev`) and set it as the repository variable
    `RELAY_URL`, written with `wss://` (Settings → Secrets and variables → Actions → Variables).
