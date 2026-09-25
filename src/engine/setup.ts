@@ -33,6 +33,10 @@ export function emptyNight(): NightChoices {
     freed: {},
     defused: {},
     washroom: null,
+    jumpseats: {},
+    roughair: {},
+    courses: {},
+    jumpseat: null,
   };
 }
 
@@ -140,6 +144,9 @@ export function createGame(opts: CreateGameOptions): GameState {
     usedItems: [],
     poisonedBy: null,
     washroomUsed: false,
+    roughAirUsed: false,
+    courseUsed: false,
+    knockedOutNight: null,
   }));
   for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };
   return s;

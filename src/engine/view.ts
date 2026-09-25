@@ -60,7 +60,7 @@ export interface YouView {
   status: PlayerStatus;
   seat: SeatId | null;
   poisoned: boolean;
-  buckled: 'pilot' | 'turbulence' | null;
+  buckled: 'pilot' | 'turbulence' | 'rough' | null;
   bombUsed: boolean;
   selfTreatUsed: boolean;
   lastSeatbeltTarget: string | null;

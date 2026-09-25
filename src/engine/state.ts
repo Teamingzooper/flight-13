@@ -94,6 +94,10 @@ export function normalizeGame(s: GameState): GameState {
   s.night.freed ??= {};
   s.night.defused ??= {};
   s.night.washroom ??= null;
+  s.night.jumpseats ??= {};
+  s.night.roughair ??= {};
+  s.night.courses ??= {};
+  s.night.jumpseat ??= null;
   s.day.doubled ??= {};
   for (const b of s.bombs) b.defused ??= false;
   for (const p of s.players) {
@@ -103,6 +107,9 @@ export function normalizeGame(s: GameState): GameState {
     p.usedItems ??= [];
     p.poisonedBy ??= null;
     p.washroomUsed ??= false;
+    p.roughAirUsed ??= false;
+    p.courseUsed ??= false;
+    p.knockedOutNight ??= null;
   }
   return s;
 }

@@ -43,7 +43,44 @@ export function possibleMoves(s: GameState, p: PlayerState): SeatId[] {
   return places.filter((to) => checkMove(s, p, to) === null);
 }
 
+/** Why the Pilot cannot make flight deck calls (or watch the cameras) right now, or null. */
+export function flightDeckError(s: GameState, p: PlayerState): string | null {
+  if (!isPilot(p.role)) return 'Only the Pilot flies the plane.';
+  if (!isActive(p)) return 'You are out of play.';
+  if (s.night.buckled[p.id]) return 'Turbulence has you fighting the controls tonight.';
+  if (p.knockedOutNight === s.phase.night) return 'You are still out cold.';
+  return null;
+}
+
+export function checkJumpseat(s: GameState, pilot: PlayerState, target: string): string | null {
+  const error = flightDeckError(s, pilot);
+  if (error || target === 'none') return error;
+  const t = getPlayer(s, target);
+  if (!t || !isActive(t)) return 'Pick someone who is still in play.';
+  if (t.id === pilot.id) return 'You are already on the flight deck.';
+  return null;
+}
+
+export function checkRoughAir(s: GameState, pilot: PlayerState, startRow: number | null): string | null {
+  const error = flightDeckError(s, pilot);
+  if (error || startRow === null) return error;
+  if (pilot.roughAirUsed) return 'You already flew through rough air on this flight.';
+  if (!Number.isInteger(startRow) || startRow < 1 || startRow > s.cabin.rows - 2) return 'Pick three rows of the cabin.';
+  return null;
+}
+
+export function checkCourse(s: GameState, pilot: PlayerState, change: 'hold' | 'shortcut' | null): string | null {
+  const error = flightDeckError(s, pilot);
+  if (error || change === null) return error;
+  if (pilot.courseUsed) return 'You already changed course on this flight.';
+  if (change === 'hold') return null;
+  if (change === 'shortcut') return s.nights - 1 >= s.phase.night ? null : 'Too late for a shortcut: we land after tonight.';
+  return 'Hold, or take a shortcut.';
+}
+
 export function checkSeatbelt(s: GameState, pilot: PlayerState, target: string): string | null {
+  const error = flightDeckError(s, pilot);
+  if (error) return error;
   if (target === 'none') return null;
   const t = getPlayer(s, target);
   if (!t || !isActive(t)) return 'Pick someone who is still in play.';

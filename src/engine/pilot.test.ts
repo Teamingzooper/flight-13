@@ -78,3 +78,74 @@ describe('the flight deck', () => {
     expect(act(s, 'pilot', { kind: 'search' })).toEqual({ ok: false, error: 'You have no seat to look under.' });
   });
 });
+
+const call = (s: GameState, intent: Parameters<typeof applyIntent>[2]) => applyIntent(s, 'pilot', intent, 0);
+
+describe('lights out on the flight deck', () => {
+  it('calls someone up to the jump seat: safe tonight, back by morning, and everyone sees', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    expect(call(s, { kind: 'jumpseat', target: 'mid' })).toEqual({ ok: true });
+    move(s, 'mid', 'washroom');
+    advanceTo(s, 'night_act', 1);
+    expect(s.night.jumpseat).toBe('mid');
+    expect(player(s, 'mid').washroomUsed).toBe(false);
+    expect(logTexts(s, 'all')).toContain('mid was called up to the flight deck for the night.');
+    advanceTo(s, 'dawn', 1);
+    expect(player(s, 'mid').seat).toBe('4B');
+  });
+
+  it('cannot call up anyone who is buckled in', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    call(s, { kind: 'seatbelt', target: 'mid' });
+    call(s, { kind: 'jumpseat', target: 'mid' });
+    advanceTo(s, 'night_act', 1);
+    expect(s.night.jumpseat).toBeNull();
+    expect(logTexts(s, 'pilot')).toContain('You called mid up to the flight deck, but they are buckled in tonight.');
+  });
+
+  it('flies through rough air once per flight, buckling three rows', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    expect(call(s, { kind: 'roughair', startRow: 3 })).toEqual({ ok: true });
+    advanceTo(s, 'night_act', 1);
+    expect(s.night.buckled.mid).toBe('rough');
+    expect(s.night.buckled.back).toBeUndefined();
+    expect(logTexts(s, 'all')).toContain('The plane bucked through rough air over rows 3–5. Everyone there is buckled in tonight.');
+    advanceTo(s, 'night_move', 2);
+    expect(call(s, { kind: 'roughair', startRow: 1 })).toEqual({ ok: false, error: 'You already flew through rough air on this flight.' });
+  });
+
+  it('changes course once: hold adds a night, a shortcut cannot land before tonight', () => {
+    const s = cabin();
+    const nights = s.nights;
+    advanceTo(s, 'night_move', 1);
+    expect(call(s, { kind: 'course', change: 'hold' })).toEqual({ ok: true });
+    advanceTo(s, 'night_act', 1);
+    expect(s.nights).toBe(nights + 1);
+    expect(logTexts(s, 'all')).toContain(`The captain is holding: Flight 13 now lands after night ${nights + 1}.`);
+    advanceTo(s, 'night_move', 2);
+    expect(call(s, { kind: 'course', change: 'shortcut' })).toEqual({ ok: false, error: 'You already changed course on this flight.' });
+    const late = cabin([], 'pilot_rogue');
+    advanceTo(late, 'night_move', late.nights);
+    expect(call(late, { kind: 'course', change: 'shortcut' })).toEqual({ ok: false, error: 'Too late for a shortcut: we land after tonight.' });
+  });
+
+  it('a shortcut lands the plane a night early', () => {
+    const s = cabin([], 'pilot_rogue');
+    const nights = s.nights;
+    advanceTo(s, 'night_move', 1);
+    expect(call(s, { kind: 'course', change: 'shortcut' })).toEqual({ ok: true });
+    advanceTo(s, 'ended');
+    expect(s.phase.night).toBe(nights - 1);
+    expect(s.result).toMatchObject({ winner: 'saboteurs', reason: 'landed' });
+  });
+
+  it('makes no calls while turbulence has him', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    s.night.buckled.pilot = 'turbulence';
+    expect(call(s, { kind: 'jumpseat', target: 'mid' })).toEqual({ ok: false, error: 'Turbulence has you fighting the controls tonight.' });
+  });
+});

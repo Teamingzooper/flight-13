@@ -124,6 +124,11 @@ export interface PlayerState {
   poisonedBy: string | null;
   /** The washroom can be used once per flight. */
   washroomUsed: boolean;
+  /** Pilot: rough air and a change of course are once per flight. */
+  roughAirUsed: boolean;
+  courseUsed: boolean;
+  /** Pilot: knocked out cold by his guest, and out of action on this night. */
+  knockedOutNight: number | null;
 }
 
 export type BombLocation =
@@ -172,7 +177,7 @@ export interface NightChoices {
   seatbelts: Record<string, string>;
   /** null = pressed Done without acting. */
   actions: Record<string, NightAction | null>;
-  buckled: Record<string, 'pilot' | 'turbulence'>;
+  buckled: Record<string, 'pilot' | 'turbulence' | 'rough'>;
   anomaly: Anomaly | null;
   /** Players who already looked under their seat tonight (their action is locked). */
   searched: Record<string, true>;
@@ -188,6 +193,14 @@ export interface NightChoices {
   defused: Record<string, string>;
   /** Who is locked in the lavatory tonight (back in their seat by morning). */
   washroom: string | null;
+  /** Pilot id → who he calls up to the jump seat ('none' for nobody). */
+  jumpseats: Record<string, string>;
+  /** Pilot id → the first of three rows to fly rough air over. */
+  roughair: Record<string, number>;
+  /** Pilot id → a change of course. */
+  courses: Record<string, 'hold' | 'shortcut'>;
+  /** Who is up on the flight deck tonight, once seats have changed. */
+  jumpseat: string | null;
 }
 
 export interface DayChoices {
@@ -250,6 +263,11 @@ export type LogTag =
   | 'defused'
   | 'washroom'
   | 'check'
+  | 'jumpseat'
+  | 'roughair'
+  | 'course'
+  | 'knockout'
+  | 'watch'
   | 'gameover';
 
 export interface LogEntry {
@@ -322,6 +340,12 @@ export type Intent =
   | { kind: 'use'; item: ItemId; target?: string; seat?: SeatId }
   | { kind: 'move'; to: MoveTarget }
   | { kind: 'seatbelt'; target: string }
+  /** Pilot: call someone up to the jump seat for the night ('none' for nobody). */
+  | { kind: 'jumpseat'; target: string }
+  /** Pilot, once per flight: rough air over three rows from `startRow` (null to call it off). */
+  | { kind: 'roughair'; startRow: number | null }
+  /** Pilot, once per flight: land a night later or sooner (null to call it off). */
+  | { kind: 'course'; change: 'hold' | 'shortcut' | null }
   | { kind: 'act'; action: NightAction | null }
   | { kind: 'ready' }
   | { kind: 'vote'; target: string }
