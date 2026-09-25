@@ -149,3 +149,88 @@ describe('lights out on the flight deck', () => {
     expect(call(s, { kind: 'jumpseat', target: 'mid' })).toEqual({ ok: false, error: 'Turbulence has you fighting the controls tonight.' });
   });
 });
+
+describe('in the dark on the flight deck', () => {
+  it('the cameras see three rows, and planting looks just like looking under a seat', () => {
+    const s = cabin([
+      { id: 'b2', role: 'bomber', seat: '4C' },
+      { id: 'nurse', role: 'nurse', seat: '5B' },
+    ]);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'pilot', { kind: 'watch', startRow: 3 })).toEqual({ ok: true });
+    act(s, 'b2', { kind: 'plant', where: 'seat', fuse: 2 });
+    act(s, 'mid', { kind: 'search' });
+    act(s, 'nurse', { kind: 'treat', target: 'mid' });
+    advanceTo(s, 'dawn', 1);
+    const seen = logTexts(s, 'pilot').find((t) => t.startsWith('On the cabin cameras over rows 3–5 you saw:'))!;
+    expect(seen).toContain('b2 bent down under their seat');
+    expect(seen).toContain('mid bent down under their seat');
+    expect(seen).toContain('nurse leaned over to mid');
+    expect(seen).not.toContain('bomber');
+  });
+
+  it('shows empty rows sleeping', () => {
+    const s = cabin();
+    advanceTo(s, 'night_act', 1);
+    act(s, 'pilot', { kind: 'watch', startRow: 5 });
+    advanceTo(s, 'dawn', 1);
+    expect(logTexts(s, 'pilot')).toContain('The cabin cameras showed rows 5–7 sleeping.');
+  });
+
+  it('a saboteur in the jump seat can knock the Pilot out for the next night', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'bomber' }, 0);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'You are on the flight deck tonight.' });
+    expect(act(s, 'bomber', { kind: 'knockout' })).toEqual({ ok: true });
+    act(s, 'pilot', { kind: 'watch', startRow: 1 });
+    advanceTo(s, 'night_move', 2);
+    expect(logTexts(s, 'pilot')).toContain('bomber knocked you out cold in the jump seat. You will be in no state to fly tomorrow night either.');
+    expect(logTexts(s, 'pilot')).toContain('You were knocked out before you could check the cameras.');
+    expect(applyIntent(s, 'pilot', { kind: 'seatbelt', target: 'mid' }, 0)).toEqual({ ok: false, error: 'You are still out cold.' });
+  });
+
+  it('passengers in the jump seat cannot knock anyone out', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'mid' }, 0);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'mid', { kind: 'knockout' })).toEqual({ ok: false, error: 'You are on the flight deck tonight.' });
+    expect(act(s, 'mid', { kind: 'search' }).ok).toBe(false);
+  });
+
+  it('coffee from row 1 can poison the flight deck, and only a Nurse in the jump seat can treat the Pilot', () => {
+    const s = cabin([
+      { id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 1' },
+      { id: 'nurse', role: 'nurse', seat: '2B' },
+    ]);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'nurse', { kind: 'treat', target: 'pilot' }).ok).toBe(false);
+    expect(act(s, 'stew', { kind: 'serve', target: 'pilot' })).toEqual({ ok: true });
+    advanceTo(s, 'night_move', 2);
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'nurse' }, 0);
+    advanceTo(s, 'night_act', 2);
+    expect(act(s, 'nurse', { kind: 'treat', target: 'pilot' })).toEqual({ ok: true });
+    advanceTo(s, 'dawn', 2);
+    expect(player(s, 'pilot').status).toBe('alive');
+  });
+
+  it('coffee only goes up from row 1', () => {
+    const s = cabin([{ id: 'stew', role: 'stewardess_rogue', seat: 'Aisle 3' }]);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'stew', { kind: 'serve', target: 'pilot' })).toEqual({ ok: false, error: 'pilot is on the flight deck. Take the coffee up from row 1.' });
+  });
+
+  it('keeps the jump seat guest out of the cabin: no blasts, handcuffs or treatment reach them', () => {
+    const s = cabin([{ id: 'marshal', role: 'marshal', seat: '4C' }]);
+    advanceTo(s, 'night_act', 1);
+    act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 });
+    advanceTo(s, 'night_move', 2);
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'front' }, 0);
+    advanceTo(s, 'night_act', 2);
+    expect(act(s, 'marshal', { kind: 'cuff', target: 'front' })).toEqual({ ok: false, error: 'front is up on the flight deck tonight.' });
+    advanceTo(s, 'dawn', 2);
+    expect(player(s, 'front').status).toBe('alive');
+  });
+});

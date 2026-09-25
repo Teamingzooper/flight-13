@@ -169,7 +169,11 @@ export type NightAction =
   /** Anyone: look under your own seat, or search the lavatory while you are in it (answered at once, and it uses up your night). */
   | { kind: 'search' }
   /** Air Marshal, once per game: handcuff someone within 2 seats. */
-  | { kind: 'cuff'; target: string };
+  | { kind: 'cuff'; target: string }
+  /** Pilot: watch three rows on the cabin cameras. */
+  | { kind: 'watch'; startRow: number }
+  /** A saboteur in the jump seat knocks the Pilot out cold. */
+  | { kind: 'knockout' };
 
 export interface NightChoices {
   moves: Record<string, MoveTarget>;

@@ -1,12 +1,12 @@
 import { DESTINATIONS } from './destinations';
-import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder } from './grid';
+import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder } from './grid';
 import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
 import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, readNote, removeFromPlay, statsOf } from './state';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
 import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
@@ -229,6 +229,34 @@ export function searchSeat(s: GameState, p: PlayerState, now: number): void {
   addLog(s, now, 'end', 'search', `Night ${n}: ${p.name} looked under ${p.seat}${found.length ? ' and found a bomb' : ''}.`);
 }
 
+/** What a cabin camera shows of one action: searching and planting look alike, so bombers can always deny it. */
+function sighting(s: GameState, actor: PlayerState, action: NightAction): string | null {
+  const target = 'target' in action ? getPlayer(s, action.target) : undefined;
+  switch (action.kind) {
+    case 'treat':
+      return target && target.id !== actor.id ? `${actor.name} leaned over to ${target.name}` : `${actor.name} rummaged in a bag`;
+    case 'serve':
+      return target ? `${actor.name} handed ${target.name} a drink` : null;
+    case 'check': {
+      const row = aisleRow(actor.seat);
+      return row === null ? null : `${actor.name} checked under ${rowSeats(row, action.side).join(', ')}`;
+    }
+    case 'sweep':
+      return `${actor.name} looked around the seats nearby`;
+    case 'inspect':
+      return action.what === 'cart' ? `${actor.name} fiddled with the drink cart` : `${actor.name} peered at the lavatory door`;
+    case 'plant':
+      if (action.where === 'seat') return `${actor.name} bent down under their seat`;
+      return action.where === 'cart' ? `${actor.name} fiddled with the drink cart` : `${actor.name} peered at the lavatory door`;
+    case 'search':
+      return `${actor.name} bent down under their seat`;
+    case 'cuff':
+      return target ? `${actor.name} snapped handcuffs on ${target.name}` : null;
+    default:
+      return null;
+  }
+}
+
 interface Acting {
   actor: PlayerState;
   action: NightAction;
@@ -317,6 +345,23 @@ export function resolveNight(s: GameState, now: number): void {
     } else if ('target' in action && action.kind !== 'cuff' && cuffed.has(action.target)) {
       addLog(s, now, [actor.id], 'fizzle', `${playerById(action.target).name} was handcuffed and led away before you got to them.`);
       acts.splice(i, 1);
+    }
+  }
+
+  // 1c. A saboteur in the jump seat knocks the Pilot out cold (and his cameras go dark tonight).
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'knockout') continue;
+    const pilot = activePlayers(s).find((o) => isPilot(o.role) && isCockpit(o.seat));
+    if (!pilot) continue;
+    pilot.knockedOutNight = n + 1;
+    visit(pilot.id, `${actor.name} knocked you out`);
+    addLog(s, now, [pilot.id], 'knockout', `${actor.name} knocked you out cold in the jump seat. You will be in no state to fly tomorrow night either.`);
+    addLog(s, now, [actor.id], 'knockout', 'You knocked the Pilot out cold. He is out of action tomorrow night too.');
+    addLog(s, now, 'end', 'knockout', `Night ${n}: ${actor.name} knocked Pilot ${pilot.name} out in the jump seat.`);
+    const i = acts.findIndex((a) => a.actor.id === pilot.id);
+    if (i >= 0) {
+      acts.splice(i, 1);
+      addLog(s, now, [pilot.id], 'fizzle', 'You were knocked out before you could check the cameras.');
     }
   }
 
@@ -432,6 +477,42 @@ export function resolveNight(s: GameState, now: number): void {
     addLog(s, now, 'end', action.kind, `Night ${n}: Investigator ${actor.name} checked ${what}${found.length ? ' and found a bomb' : ''}.`);
   }
 
+  // 5c. The cabin cameras: what the Pilot saw in three rows.
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'watch') continue;
+    const rows = [action.startRow, action.startRow + 1, action.startRow + 2];
+    const inRows = (p: PlayerState | undefined) => {
+      if (!p || !p.seat || inWashroom(s, p.id) || onFlightDeck(s, p)) return false;
+      const cell = parsePlace(p.seat);
+      return !!cell && rows.includes(cell.row);
+    };
+    const seen: string[] = [];
+    for (const other of acts) {
+      const text = sighting(s, other.actor, other.action);
+      const target = 'target' in other.action ? playerById(other.action.target) : undefined;
+      if (text && (inRows(other.actor) || inRows(target))) seen.push(text);
+    }
+    for (const [user, seat] of Object.entries(s.night.flashlights)) {
+      const u = playerById(user);
+      if (inRows(u) || rows.includes(parseSeat(seat)?.row ?? 0)) seen.push(`${u.name} shone a light under ${seat}`);
+    }
+    for (const [sleeper, by] of Object.entries(s.night.asleep)) {
+      const a = playerById(by);
+      const t = playerById(sleeper);
+      if (inRows(a) || inRows(t)) seen.push(`${a.name} slipped something into ${t.name}\u2019s water`);
+    }
+    const where = `rows ${rows[0]}–${rows[2]}`;
+    addLog(
+      s,
+      now,
+      [actor.id],
+      'watch',
+      seen.length ? `On the cabin cameras over ${where} you saw: ${seen.join('; ')}.` : `The cabin cameras showed ${where} sleeping.`,
+      { rows },
+    );
+    addLog(s, now, 'end', 'watch', `Night ${n}: Pilot ${actor.name} watched ${where} on the cabin cameras.`);
+  }
+
   // 6. A runaway cart leaves the Stewardess behind (she catches up with it when she next walks).
   if (s.night.anomaly === 'runaway_cart' && !s.cabin.cartDestroyed) {
     s.cabin.cartRow = 1 + nextInt(s, rows);
@@ -465,6 +546,8 @@ export function resolveNight(s: GameState, now: number): void {
     s.incidentAtDawn = true;
     const victims: PlayerState[] = [];
     for (const p of activePlayers(s)) {
+      // No blast reaches the flight deck.
+      if (onFlightDeck(s, p)) continue;
       // Whoever is locked in the lavatory is only caught by a bomb in there with them.
       const caught = inWashroom(s, p.id) ? bomb.location.kind === 'lavatory' : !!p.seat && distanceToAny(cellOf(p), centers) <= BLAST_RADIUS;
       if (!caught) continue;

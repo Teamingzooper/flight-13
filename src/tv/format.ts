@@ -113,6 +113,10 @@ export function describeAction(game: PlayerView, action: NightAction): string {
       return game.you?.inWashroom ? 'search the lavatory' : 'look under your seat';
     case 'cuff':
       return `handcuff ${nameWithSeat(game, action.target)}`;
+    case 'watch':
+      return `watch rows ${action.startRow}–${action.startRow + 2} on the cabin cameras`;
+    case 'knockout':
+      return 'knock the Pilot out cold';
   }
 }
 

@@ -1,6 +1,6 @@
 import { aisleRow, distance, isSeatInCabin, parseSeat, rowSeats, seatsWithin } from './grid';
 import { isStewardess } from './roles';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, statsOf } from './state';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, isGuest, statsOf } from './state';
 import type { Bomb, GameState, ItemId, PhaseKind, PlayerState, SeatId } from './types';
 
 /** Items that fit in a carry-on. */
@@ -150,10 +150,12 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
     case 'pills': {
       if (kind !== 'night_act') return 'Slip it once seats have changed.';
       if (inWashroom(s, p.id)) return 'You are locked in the lavatory tonight.';
+      if (isGuest(s, p.id)) return 'You are on the flight deck tonight.';
       const t = use.target === undefined ? undefined : getPlayer(s, use.target);
       if (!t || !isActive(t) || !t.seat) return 'Pick someone who is still in play.';
       if (t.id === p.id) return 'Those are for someone else.';
       if (inWashroom(s, t.id)) return `${t.name} is locked in the lavatory tonight.`;
+      if (isGuest(s, t.id)) return `${t.name} is up on the flight deck tonight.`;
       if (distance(cellOf(t), cellOf(p)) > 1) return `${t.name} is too far away. Pick a neighbour.`;
       return null;
     }
