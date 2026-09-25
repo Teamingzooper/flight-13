@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { usePrefs } from '../app/prefs';
 import type { OpenFlight } from '../app/sessions';
-import { voiceFor, type VoiceChat } from '../net/voice';
+import { voiceAllowed, voiceFor, type VoiceChat } from '../net/voice';
 
 /** This flight's voice chat, re-rendering when it turns on, off, or mutes. */
 export function useVoice(flight: OpenFlight): VoiceChat | null {
@@ -17,6 +17,13 @@ export function VoiceButton({ flight, className = '' }: { flight: OpenFlight; cl
   const { pushToTalk } = usePrefs();
   if (!voice) return null;
   const status = voice.status;
+  if (!voiceAllowed(flight.client)) {
+    return (
+      <button class={`voice-button ${className}`} disabled title="The captain turned voice chat off for this flight">
+        <span aria-hidden="true">🔇</span> No voice
+      </button>
+    );
+  }
   if (status === 'off' || status === 'starting') {
     return (
       <button

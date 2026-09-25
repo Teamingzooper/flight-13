@@ -8,6 +8,8 @@ import {
   SPECIAL_CARDS,
   TIMERS,
   TWISTS,
+  VOICE_MODES,
+  VOICE_RANGE,
   isPlaneId,
   validateCustomDestination,
   type BotChatter,
@@ -21,6 +23,7 @@ import {
   type PlayerView,
   type RoleId,
   type Settings,
+  type VoiceMode,
 } from '../engine';
 import { isEmoteId, type EmoteId } from './emotes';
 import { cleanFace } from './face';
@@ -231,6 +234,8 @@ export function cleanSettings(raw: unknown): Settings | null {
   const pilotMustFly = raw.pilotMustFly ?? false;
   const mealService = raw.mealService ?? true;
   const listed = raw.listed ?? true;
+  const voiceMode = raw.voiceMode ?? 'proximity';
+  const voiceRange = raw.voiceRange ?? VOICE_RANGE.default;
   const customRoles = cleanCustomRoles(raw.customRoles ?? []);
   if (!customRoles) return null;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
@@ -247,6 +252,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (voteMode !== 'daily' && voteMode !== 'afterIncident') return null;
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
   if (typeof pilotMustFly !== 'boolean' || typeof mealService !== 'boolean' || typeof listed !== 'boolean') return null;
+  if (!VOICE_MODES.includes(voiceMode as VoiceMode) || !isInt(voiceRange)) return null;
   if (typeof pilotRogueChance !== 'number') return null;
   if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
@@ -267,6 +273,8 @@ export function cleanSettings(raw: unknown): Settings | null {
     customRoles,
     mealService,
     listed,
+    voiceMode: voiceMode as VoiceMode,
+    voiceRange,
     botChatter: botChatter as BotChatter,
     botSkill: botSkill as BotSkill,
   };

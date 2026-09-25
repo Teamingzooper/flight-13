@@ -3,6 +3,8 @@ import { useState } from 'preact/hooks';
 import {
   BOT_CHATTERS,
   BOT_SKILLS,
+  VOICE_MODES,
+  VOICE_RANGE,
   CUSTOM_LIMITS,
   DESTINATIONS,
   DESTINATION_ORDER,
@@ -28,6 +30,7 @@ import {
   newCustomRole,
   usesFor,
   type CustomAbility,
+  type VoiceMode,
   type CustomRole,
   type CustomUses,
   presetCards,
@@ -81,6 +84,19 @@ export function minPlayersFor(settings: Settings): number | null {
 const BOT_CHATTER_NAMES: Record<BotChatter, string> = { quiet: 'Quiet', normal: 'Normal', lively: 'Lively' };
 const BOT_SKILL_NAMES: Record<BotSkill, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
+const VOICE_MODE_NAMES: Record<VoiceMode, string> = { proximity: 'Proximity', cabin: 'Whole cabin', off: 'Off' };
+const VOICE_MODE_HINTS: Record<VoiceMode, string> = {
+  proximity: 'Out loud in the cabin: the people near you are clear, the back of the plane faint. Silent at night; ghosts only hear ghosts.',
+  cabin: 'Everyone hears everyone at full volume, wherever they sit. Night and ghost rules still apply.',
+  off: 'No voice chat on this flight: typed chat only.',
+};
+
+function voiceSummary(s: Settings): string {
+  if (s.voiceMode === 'off') return 'No voice chat.';
+  if (s.voiceMode === 'cabin') return 'Voice chat: everyone hears everyone.';
+  return `Voice chat: proximity, carrying ${s.voiceRange} rows.`;
+}
+
 export function describeRules(s: Settings): string[] {
   const d = destinationOf(s);
   const t = TIMERS[s.timers];
@@ -106,6 +122,7 @@ export function describeRules(s: Settings): string[] {
     s.mealService
       ? `Lunch on day ${mealDay(d.nights)}: everyone gets chicken or pasta. The saboteurs may drug one dish around a row, and whoever has it there sleeps through the night.`
       : 'No meal service.',
+    voiceSummary(s),
     `Bots: ${BOT_CHATTER_NAMES[s.botChatter].toLowerCase()} chatter, ${BOT_SKILL_NAMES[s.botSkill].toLowerCase()} skill.`,
   ];
 }
@@ -411,6 +428,36 @@ export function SettingsForm({
                 hint="Anyone can find this flight on the home page and board it until the doors close. Off: only people you give the flight number to."
               />
             </>
+          )}
+          <h2>Voice chat</h2>
+          <div class="field">
+            <div class="segmented" role="group" aria-label="Voice chat">
+              {VOICE_MODES.map((m) => (
+                <button type="button" key={m} class={s.voiceMode === m ? 'on' : ''} onClick={() => set({ voiceMode: m })}>
+                  {VOICE_MODE_NAMES[m]}
+                </button>
+              ))}
+            </div>
+            <small class="hint">{VOICE_MODE_HINTS[s.voiceMode]}</small>
+          </div>
+          {s.voiceMode === 'proximity' && (
+            <label class="field">
+              <span class="label">
+                Voices carry{' '}
+                <b>
+                  {s.voiceRange} row{s.voiceRange === 1 ? '' : 's'}
+                </b>
+              </span>
+              <input
+                type="range"
+                min={VOICE_RANGE.min}
+                max={VOICE_RANGE.max}
+                step={1}
+                value={s.voiceRange}
+                onInput={(e) => set({ voiceRange: Number(e.currentTarget.value) })}
+              />
+              <small class="hint">You hear people clearly up close, fading out towards this many rows away.</small>
+            </label>
           )}
           <h2>Rules</h2>
           <Toggle checked={s.revealRoles} onChange={(v) => set({ revealRoles: v })} title="Reveal roles when someone is out" />

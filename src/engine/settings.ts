@@ -2,7 +2,7 @@ import { validateCustomRoles } from './custom';
 import { CUSTOM_LIMITS, DESTINATIONS, destinationOf, hasTwist } from './destinations';
 import { PLANES, isPlaneId } from './planes';
 import { emptyCards } from './roles';
-import type { BotChatter, BotSkill, CustomDestination, PhaseKind, Settings, TimerPreset, Twist } from './types';
+import type { BotChatter, BotSkill, CustomDestination, PhaseKind, Settings, TimerPreset, Twist, VoiceMode } from './types';
 
 export const MIN_PLAYERS = 4;
 /** The most any plane carries (the jumbo); each plane has its own range (engine/planes.ts). */
@@ -37,6 +37,9 @@ export const FIXED_TIMERS = { packing: 50, boarding: 22, takeoff: 12, dawn: 10, 
 
 export const BOT_CHATTERS: readonly BotChatter[] = ['quiet', 'normal', 'lively'];
 export const BOT_SKILLS: readonly BotSkill[] = ['easy', 'normal', 'hard'];
+export const VOICE_MODES: readonly VoiceMode[] = ['proximity', 'cabin', 'off'];
+/** How many rows a voice carries in proximity mode. */
+export const VOICE_RANGE = { min: 2, max: 16, default: 8 } as const;
 
 export function defaultSettings(): Settings {
   return {
@@ -59,6 +62,8 @@ export function defaultSettings(): Settings {
     botChatter: 'normal',
     botSkill: 'normal',
     listed: true,
+    voiceMode: 'proximity',
+    voiceRange: VOICE_RANGE.default,
   };
 }
 
@@ -119,6 +124,10 @@ export function validateSettings(s: Settings): string | null {
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';
   if (typeof s.mealService !== 'boolean') return 'Meal service is on or off.';
   if (typeof s.listed !== 'boolean') return 'The flight is listed or not.';
+  if (!VOICE_MODES.includes(s.voiceMode)) return 'Unknown voice chat mode.';
+  if (!Number.isInteger(s.voiceRange) || s.voiceRange < VOICE_RANGE.min || s.voiceRange > VOICE_RANGE.max) {
+    return `Voices carry ${VOICE_RANGE.min} to ${VOICE_RANGE.max} rows.`;
+  }
   const custom = validateCustomRoles(s.customRoles);
   if (custom) return custom;
   if (!BOT_CHATTERS.includes(s.botChatter)) return 'Unknown bot chatter.';

@@ -3,7 +3,7 @@ import { defaultSettings } from '../engine';
 import { ClientSession } from './client';
 import { HostSession, newHostSnapshot } from './host';
 import { MemoryHub } from './transport';
-import { VOICE_FAR, VOICE_NEAR, canPa, micOpen, proximityGain, sendsTo, voiceRoute } from './voiceRules';
+import { VOICE_FAR, VOICE_NEAR, canPa, micOpen, proximityGain, sendsTo, voiceFar, voiceRoute } from './voiceRules';
 
 describe('voice rules', () => {
   it('carries living voices through the cabin by day, to the living and the ghosts', () => {
@@ -156,5 +156,21 @@ describe('the PA', () => {
     host.flush();
     await settle();
     expect(captain.snapshot.state?.pa).toBeNull();
+  });
+});
+
+describe("the captain's voice settings", () => {
+  it('proximity carries as many rows as the captain chose', () => {
+    const near = voiceFar({ voiceMode: 'proximity', voiceRange: 3 });
+    const far = voiceFar({ voiceMode: 'proximity', voiceRange: 12 });
+    expect(near).toBeLessThan(far);
+    // Five rows back: silent with a short range, still heard with a long one.
+    expect(proximityGain(5 * 0.82, near)).toBe(0);
+    expect(proximityGain(5 * 0.82, far)).toBeGreaterThan(0.3);
+  });
+
+  it('the whole cabin hears everyone at full volume; off carries nothing', () => {
+    expect(proximityGain(30, voiceFar({ voiceMode: 'cabin', voiceRange: 8 }))).toBe(1);
+    expect(proximityGain(0.5, voiceFar({ voiceMode: 'off', voiceRange: 8 }))).toBe(0);
   });
 });
