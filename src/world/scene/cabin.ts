@@ -244,13 +244,15 @@ export function buildCabin(rows: number): CabinParts {
     }
   }
 
-  // Front bulkhead with the galley curtain and an exit sign.
+  // Front bulkhead with the galley curtain and an exit sign (and a galley side, seen from the flight deck).
   const opening = 0.46;
   for (const side of [-1, 1]) {
     const w = CABIN_HALF_WIDTH - opening;
     statics.add(new THREE.PlaneGeometry(w, CEILING_Y), wall, m4(side * (opening + w / 2), CEILING_Y / 2, frontZ));
+    statics.add(new THREE.PlaneGeometry(w, CEILING_Y), wall, m4(side * (opening + w / 2), CEILING_Y / 2, frontZ - 0.01, Math.PI));
   }
   statics.add(new THREE.PlaneGeometry(opening * 2, 0.22), wall, m4(0, CEILING_Y - 0.11, frontZ));
+  statics.add(new THREE.PlaneGeometry(opening * 2, 0.22), wall, m4(0, CEILING_Y - 0.11, frontZ - 0.01, Math.PI));
   const curtainGeometry = new THREE.PlaneGeometry(opening * 2, CEILING_Y - 0.22, 48, 1);
   const pos = curtainGeometry.attributes.position;
   for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 34) * 0.025);

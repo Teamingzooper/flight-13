@@ -51,6 +51,8 @@ describe('protocol sanitising', () => {
     expect(parseClientMessage({ t: 'join', v: 1, token: 'short' })).toBeNull();
     expect(parseClientMessage({ t: 'intent', seq: 3, intent: { kind: 'ready' } })).toEqual({ t: 'intent', seq: 3, intent: { kind: 'ready' } });
     expect(parseClientMessage({ t: 'intent', seq: 'x', intent: {} })).toBeNull();
+    expect(parseClientMessage({ t: 'pa', on: true })).toEqual({ t: 'pa', on: true });
+    expect(parseClientMessage({ t: 'pa', on: 'yes' })).toBeNull();
     expect(parseClientMessage('hello')).toBeNull();
     expect(parseClientMessage({ t: 'nope' })).toBeNull();
   });

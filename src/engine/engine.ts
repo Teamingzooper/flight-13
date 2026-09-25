@@ -310,6 +310,11 @@ function postChat(s: GameState, p: PlayerState, channel: ChatChannel, text: stri
 
 const PA_PHASES: ReadonlySet<PhaseKind> = new Set(['dawn', 'day_discuss', 'day_vote', 'verdict']);
 
+/** The PA works by day: announcements from the flight deck, typed or spoken. */
+export function isPaPhase(kind: PhaseKind): boolean {
+  return PA_PHASES.has(kind);
+}
+
 /** Announcements are short, and the PA needs a moment between them. */
 function paError(s: GameState, p: PlayerState, text: string, now: number): string | null {
   if (text.trim().length > PA_MAX_LENGTH) return `Keep announcements under ${PA_MAX_LENGTH} characters.`;

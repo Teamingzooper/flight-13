@@ -55,6 +55,8 @@ export interface ClientState {
   rev: number;
   /** Who has voice chat on: network peer id → player id (for matching incoming voices to people). */
   voice?: Record<string, string>;
+  /** The Pilot while he is talking on the PA (everyone hears him, through the cabin speakers). */
+  pa?: string | null;
 }
 
 export type HostCommand =
@@ -73,7 +75,9 @@ export type ClientMessage =
   /** A gesture for everyone to see (daytime only; the host checks). */
   | { t: 'emote'; emote: EmoteId }
   /** You turned voice chat on or off. */
-  | { t: 'voice'; on: boolean };
+  | { t: 'voice'; on: boolean }
+  /** The Pilot pressed (or let go of) the PA button. */
+  | { t: 'pa'; on: boolean };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
@@ -204,6 +208,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return isEmoteId(raw.emote) ? { t: 'emote', emote: raw.emote } : null;
     case 'voice':
       return typeof raw.on === 'boolean' ? { t: 'voice', on: raw.on } : null;
+    case 'pa':
+      return typeof raw.on === 'boolean' ? { t: 'pa', on: raw.on } : null;
     default:
       return null;
   }

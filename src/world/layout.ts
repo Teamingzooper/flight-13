@@ -15,13 +15,16 @@ export const STANDING_EYE = 1.58;
 export const CREW_BEHIND = 0.62;
 /** The crew tablet on the cart: where it sits (from the cart's centre) and how far it tilts back. */
 export const TABLET = { y: 1.22, z: 0.05, tilt: -0.6 };
-/** The flight deck, past the galley: its door, its nose, the captain's seat and the jump seat behind it. */
+/**
+ * The flight deck, past the galley: its door, its nose, the captain's seat, and the jump seat in the corner behind
+ * the first officer (clear of the door, which swings in along the captain's side).
+ */
 export const FLIGHT_DECK = {
   doorZ: BULKHEAD_Z - 1.8,
   noseZ: BULKHEAD_Z - 3.9,
   seatX: -0.42,
   seatZ: BULKHEAD_Z - 3.0,
-  jumpSeatX: -0.3,
+  jumpSeatX: 0.88,
 };
 
 /** x centre of grid column 0..6 (3 is the aisle). */

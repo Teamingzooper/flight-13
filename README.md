@@ -12,6 +12,9 @@ of the plane faintly. Voice follows the chat rules:
 - Ghosts only hear each other.
 - After landing, everyone hears everyone.
 
+The Pilot can also talk to the whole plane over the PA by day: hold **P** (or the **Hold for PA** button).
+Everyone hears him at the same volume through the cabin speakers, after a ding.
+
 **M** mutes you. Use headphones so others don't hear themselves echo. Voice uses the same connections
 as the game, so a network that needs a TURN relay (below) needs it for voice too.
 
