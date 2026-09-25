@@ -23,9 +23,9 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     id: 'pilot',
     name: 'Pilot',
     team: 'passengers',
-    blurb: 'Off duty, but the cockpit still takes your calls.',
+    blurb: 'Your plane. Fly everyone home.',
     howTo:
-      'While the lights are out, turn on the seatbelt sign for one passenger. They cannot move or use an ability that night. You cannot pick the same passenger two nights in a row.',
+      'You fly from the flight deck: bombs, handcuffs and the Nurse cannot reach you, and everyone knows who you are. Every night, turn on the seatbelt sign for one passenger, call someone up to the jump seat (safe for the night, but a saboteur up there can knock you out), and watch three rows on the cabin cameras. Once per flight, fly through rough air to buckle three rows in, and change course to land a night later (or sooner). By day, talk to the whole plane over the PA.',
   },
   nurse: {
     id: 'nurse',
@@ -82,6 +82,14 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     howTo:
       'You work the aisle, not a seat, and everyone can see you. Each night, walk the drink cart to any row, then serve a poisoned drink to someone sitting in it. They fall sick at dawn and die the next dawn unless the Nurse treats them or they wash it out in the lavatory. Nobody can walk past your cart.',
   },
+  pilot_rogue: {
+    id: 'pilot_rogue',
+    name: 'Rogue Pilot',
+    team: 'saboteurs',
+    blurb: 'Your plane. Their rules.',
+    howTo:
+      'Everything the Pilot can do, for the saboteurs. Buckle in whoever gets close, call passengers up to the jump seat so they cannot use their abilities, feed the camera footage to your team, and take the shortcut: land a night early while the saboteurs are still free. Everyone thinks you are on their side.',
+  },
 };
 
 export const SPECIAL_CARDS: readonly SpecialCard[] = ['bomber', 'mastermind', 'stewardess', 'pilot', 'nurse', 'investigator', 'marshal'];
@@ -100,6 +108,10 @@ export function canPlantBombs(role: RoleId): boolean {
 
 export function canCuff(role: RoleId): boolean {
   return role === 'marshal';
+}
+
+export function isPilot(role: RoleId): boolean {
+  return role === 'pilot' || role === 'pilot_rogue';
 }
 
 export function isStewardess(role: RoleId): boolean {
@@ -135,6 +147,7 @@ export function validateCards(cards: Cards, players: number, rogueChance: number
   }
   if (cards.bomber + cards.mastermind < 1) return 'Add at least one Bomber or Mastermind.';
   if (countSpecials(cards) > players) return `Too many special roles for ${players} passengers.`;
+  if (cards.pilot > 1) return 'Only one Pilot fits on the flight deck.';
   if (maxSaboteurs(cards, rogueChance) * 2 >= players) {
     return 'Too many possible saboteurs: they must start as a minority.';
   }

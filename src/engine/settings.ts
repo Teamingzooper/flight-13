@@ -36,6 +36,7 @@ export function defaultSettings(): Settings {
     rolesMode: 'auto',
     cards: emptyCards(),
     stewardessRogueChance: 0.5,
+    pilotRogueChance: 0.3,
     timers: 'standard',
     revealRoles: true,
     voteMode: 'daily',
@@ -76,6 +77,7 @@ export function validateSettings(s: Settings): string | null {
     return `Max passengers must be between ${MIN_PLAYERS} and ${MAX_PLAYERS}.`;
   }
   if (!(s.stewardessRogueChance >= 0 && s.stewardessRogueChance <= 1)) return 'Stewardess odds must be between 0 and 1.';
+  if (!(s.pilotRogueChance >= 0 && s.pilotRogueChance <= 1)) return 'Pilot odds must be between 0 and 1.';
   if (!TIMERS[s.timers]) return 'Unknown timer preset.';
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';

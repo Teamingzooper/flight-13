@@ -1,7 +1,7 @@
 import { DESTINATIONS } from './destinations';
 import { aisleSpot, allSeats, rowsFor } from './grid';
 import { nextFloat, shuffle, type RngHolder } from './rng';
-import { isStewardess, presetCards, validateCards } from './roles';
+import { isSaboteur, isStewardess, presetCards, validateCards } from './roles';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
 import type { Cards, DayChoices, GameState, Look, NightChoices, RoleId, Settings } from './types';
@@ -44,19 +44,24 @@ export function cardsForGame(settings: Settings, players: number): Cards {
   return settings.rolesMode === 'auto' ? presetCards(players) : settings.cards;
 }
 
-export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChance: number): RoleId[] {
+export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChance: number, pilotRogueChance = 0): RoleId[] {
   const deck: RoleId[] = [];
   const add = (role: RoleId, count: number) => {
     for (let i = 0; i < count; i++) deck.push(role);
   };
   add('bomber', cards.bomber);
   add('mastermind', cards.mastermind);
-  add('pilot', cards.pilot);
   add('nurse', cards.nurse);
   add('investigator', cards.investigator);
   add('marshal', cards.marshal);
   for (let i = 0; i < cards.stewardess; i++) {
     deck.push(nextFloat(h) < rogueChance ? 'stewardess_rogue' : 'stewardess_loyal');
+  }
+  // The Pilot only turns rogue while the saboteurs would still be outnumbered.
+  for (let i = 0; i < cards.pilot; i++) {
+    const saboteurs = deck.filter(isSaboteur).length;
+    const rogue = pilotRogueChance > 0 && nextFloat(h) < pilotRogueChance && (saboteurs + 1) * 2 < players;
+    deck.push(rogue ? 'pilot_rogue' : 'pilot');
   }
   add('passenger', players - deck.length);
   return shuffle(h, deck);
@@ -102,7 +107,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     stats: {},
     awards: null,
   };
-  const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance);
+  const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
   const seats = shuffle(s, allSeats(rows));
   // Crew work the aisle instead of sitting: the first starts at the front with the cart, the rest spread out behind.
   const crew = roles.filter(isStewardess).length;

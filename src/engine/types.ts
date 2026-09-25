@@ -9,7 +9,8 @@ export type RoleId =
   | 'marshal'
   | 'bomber'
   | 'mastermind'
-  | 'stewardess_rogue';
+  | 'stewardess_rogue'
+  | 'pilot_rogue';
 
 /** Special cards the host puts in the deck. A stewardess card turns loyal or rogue when dealt. */
 export type SpecialCard = 'bomber' | 'mastermind' | 'stewardess' | 'pilot' | 'nurse' | 'investigator' | 'marshal';
@@ -28,6 +29,8 @@ export interface Settings {
   rolesMode: 'auto' | 'custom';
   cards: Cards;
   stewardessRogueChance: number;
+  /** Chance the Pilot card turns rogue (only when the saboteurs would still be outnumbered). */
+  pilotRogueChance: number;
   timers: TimerPreset;
   revealRoles: boolean;
   voteMode: VoteMode;
