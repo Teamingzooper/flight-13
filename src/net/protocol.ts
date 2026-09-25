@@ -1,7 +1,11 @@
 import {
+  BOT_CHATTERS,
+  BOT_SKILLS,
   DESTINATIONS,
   SPECIAL_CARDS,
   TIMERS,
+  type BotChatter,
+  type BotSkill,
   type Cards,
   type Intent,
   type Look,
@@ -145,6 +149,8 @@ export function cleanSettings(raw: unknown): Settings | null {
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
   const pilotMustFly = raw.pilotMustFly ?? false;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
+  const botChatter = raw.botChatter ?? 'normal';
+  const botSkill = raw.botSkill ?? 'normal';
   if (typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
   if (!isInt(maxPassengers)) return null;
   if (rolesMode !== 'auto' && rolesMode !== 'custom') return null;
@@ -154,6 +160,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
   if (typeof pilotMustFly !== 'boolean') return null;
   if (typeof pilotRogueChance !== 'number') return null;
+  if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
     destination: destination as Settings['destination'],
     maxPassengers,
@@ -167,6 +174,8 @@ export function cleanSettings(raw: unknown): Settings | null {
     anonymousVotes,
     whispers,
     pilotMustFly,
+    botChatter: botChatter as BotChatter,
+    botSkill: botSkill as BotSkill,
   };
 }
 

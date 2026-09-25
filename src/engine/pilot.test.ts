@@ -167,6 +167,17 @@ describe('in the dark on the flight deck', () => {
     expect(seen).toContain('mid bent down under their seat');
     expect(seen).toContain('nurse leaned over to mid');
     expect(seen).not.toContain('bomber');
+    // The same sightings as data, for bots and replays.
+    const entry = s.log.find((e) => e.tag === 'watch' && Array.isArray(e.to) && e.to.includes('pilot'))!;
+    expect(entry.data).toMatchObject({ rows: [3, 4, 5] });
+    expect(entry.data!.seen).toEqual(
+      expect.arrayContaining([
+        // Planting and searching look the same on camera, in the data too.
+        { actor: 'b2', kind: 'under_seat' },
+        { actor: 'mid', kind: 'under_seat' },
+        { actor: 'nurse', kind: 'lean', target: 'mid' },
+      ]),
+    );
   });
 
   it('shows empty rows sleeping', () => {

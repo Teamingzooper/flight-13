@@ -1,5 +1,5 @@
 import { DESTINATIONS } from './destinations';
-import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder } from './grid';
+import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder, seatsWithin } from './grid';
 import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
 import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
@@ -7,7 +7,7 @@ import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, chec
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
 import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
-import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState } from './types';
+import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState, Sighting } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
 
@@ -257,6 +257,28 @@ function sighting(s: GameState, actor: PlayerState, action: NightAction): string
   }
 }
 
+/** What an action looks like on the cabin cameras (planting looks like searching, and so on). */
+function looksLike(action: NightAction): Sighting['kind'] {
+  switch (action.kind) {
+    case 'treat':
+      return 'lean';
+    case 'serve':
+      return 'drink';
+    case 'check':
+      return 'check';
+    case 'sweep':
+      return 'look_around';
+    case 'cuff':
+      return 'cuff';
+    case 'inspect':
+      return action.what;
+    case 'plant':
+      return action.where === 'seat' ? 'under_seat' : action.where;
+    default:
+      return 'under_seat';
+  }
+}
+
 interface Acting {
   actor: PlayerState;
   action: NightAction;
@@ -323,7 +345,9 @@ export function resolveNight(s: GameState, now: number): void {
     visit(t.id, `${actor.name} snapped handcuffs on you`);
     if (consumeItem(t, 'bobbypin')) {
       actor.cuffsUsed = true;
-      addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}), but they picked the lock and slipped free. Your cuffs are gone.`);
+      addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}), but they picked the lock and slipped free. Your cuffs are gone.`, {
+        target: t.id,
+      });
       addLog(s, now, [t.id], 'item', 'Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
       addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}, who picked the lock with a bobby pin.`);
       continue;
@@ -332,7 +356,7 @@ export function resolveNight(s: GameState, now: number): void {
     cuffed.add(t.id);
     removeFromPlay(s, t, 'restrained', n);
     s.incidentAtDawn = true;
-    addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}).`);
+    addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}).`, { target: t.id });
     addLog(s, now, 'all', 'cuff', `The Air Marshal handcuffed ${label(t)} in ${seat} and walked them to the rear galley.`, { player: t.id });
     addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}.`);
     readNote(s, t, now);
@@ -378,7 +402,7 @@ export function resolveNight(s: GameState, now: number): void {
     nursesOf.set(t.id, [...(nursesOf.get(t.id) ?? []), actor.id]);
     if (t.id !== actor.id) visit(t.id, `${actor.name} treated you`);
     if (t.id === actor.id) actor.selfTreatUsed = true;
-    addLog(s, now, [actor.id], 'treat', t.id === actor.id ? 'You treated yourself tonight.' : `You treated ${t.name} (${t.seat}).`);
+    addLog(s, now, [actor.id], 'treat', t.id === actor.id ? 'You treated yourself tonight.' : `You treated ${t.name} (${t.seat}).`, { target: t.id });
     addLog(s, now, 'end', 'treat', `Night ${n}: Nurse ${actor.name} treated ${t.name}.`);
   }
 
@@ -410,7 +434,7 @@ export function resolveNight(s: GameState, now: number): void {
     if (action.kind !== 'serve' || actor.role !== 'stewardess_rogue') continue;
     const t = playerById(action.target);
     visit(t.id, `${actor.name} served you a drink`);
-    addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`);
+    addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`, { target: t.id });
     if (treated.has(t.id)) {
       rescued(t.id);
       addLog(s, now, [t.id], 'saved', 'Someone slipped poison into your drink, but the treatment you got tonight neutralized it.');
@@ -457,13 +481,16 @@ export function resolveNight(s: GameState, now: number): void {
     if (action.kind !== 'sweep' && action.kind !== 'inspect') continue;
     let found: Bomb[];
     let what: string;
+    let covered: Record<string, unknown>;
     if (action.kind === 'sweep') {
       const here = cellOf(actor);
       found = live.filter((b) => b.location.kind === 'seat' && distance(parseSeat(b.location.seat)!, here) <= SWEEP_RADIUS);
       what = `the seats around ${actor.seat}`;
+      covered = { seats: seatsWithin([here], SWEEP_RADIUS, s.cabin.rows) };
     } else {
       found = live.filter((b) => b.location.kind === action.what);
       what = action.what === 'cart' ? `the drink cart at row ${cartRowAtAct}` : 'the lavatory';
+      covered = { what: action.what };
     }
     for (const b of found) if (!actor.knownBombIds.includes(b.id)) actor.knownBombIds.push(b.id);
     statsOf(s, actor.id).found += found.length;
@@ -473,7 +500,7 @@ export function resolveNight(s: GameState, now: number): void {
         : `You checked ${what} and found ${found.length === 1 ? 'a bomb' : `${found.length} bombs`}: ${found
             .map((b) => `${describeLocation(b.location)}, ${fuseText(b, n)}`)
             .join('; ')}.`;
-    addLog(s, now, [actor.id], action.kind, text, { bombs: found.map((b) => b.id) });
+    addLog(s, now, [actor.id], action.kind, text, { bombs: found.map((b) => b.id), ...covered });
     addLog(s, now, 'end', action.kind, `Night ${n}: Investigator ${actor.name} checked ${what}${found.length ? ' and found a bomb' : ''}.`);
   }
 
@@ -487,19 +514,26 @@ export function resolveNight(s: GameState, now: number): void {
       return !!cell && rows.includes(cell.row);
     };
     const seen: string[] = [];
+    const caught: Sighting[] = [];
     for (const other of acts) {
       const text = sighting(s, other.actor, other.action);
       const target = 'target' in other.action ? playerById(other.action.target) : undefined;
-      if (text && (inRows(other.actor) || inRows(target))) seen.push(text);
+      if (!text || !(inRows(other.actor) || inRows(target))) continue;
+      seen.push(text);
+      caught.push({ actor: other.actor.id, kind: looksLike(other.action), ...(target ? { target: target.id } : {}) });
     }
     for (const [user, seat] of Object.entries(s.night.flashlights)) {
       const u = playerById(user);
-      if (inRows(u) || rows.includes(parseSeat(seat)?.row ?? 0)) seen.push(`${u.name} shone a light under ${seat}`);
+      if (!(inRows(u) || rows.includes(parseSeat(seat)?.row ?? 0))) continue;
+      seen.push(`${u.name} shone a light under ${seat}`);
+      caught.push({ actor: u.id, kind: 'flashlight', seat });
     }
     for (const [sleeper, by] of Object.entries(s.night.asleep)) {
       const a = playerById(by);
       const t = playerById(sleeper);
-      if (inRows(a) || inRows(t)) seen.push(`${a.name} slipped something into ${t.name}\u2019s water`);
+      if (!(inRows(a) || inRows(t))) continue;
+      seen.push(`${a.name} slipped something into ${t.name}\u2019s water`);
+      caught.push({ actor: a.id, kind: 'pills', target: t.id });
     }
     const where = `rows ${rows[0]}–${rows[2]}`;
     addLog(
@@ -508,7 +542,7 @@ export function resolveNight(s: GameState, now: number): void {
       [actor.id],
       'watch',
       seen.length ? `On the cabin cameras over ${where} you saw: ${seen.join('; ')}.` : `The cabin cameras showed ${where} sleeping.`,
-      { rows },
+      { rows, seen: caught },
     );
     addLog(s, now, 'end', 'watch', `Night ${n}: Pilot ${actor.name} watched ${where} on the cabin cameras.`);
   }

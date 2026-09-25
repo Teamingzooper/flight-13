@@ -18,6 +18,10 @@ export type Cards = Record<SpecialCard, number>;
 
 export type DestinationId = 'LAS' | 'LHR' | 'HNL' | 'HND' | 'BDA';
 export type Twist = 'none' | 'turbulence' | 'redeye' | 'triangle';
+/** How much the bots talk. */
+export type BotChatter = 'quiet' | 'normal' | 'lively';
+/** How well the bots reason (and lie). */
+export type BotSkill = 'easy' | 'normal' | 'hard';
 export type Anomaly = 'turbulence' | 'runaway_cart' | 'blackout';
 
 export type TimerPreset = 'quick' | 'standard' | 'relaxed';
@@ -38,6 +42,8 @@ export interface Settings {
   whispers: boolean;
   /** Restraining the Pilot (with no other Pilot free) hands the saboteurs the win. */
   pilotMustFly: boolean;
+  botChatter: BotChatter;
+  botSkill: BotSkill;
 }
 
 export type PhaseKind =
@@ -174,6 +180,17 @@ export type NightAction =
   | { kind: 'watch'; startRow: number }
   /** A saboteur in the jump seat knocks the Pilot out cold. */
   | { kind: 'knockout' };
+
+/**
+ * What the Pilot's cabin cameras showed someone doing (for bots and replays; the text says the same). It is what
+ * the camera sees, not what they did: planting under a seat looks just like looking under it.
+ */
+export interface Sighting {
+  actor: string;
+  kind: 'under_seat' | 'cart' | 'lavatory' | 'lean' | 'drink' | 'check' | 'look_around' | 'cuff' | 'flashlight' | 'pills';
+  target?: string;
+  seat?: SeatId;
+}
 
 export interface NightChoices {
   moves: Record<string, MoveTarget>;

@@ -28,6 +28,18 @@ describe('day vote', () => {
     expect(b1.seat).toBeNull();
     expect(b1.revealed).toBe(true);
     expect(s.verdict).toMatchObject({ restrained: 'b1', tally: { b1: 4, skip: 3 } });
+    // Who voted for whom stays on record (votes are open by default).
+    const entry = s.log.find((e) => e.tag === 'verdict')!;
+    expect(entry.data).toEqual({ player: 'b1', votes: { p1: 'b1', p2: 'b1', p3: 'b1', p4: 'b1' } });
+  });
+
+  it('keeps anonymous votes off the record', () => {
+    const s = jury();
+    s.settings.anonymousVotes = true;
+    advanceTo(s, 'day_vote', 1);
+    for (const v of ['p1', 'p2', 'p3', 'p4']) vote(s, v, 'b1');
+    advanceTo(s, 'verdict', 1);
+    expect(s.log.find((e) => e.tag === 'verdict')!.data).toEqual({ player: 'b1' });
   });
 
   it('non-votes count as Skip', () => {

@@ -1,6 +1,8 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import {
+  BOT_CHATTERS,
+  BOT_SKILLS,
   DESTINATIONS,
   DESTINATION_ORDER,
   MAX_PLAYERS,
@@ -11,6 +13,8 @@ import {
   presetCards,
   validateCards,
   validateSettings,
+  type BotChatter,
+  type BotSkill,
   type Cards,
   type Settings,
   type SpecialCard,
@@ -51,6 +55,9 @@ export function minPlayersFor(settings: Settings): number | null {
   return null;
 }
 
+const BOT_CHATTER_NAMES: Record<BotChatter, string> = { quiet: 'Quiet', normal: 'Normal', lively: 'Lively' };
+const BOT_SKILL_NAMES: Record<BotSkill, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+
 export function describeRules(s: Settings): string[] {
   const d = DESTINATIONS[s.destination];
   const t = TIMERS[s.timers];
@@ -68,6 +75,7 @@ export function describeRules(s: Settings): string[] {
     s.anonymousVotes ? 'Votes are anonymous.' : 'Everyone sees who voted for whom.',
     s.whispers ? 'Whispers to nearby seats are allowed.' : 'No whispering.',
     ...(s.pilotMustFly ? ['Pilot must fly: restraining the Pilot hands the saboteurs the win.'] : []),
+    `Bots: ${BOT_CHATTER_NAMES[s.botChatter].toLowerCase()} chatter, ${BOT_SKILL_NAMES[s.botSkill].toLowerCase()} skill.`,
   ];
 }
 
@@ -186,6 +194,28 @@ export function SettingsForm({
             title="Pilot must fly"
             hint="If the passengers restrain the Pilot (by vote or handcuffs), nobody can fly the plane and the saboteurs win."
           />
+          <h2>Bots</h2>
+          <p class="hint">How much bots talk, and how well they reason and lie. Only matters when bots are aboard.</p>
+          <div class="field">
+            <span class="label">Chatter</span>
+            <div class="segmented" role="group" aria-label="Bot chatter">
+              {BOT_CHATTERS.map((c) => (
+                <button type="button" key={c} class={s.botChatter === c ? 'on' : ''} onClick={() => set({ botChatter: c })}>
+                  {BOT_CHATTER_NAMES[c]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">Skill</span>
+            <div class="segmented" role="group" aria-label="Bot skill">
+              {BOT_SKILLS.map((k) => (
+                <button type="button" key={k} class={s.botSkill === k ? 'on' : ''} onClick={() => set({ botSkill: k })}>
+                  {BOT_SKILL_NAMES[k]}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

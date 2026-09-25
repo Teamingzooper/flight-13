@@ -36,6 +36,11 @@ describe('protocol sanitising', () => {
     const { marshal: _card, ...olderCards } = s.cards;
     expect(cleanSettings({ ...older, cards: olderCards })).toEqual({ ...s, pilotMustFly: false, cards: { ...s.cards, marshal: 0 } });
     expect(cleanSettings({ ...s, pilotMustFly: 'yes' })).toBeNull();
+    // Settings from before the bot settings existed get Normal bots; junk is refused.
+    const { botChatter: _chatter, botSkill: _skill, ...noBots } = s;
+    expect(cleanSettings(noBots)).toEqual({ ...s, botChatter: 'normal', botSkill: 'normal' });
+    expect(cleanSettings({ ...s, botChatter: 'loud' })).toBeNull();
+    expect(cleanSettings({ ...s, botSkill: 'hard' })).toEqual({ ...s, botSkill: 'hard' });
   });
 
   it('parses client messages defensively', () => {
