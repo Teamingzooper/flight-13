@@ -7,6 +7,7 @@ import { EMOTE_BY_ID, type EmoteId } from '../../net/emotes';
 import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
+import { Spring } from '../spring';
 
 /**
  * A jumbo's 24 passengers, as many flight recorder stand-ins, and the police in an ending. Each frame only draws
@@ -437,6 +438,44 @@ function gesture(id: EmoteId, side: Side, t: number, yaw: number, pitch: number)
   }
 }
 
+const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
+const smoothstep = (a: number, b: number, t: number) => {
+  const k = clamp01((t - a) / (b - a));
+  return k * k * (3 - 2 * k);
+};
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Upper arm, and forearm to the middle of the hand. */
+const UPPER_ARM = 0.27;
+const FOREARM = 0.29;
+/** Seconds to get up out of a seat before the first step. */
+export const RISE = 0.45;
+/** Step length walking and running (the legs keep time with the ground, so feet do not slide). */
+const STEP_WALK = 0.62;
+const STEP_RUN = 1.05;
+/** A blow with the left fist: wind up, hit (at STRIKE_HIT), recoil. */
+export const STRIKE_HIT = 0.2;
+/** A blow's elbow: out to the side, a little up and back (its x is mirrored for the arm's side). */
+const STRIKE_POLE = new THREE.Vector3(1, 0.25, 0.5);
+const STRIKE_END = 0.55;
+/** A shoulder charge: step back, drive in (the impact at CHARGE_HIT), recover. */
+export const CHARGE_HIT = 0.3;
+const CHARGE_END = 0.95;
+
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _pole = new THREE.Vector3();
+const _upper = new THREE.Vector3();
+const _fore = new THREE.Vector3();
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _chestQ = new THREE.Quaternion();
+const _basis = new THREE.Matrix4();
+const _scratchPos = new THREE.Vector3();
+const _scratchScale = new THREE.Vector3();
+
 /** One passenger's skeleton plus the animation state that drives it. */
 export class Actor {
   readonly joints = {} as Record<JointName, THREE.Object3D>;
@@ -451,7 +490,7 @@ export class Actor {
   hideHead = false;
   /** Where a restrained passenger stands in the rear galley. */
   restSpot: THREE.Vector3 | null = null;
-  /** Not drawn at all (your own body while the camera crouches to search, or someone in the lavatory). */
+  /** Not drawn at all (your own body while the camera crouches to search, someone in the lavatory, or off the plane). */
   hidden = false;
   /** Crew: on their feet in the aisle, hands on the drink cart. */
   crew = false;
@@ -460,36 +499,59 @@ export class Actor {
   /** Where they sit while away (the jump seat); null for the lavatory, where they go out of sight. */
   private awaySeat: THREE.Vector3 | null = null;
   /** Moved by your camera instead of its own path (your own walk to a new seat). */
-  private driven: { x: number; z: number; yaw: number; walk: number; phase: number } | null = null;
+  private driven: { x: number; z: number; yaw: number; walk: number; phase: number; push?: boolean } | null = null;
   /** Latest pose from the network (or your own camera). */
   pose: Pose | null = null;
+  /** The right hand points (or aims its pistol) here; close enough, it reaches it. */
   pointAt: THREE.Vector3 | null = null;
-  /** Cutscenes: stay on your feet, look at a point, hold a pistol, hands up, or duck and brace. */
+  /** The left hand reaches here: a door handle, someone's shoulder. */
+  reachTo: THREE.Vector3 | (() => THREE.Vector3 | null) | null = null;
+  /** Cutscenes: stay on your feet, look at a point, hands up, or duck and brace. */
   standing = false;
   gaze: THREE.Vector3 | null = null;
-  armed = false;
   handsUp = false;
   duck = false;
-  private stand = 0;
+  /** How fast the body moves over the floor (for cloth it brushes past). */
+  readonly velocity = new THREE.Vector3();
+  private _armed = false;
+  /** When the pistol came out (null: not yet drawn this time; set on the next frame). */
+  private drawFrom: number | null = null;
+  private drawT = 0;
+  /** A blow or a charge asked for (it starts on the next frame), and when it started. */
+  private strikePending = false;
+  private strikeFrom: number | null = null;
+  private strikePoint: THREE.Vector3 | null = null;
+  private chargePending = false;
+  private chargeFrom: number | null = null;
+  private readonly standS = new Spring();
+  private readonly yawS = new Spring();
+  private readonly pitchS = new Spring();
+  private readonly turnS = new Spring();
+  private readonly surrenderS = new Spring();
+  private readonly braceS = new Spring();
+  private readonly pointS = new Spring();
+  private readonly reachS = new Spring();
+  private readonly gaitS = new Spring();
+  private readonly runS = new Spring();
+  private readonly leanS = new Spring();
   private push = 0;
   private floor = 0;
-  private surrender = 0;
-  private brace = 0;
-  private walkAmount = 0;
-  private walkPhase = 0;
-  private reach = 0;
-  private point = 0;
+  private leanIn = 0;
   private slump = 0;
   private bind = 0;
-  private yaw = 0;
-  private pitch = 0;
+  private walkPhase = 0;
+  private readonly lastPos = new THREE.Vector3();
+  private placed = false;
   private readonly slumpSide = Math.random() < 0.5 ? -1 : 1;
   /** A gesture in progress (net/emotes). */
   private emote: { id: EmoteId; from: number; seconds: number } | null = null;
   private readonly idleSeed = Math.random() * 100;
-  /** A walk in progress; `free` walks (cutscenes) face where they go all the way and end on their feet. */
-  private path: { curve: THREE.CatmullRomCurve3; t: number; seconds: number; free?: boolean; run?: boolean } | null = null;
-  private readonly aim = new THREE.Quaternion();
+  /**
+   * A walk in progress; `free` walks (cutscenes) face where they go all the way and end on their feet. A walk that
+   * starts seated first gets up (`rise` seconds) and then steps off, all within `seconds`.
+   */
+  private path: { curve: THREE.CatmullRomCurve3; t: number; seconds: number; elapsed: number; rise: number; free?: boolean; run?: boolean } | null =
+    null;
 
   constructor(look: Look) {
     this.look = look;
@@ -515,6 +577,42 @@ export class Actor {
       make(`ankle${side}`, knee, 0, -0.42, 0);
     }
     this.shape();
+  }
+
+  /** Holding a pistol. Setting it draws one from the waistband: the hand goes to the hip, and comes up with it. */
+  get armed(): boolean {
+    return this._armed;
+  }
+
+  set armed(on: boolean) {
+    if (on && !this._armed) this.drawFrom = null;
+    this._armed = on;
+  }
+
+  /** The pistol is in the hand (from the moment the hand reaches the waistband). */
+  get gunShown(): boolean {
+    return this._armed && this.drawT >= 0.26;
+  }
+
+  /** Where the legs are in their stride (radians) and how much they are walking (0..1+): for a camera riding along. */
+  get gait(): { phase: number; amount: number } {
+    return { phase: this.walkPhase, amount: this.gaitS.x };
+  }
+
+  /** On your feet straight away (someone who walks in standing, like the police). */
+  snapStanding(): void {
+    this.standS.snap(1);
+  }
+
+  /** Pound on something with the left fist; the blow lands STRIKE_HIT seconds from now. */
+  strike(at: THREE.Vector3): void {
+    this.strikePoint = at.clone();
+    this.strikePending = true;
+  }
+
+  /** Drive a shoulder into what is ahead; the impact lands CHARGE_HIT seconds from now. */
+  charge(): void {
+    this.chargePending = true;
   }
 
   /** New clothes, hair or build. */
@@ -563,7 +661,7 @@ export class Actor {
       new THREE.Vector3(0, 0, door.z - 0.55),
       new THREE.Vector3(sit.x, 0, sit.z),
     ]);
-    this.path = { curve, t: 0, seconds: 1.6 + curve.getLength() / 1.1 };
+    this.startPath(curve, 1.6 + curve.getLength() / 1.1);
   }
 
   /** Back to your seat in the morning. */
@@ -576,7 +674,7 @@ export class Actor {
 
   /** Standing or walking (not sitting down). */
   get onFeet(): boolean {
-    return this.path !== null || this.stand > 0.3;
+    return this.path !== null || this.standS.x > 0.3;
   }
 
   /** Working the aisle with the cart (not while up on the flight deck). */
@@ -594,11 +692,18 @@ export class Actor {
     this.moveTo(spot, walk);
   }
 
+  private startPath(curve: THREE.CatmullRomCurve3, seconds: number, free = false, run = false): void {
+    // Seated: get up first (inside the time given), then step off.
+    const rise = this.standS.x < 0.5 && !this.pushing ? Math.min(RISE, seconds * 0.4) : 0;
+    this.path = { curve, t: 0, seconds, elapsed: 0, rise, free, run };
+  }
+
   /** Teleport, or walk out to the aisle, along it, and in to the target. */
   private moveTo(target: THREE.Vector3, walk: boolean): void {
     if (!walk) {
       this.root.position.copy(target);
       this.root.rotation.y = 0;
+      this.turnS.snap(0);
       this.path = null;
       return;
     }
@@ -607,7 +712,7 @@ export class Actor {
     if (Math.abs(from.x) < 0.05 && Math.abs(target.x) < 0.05) {
       // Along the aisle and nowhere else (crew walking the cart).
       const curve = new THREE.CatmullRomCurve3([from, target]);
-      this.path = { curve, t: 0, seconds: 0.8 + curve.getLength() / 1.1 };
+      this.startPath(curve, 0.8 + curve.getLength() / 1.1);
       return;
     }
     const curve = new THREE.CatmullRomCurve3([
@@ -618,7 +723,7 @@ export class Actor {
       new THREE.Vector3(target.x * 0.45, 0, target.z),
       target,
     ]);
-    this.path = { curve, t: 0, seconds: 1.6 + curve.getLength() / 1.1 };
+    this.startPath(curve, 1.6 + curve.getLength() / 1.1);
   }
 
   get walking(): boolean {
@@ -648,7 +753,7 @@ export class Actor {
     this.driven = null;
     this.standing = true;
     const start = this.root.position.clone();
-    this.path = { curve: new THREE.CatmullRomCurve3([start, ...points], false, 'centripetal', 0.5), t: 0, seconds, free: true, run };
+    this.startPath(new THREE.CatmullRomCurve3([start, ...points], false, 'centripetal', 0.5), seconds, true, run);
   }
 
   /** Where the eyes are, in the same space as the root. */
@@ -658,7 +763,7 @@ export class Actor {
   }
 
   /** Follow the camera rig (or stop following it and sit where you belong). */
-  drive(d: { x: number; z: number; yaw: number; walk: number; phase: number } | null): void {
+  drive(d: { x: number; z: number; yaw: number; walk: number; phase: number; push?: boolean } | null): void {
     if (d) {
       this.driven = d;
       this.path = null;
@@ -672,6 +777,7 @@ export class Actor {
   snapHome(): void {
     this.path = null;
     this.root.rotation.y = 0;
+    this.turnS.snap(0);
     if (this.seat) {
       const { x, z } = seatPose(this.seat);
       this.root.position.set(x, 0, z + 0.06);
@@ -680,158 +786,255 @@ export class Actor {
     }
   }
 
+  /** Face `facing` (radians) with a turn that eases in and out. */
+  private turnTowards(facing: number, hz: number, dt: number): void {
+    const target = this.turnS.x + wrap(facing - this.turnS.x);
+    this.root.rotation.y = this.turnS.step(target, hz, 0.9, dt);
+  }
+
   update(dt: number, time: number): void {
+    dt = Math.min(dt, 0.1);
+    if (!this.placed) {
+      this.placed = true;
+      this.lastPos.copy(this.root.position);
+    }
+    // Someone else turned the body (placing it, the camera driving it): carry on from there.
+    if (Math.abs(wrap(this.root.rotation.y - this.turnS.x)) > 1e-3 && !this.path) this.turnS.snap(this.root.rotation.y);
+
     // Where the body is: following your camera, walking a path, or sitting still.
-    let moving = false;
     const d = this.driven;
+    const p = this.path;
     if (d) {
       this.root.position.set(d.x, 0, d.z);
       this.root.rotation.y = d.yaw;
-      moving = d.walk > 0.05;
-    } else if (this.path?.free) {
-      // A cutscene walk: set off, keep going, face the way you go, stop on your feet.
-      const p = this.path;
-      p.t = Math.min(1, p.t + dt / p.seconds);
-      const ease = p.run ? 0.08 : 0.15;
-      const u = p.t < ease ? (p.t * p.t) / (2 * ease * (1 - ease)) : p.t > 1 - ease ? 1 - (1 - p.t) ** 2 / (2 * ease * (1 - ease)) : (p.t - ease / 2) / (1 - ease);
-      const point = p.curve.getPointAt(Math.min(1, Math.max(0, u)));
-      const ahead = p.curve.getPointAt(Math.min(1, Math.max(0, u) + 0.02));
-      this.root.position.copy(point);
-      if (ahead.distanceToSquared(point) > 1e-6) {
-        const facing = Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z));
-        const turn = Math.atan2(Math.sin(facing - this.root.rotation.y), Math.cos(facing - this.root.rotation.y));
-        this.root.rotation.y += turn * Math.min(1, dt * 10);
+      this.turnS.snap(d.yaw);
+    } else if (p) {
+      p.elapsed += dt;
+      const travel = Math.max(0.2, p.seconds - p.rise);
+      p.t = clamp01((p.elapsed - p.rise) / travel);
+      let u: number;
+      if (p.free) {
+        // Set off, keep going, stop: an easy start and finish with a steady pace between.
+        const ease = p.run ? 0.08 : 0.15;
+        u = p.t < ease ? (p.t * p.t) / (2 * ease * (1 - ease)) : p.t > 1 - ease ? 1 - (1 - p.t) ** 2 / (2 * ease * (1 - ease)) : (p.t - ease / 2) / (1 - ease);
+      } else {
+        u = p.t < 0.5 ? 2 * p.t * p.t : 1 - (-2 * p.t + 2) ** 2 / 2;
       }
-      moving = p.t < 0.97;
-      if (p.t >= 1) this.path = null;
-    } else if (this.path) {
-      const p = this.path;
-      p.t = Math.min(1, p.t + dt / p.seconds);
-      const u = p.t < 0.5 ? 2 * p.t * p.t : 1 - (-2 * p.t + 2) ** 2 / 2;
+      u = clamp01(u);
       const point = p.curve.getPointAt(u);
       const ahead = p.curve.getPointAt(Math.min(1, u + 0.02));
-      this.root.position.copy(point);
-      // Face forward to get up and to sit down; face the way you walk in between.
-      if (ahead.distanceToSquared(point) > 1e-6 && p.t > 0.12 && p.t < 0.8) {
-        const facing = Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z));
-        let d = facing - this.root.rotation.y;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
-        this.root.rotation.y += d * Math.min(1, dt * 8);
+      if (p.elapsed >= p.rise) this.root.position.copy(point);
+      const heading = ahead.distanceToSquared(point) > 1e-6 ? Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z)) : this.root.rotation.y;
+      if (p.free) {
+        if (p.elapsed >= p.rise) this.turnTowards(heading, 1.5, dt);
+      } else if (p.t > 0.06 && p.t < 0.8) {
+        this.turnTowards(heading, 1.4, dt);
       } else {
-        this.root.rotation.y = approach(this.root.rotation.y, 0, 6, dt);
+        // Face forward to get up and to sit down.
+        this.turnTowards(0, 1.2, dt);
       }
-      moving = p.t > 0.12 && p.t < 0.9;
       if (p.t >= 1) {
         this.path = null;
-        this.root.rotation.y = 0;
-        // In through the lavatory door (a jump seat guest stays in sight, sitting down).
-        if (this.away && !this.awaySeat) this.hidden = true;
+        if (!p.free) {
+          this.root.rotation.y = this.turnS.x;
+          // In through the lavatory door (a jump seat guest stays in sight, sitting down).
+          if (this.away && !this.awaySeat) this.hidden = true;
+        }
       }
+    } else if (!this.standing && !this.restrained && !this.crew) {
+      // Settled in a seat: face forward.
+      if (Math.abs(this.turnS.x) > 1e-3) this.turnTowards(0, 1.2, dt);
     }
 
-    const wantsStand =
-      d || this.restrained || this.standing || this.pushing || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
-    this.stand = approach(this.stand, this.dead ? 0 : wantsStand, 5, dt);
+    // How fast the body moved over the floor this frame: the legs keep time with it.
+    const moved = Math.hypot(this.root.position.x - this.lastPos.x, this.root.position.z - this.lastPos.z);
+    if (dt > 0) this.velocity.subVectors(this.root.position, this.lastPos).divideScalar(dt);
+    this.lastPos.copy(this.root.position);
+    const speed = dt > 0 ? moved / dt : 0;
+
+    const onPath = this.path !== null;
+    const wantsStand = d || this.restrained || this.standing || this.pushing || (onPath && (this.path!.free || this.path!.t < 0.96)) ? 1 : 0;
+    const s = this.standS.step(this.dead ? 0 : wantsStand, this.dead ? 1.2 : 1.7, 1, dt);
+    // Getting up or sitting down: lean forward over the knees, hands pressing on the armrests.
+    const rising = clamp01(Math.abs(this.standS.v) * 0.22) * (1 - this.floor);
     // Crew push the cart with both hands; a stewardess who dies in the aisle ends up on the floor.
-    this.push = approach(this.push, this.pushing && !this.dead && !d ? 1 : 0, 5, dt);
+    this.push = approach(this.push, this.pushing && !this.dead && (!d || d.push) ? 1 : 0, 5, dt);
     this.floor = approach(this.floor, this.crew && this.dead ? 1 : 0, 3, dt);
-    const running = this.path?.run ? 1.8 : 1;
-    this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? running : 0, 6, dt);
-    // Your own legs keep step with the camera's footfalls.
+    const gaitTarget = d ? d.walk : Math.min(1.2, speed / 1.1);
+    const walk = this.gaitS.step(gaitTarget, 2.4, 1, dt);
+    const run = this.runS.step(d ? 0 : clamp01((speed - 1.7) / 1.3), 2, 1, dt);
+    // Your own legs keep step with the camera's footfalls; everyone else's with the ground they cover.
     if (d) this.walkPhase = d.phase;
-    else this.walkPhase += dt * 7 * Math.min(1, this.walkAmount) * (this.walkAmount > 1.2 ? 1.7 : 1);
-    this.surrender = approach(this.surrender, this.handsUp && !this.dead ? 1 : 0, 5, dt);
-    this.brace = approach(this.brace, this.duck && !this.dead ? 1 : 0, 5, dt);
-    const wantsReach = !this.dead && !this.restrained && this.stand < 0.2 && this.pose?.lean ? 1 : 0;
-    this.reach = approach(this.reach, wantsReach, 5, dt);
-    this.point = approach(this.point, this.pointAt && !this.dead && !this.restrained ? 1 : 0, 4, dt);
+    else this.walkPhase += (moved / (STEP_WALK + (STEP_RUN - STEP_WALK) * run)) * Math.PI;
+    const surrender = this.surrenderS.step(this.handsUp && !this.dead ? 1 : 0, 2.2, 0.62, dt);
+    const brace = this.braceS.step(this.duck && !this.dead ? 1 : 0, 2, 0.85, dt);
+    const wantsLean = !this.dead && !this.restrained && s < 0.2 && this.pose?.lean ? 1 : 0;
+    this.leanIn = approach(this.leanIn, wantsLean, 5, dt);
     this.slump = approach(this.slump, this.dead ? 1 : 0, 2.5, dt);
     this.bind = approach(this.bind, this.restrained ? 1 : 0, 4, dt);
+
+    // The pistol: hand to the waistband, then up with it.
+    if (this._armed) {
+      if (this.drawFrom === null) this.drawFrom = time;
+      this.drawT = time - this.drawFrom;
+    } else this.drawT = 0;
+    const drawn = this._armed ? smoothstep(0.3, 0.62, this.drawT) : 1;
+    const toHip = this._armed ? smoothstep(0, 0.26, this.drawT) * (1 - smoothstep(0.3, 0.62, this.drawT)) : 0;
+    const aiming = this.pointS.step(this.pointAt && !this.dead && !this.restrained ? drawn : 0, 2.2, 1, dt);
+    const lowReady = this._armed ? drawn * (1 - aiming) : 0;
+    const reachTarget = typeof this.reachTo === 'function' ? this.reachTo() : this.reachTo;
+    const reaching = this.reachS.step(reachTarget && !this.dead && !this.restrained ? 1 : 0, 2.2, 1, dt);
+
+    // A blow and a charge (timed from the frame they start on).
+    if (this.strikePending) {
+      this.strikePending = false;
+      this.strikeFrom = time;
+    }
+    if (this.chargePending) {
+      this.chargePending = false;
+      this.chargeFrom = time;
+    }
+    const st = this.strikeFrom === null ? Infinity : time - this.strikeFrom;
+    if (st > STRIKE_END) {
+      this.strikeFrom = null;
+      this.strikePoint = null;
+    }
+    const ct = this.chargeFrom === null ? Infinity : time - this.chargeFrom;
+    if (ct > CHARGE_END) this.chargeFrom = null;
 
     // Head: follow the network pose, or drift idly.
     const idleYaw = Math.sin(time * 0.21 + this.idleSeed) * 0.45 + Math.sin(time * 0.53 + this.idleSeed * 2) * 0.15;
     const idlePitch = -0.12 + Math.sin(time * 0.37 + this.idleSeed) * 0.08;
     const posed = this.pose && !this.path && !d ? this.pose : null;
     let targetYaw = posed ? Math.max(-1.6, Math.min(1.6, posed.yaw)) : this.path || d ? 0 : idleYaw;
-    let targetPitch = posed ? posed.pitch : this.path || d ? -0.08 : idlePitch;
+    let targetPitch = posed ? posed.pitch : this.path || d ? -0.08 - walk * 0.06 : idlePitch;
     // Looking at something (in cutscenes): turn the head (and a little of the body) towards it.
     if (this.gaze && !this.dead) {
-      const eye = this.root.position.clone().add(new THREE.Vector3(0, this.stand > 0.5 ? 1.6 : 1.18, 0));
+      const eye = this.root.position.clone().add(new THREE.Vector3(0, s > 0.5 ? 1.6 : 1.18, 0));
       const to = this.gaze.clone().sub(eye);
       const heading = Math.atan2(-to.x, -to.z) - this.root.rotation.y;
-      targetYaw = Math.max(-1.7, Math.min(1.7, Math.atan2(Math.sin(heading), Math.cos(heading))));
+      targetYaw = Math.max(-1.7, Math.min(1.7, wrap(heading)));
       targetPitch = Math.max(-0.9, Math.min(0.6, Math.atan2(to.y, Math.hypot(to.x, to.z))));
     }
-    if (this.brace > 0.01) targetPitch = lerp(targetPitch, -0.7, this.brace);
-    this.yaw = approach(this.yaw, targetYaw, 10, dt);
-    this.pitch = approach(this.pitch, targetPitch, 10, dt);
+    if (brace > 0.01) targetPitch = lerp(targetPitch, -0.7, Math.min(1, brace));
+    // (A glance at something eases round and settles; following someone's look from the network is steadier.)
+    const yaw = this.yawS.step(targetYaw, 2.1, this.gaze ? 0.72 : 0.92, dt);
+    const pitch = this.pitchS.step(targetPitch, 2.1, this.gaze ? 0.78 : 0.95, dt);
+
+    // Leaning into the walk (more when running, more still while speeding up), and over the knees to get up.
+    const accel = this.gaitS.v;
+    const lean = this.leanS.step(walk * 0.05 + run * 0.14 + Math.max(0, accel) * 0.02 + rising * 0.42, 3, 0.9, dt);
+
+    // Blows: the body behind a fist, or a shoulder driven in.
+    let blowLean = 0;
+    let blowTwist = 0;
+    let lunge = 0;
+    if (st <= STRIKE_END) {
+      const hit = Math.exp(-(((st - STRIKE_HIT) / 0.07) ** 2));
+      blowLean = 0.1 * hit;
+      blowTwist = -0.18 * smoothstep(0, STRIKE_HIT, st) * (1 - smoothstep(STRIKE_HIT, STRIKE_END, st)) + 0.1 * hit;
+    }
+    if (ct <= CHARGE_END) {
+      const back = smoothstep(0, CHARGE_HIT * 0.7, ct) * (1 - smoothstep(CHARGE_HIT * 0.7, CHARGE_HIT, ct));
+      const drive = smoothstep(CHARGE_HIT * 0.7, CHARGE_HIT, ct) * (1 - smoothstep(CHARGE_HIT + 0.05, CHARGE_END, ct));
+      lunge = -0.12 * back + 0.3 * drive;
+      blowLean = Math.max(blowLean, 0.18 * back + 0.28 * drive);
+      blowTwist = 0.55 * drive;
+    }
 
     const j = this.joints;
-    const s = this.stand;
     const alive = 1 - this.slump;
-    const swing = Math.sin(this.walkPhase) * this.walkAmount;
-    j.hips.position.y = lerp(lerp(0.5, 0.92, s), 0.14, this.floor) + Math.abs(Math.sin(this.walkPhase)) * 0.02 * this.walkAmount;
+    const swing = Math.sin(this.walkPhase) * walk;
+    const stride = 0.5 + run * 0.25;
+    // Hips: lowest as the feet land, highest over the standing leg; swaying side to side, turning with the stride.
+    const bounce = (0.5 - Math.abs(Math.sin(this.walkPhase))) * (0.03 + run * 0.03) * walk;
+    j.hips.position.set(Math.sin(this.walkPhase) * 0.016 * walk * (1 - run), lerp(lerp(0.5, 0.92, s), 0.14, this.floor) + bounce - rising * 0.04, -lunge);
+    j.hips.rotation.y = Math.sin(this.walkPhase) * 0.1 * walk;
     j.spine.rotation.set(
-      lerp(0.1, 0.03, s) - this.reach * 0.16 - this.slump * 0.75 - this.bind * 0.05 - this.brace * 0.8,
-      this.yaw * 0.3 * alive,
+      lerp(0.1, 0.03, s) + lean + blowLean - this.leanIn * 0.16 - this.slump * 0.75 - this.bind * 0.05 - brace * 0.8,
+      // (Crew keep their hands on the cart: only the head turns.)
+      yaw * 0.3 * alive * (1 - this.push) - j.hips.rotation.y * 1.4 + blowTwist,
       this.slump * this.slumpSide * 0.25,
     );
-    j.chest.scale.y = 1 + Math.sin(time * 1.6 + this.idleSeed) * 0.012 * alive;
+    j.chest.scale.y = 1 + Math.sin(time * 1.6 + this.idleSeed) * 0.012 * alive * (1 + walk);
     const gest = this.gestureNow(time);
     // Heads join in: down into the palm, or a tilt with the shrug.
     const headDown = gest?.id === 'facepalm' ? 0.45 * gest.amount : 0;
     const headShake = gest?.id === 'facepalm' ? Math.sin(gest.t * 5) * 0.12 * gest.amount : 0;
     const headTilt = gest?.id === 'shrug' ? 0.18 * gest.amount : 0;
     j.head.rotation.set(
-      this.pitch * 0.8 * alive - this.slump * 0.6 - this.bind * 0.25 - headDown,
-      this.yaw * 0.7 * alive + headShake,
+      pitch * 0.8 * alive - this.slump * 0.6 - this.bind * 0.25 - headDown - lean * 0.6,
+      yaw * 0.7 * alive + headShake - blowTwist * 0.5,
       this.slump * this.slumpSide * 0.3 + headTilt,
       'YXZ',
     );
 
     for (const side of [0, 1] as Side[]) {
       const sign = side === 0 ? 1 : -1;
-      j[`hip${side}`].rotation.x = lerp(HALF_PI, 0, s) + swing * 0.5 * sign;
+      const legSwing = Math.sin(this.walkPhase + (side === 0 ? 0 : Math.PI));
+      j[`hip${side}`].rotation.x = lerp(HALF_PI, 0, s) + swing * stride * sign - rising * 0.25;
       j[`knee${side}`].rotation.x =
-        lerp(lerp(-HALF_PI, 0, s), -0.2, this.floor) - Math.max(0, Math.sin(this.walkPhase + (side === 0 ? 0 : Math.PI))) * 0.7 * this.walkAmount;
-      j[`ankle${side}`].rotation.x = lerp(0, 0, s);
+        lerp(lerp(-HALF_PI, 0, s), -0.2, this.floor) - Math.max(0, legSwing) * (0.7 + run * 0.6) * walk - rising * 0.35;
+      j[`ankle${side}`].rotation.x = Math.max(0, -legSwing) * 0.25 * walk;
 
       const shoulder = j[`shoulder${side}`];
       const elbow = j[`elbow${side}`];
-      // Seated: hands rest together on the lap. Standing: arms hang and swing.
-      let shoulderX = lerp(0.22, 0.05 - swing * 0.45 * sign, s);
-      let elbowX = lerp(1.2, 0.25, s);
+      // Seated: hands rest together on the lap. Standing: arms hang and swing against the legs (bent to run).
+      let shoulderX = lerp(0.22, 0.05 - swing * (0.45 + run * 0.35) * sign, s);
+      let elbowX = lerp(1.2, 0.25 + run * 1.1 + walk * 0.12, s);
       let shoulderZ = sign * 0.06;
       let elbowZ = sign * 0.55 * (1 - s);
-      if (side === 1) elbowZ *= 1 - Math.max(this.reach, this.point);
+      if (side === 1) elbowZ *= 1 - Math.max(this.leanIn, aiming);
       elbowZ *= 1 - this.slump;
       if (side === 1) {
-        shoulderX = lerp(shoulderX, 1.12, this.reach);
-        elbowX = lerp(elbowX, 0.6, this.reach);
+        shoulderX = lerp(shoulderX, 1.12, this.leanIn);
+        elbowX = lerp(elbowX, 0.6, this.leanIn);
       }
+      // Getting up: hands press down on the armrests.
+      shoulderX = lerp(shoulderX, 0.35, rising);
+      elbowX = lerp(elbowX, 0.55, rising);
+      shoulderZ = lerp(shoulderZ, -sign * 0.28, rising);
       // Wrists tied behind the back: upper arms back, forearms folded inward across the small of the back.
       shoulderX = lerp(shoulderX, -0.45, this.bind);
       shoulderZ = lerp(shoulderZ, sign * 0.03, this.bind);
       elbowX = lerp(elbowX, 0, this.bind);
       elbowZ = lerp(elbowZ, sign * 1.35, this.bind);
       // Hands up (held at gunpoint), or hands over the head (bracing, heads down).
-      shoulderX = lerp(shoulderX, 2.55, this.surrender);
-      shoulderZ = lerp(shoulderZ, -sign * 0.45, this.surrender);
-      elbowX = lerp(elbowX, 0.45, this.surrender);
-      elbowZ = lerp(elbowZ, 0, this.surrender);
-      shoulderX = lerp(shoulderX, 2.3, this.brace);
-      shoulderZ = lerp(shoulderZ, -sign * 0.2, this.brace);
-      elbowX = lerp(elbowX, 1.9, this.brace);
-      elbowZ = lerp(elbowZ, 0, this.brace);
+      shoulderX = lerp(shoulderX, 2.55, surrender);
+      shoulderZ = lerp(shoulderZ, -sign * 0.45, clamp01(surrender));
+      elbowX = lerp(elbowX, 0.45, clamp01(surrender));
+      elbowZ = lerp(elbowZ, 0, clamp01(surrender));
+      shoulderX = lerp(shoulderX, 2.3, clamp01(brace));
+      shoulderZ = lerp(shoulderZ, -sign * 0.2, clamp01(brace));
+      elbowX = lerp(elbowX, 1.9, clamp01(brace));
+      elbowZ = lerp(elbowZ, 0, clamp01(brace));
       // Hands on the cart's handle, just ahead and below.
       shoulderX = lerp(shoulderX, 0.72, this.push);
       shoulderZ = lerp(shoulderZ, -sign * 0.12, this.push);
       elbowX = lerp(elbowX, 0.4, this.push);
       elbowZ = lerp(elbowZ, 0, this.push);
+      if (side === 1) {
+        // Drawing: the hand goes back to the waistband behind the hip...
+        shoulderX = lerp(shoulderX, -0.55, toHip);
+        shoulderZ = lerp(shoulderZ, 0.18, toHip);
+        elbowX = lerp(elbowX, 0.6, toHip);
+        elbowZ = lerp(elbowZ, 0, toHip);
+        // ...and a drawn pistol not aimed at anyone is held low, pointing at the floor ahead.
+        shoulderX = lerp(shoulderX, 0.7, lowReady);
+        shoulderZ = lerp(shoulderZ, 0.1, lowReady);
+        elbowX = lerp(elbowX, 0.45, lowReady);
+        elbowZ = lerp(elbowZ, 0, lowReady);
+      } else if (ct <= CHARGE_END) {
+        // The shoulder leads, the arm tucked in against the body.
+        const tuck = smoothstep(0, CHARGE_HIT * 0.7, ct) * (1 - smoothstep(CHARGE_HIT + 0.1, CHARGE_END, ct));
+        shoulderX = lerp(shoulderX, 0.45, tuck);
+        shoulderZ = lerp(shoulderZ, -0.1, tuck);
+        elbowX = lerp(elbowX, 2.1, tuck);
+      }
       shoulderX = lerp(shoulderX, 0.12, this.slump);
       elbowX = lerp(elbowX, 0.35, this.slump);
       let shoulderY = 0;
-      const arm = gest ? gesture(gest.id, side, gest.t, this.yaw, this.pitch) : null;
+      const arm = gest ? gesture(gest.id, side, gest.t, yaw, pitch) : null;
       if (gest && arm) {
         shoulderX = lerp(shoulderX, arm.sx, gest.amount);
         shoulderY = arm.sy * gest.amount;
@@ -845,30 +1048,85 @@ export class Actor {
       elbow.rotation.set(elbowX, 0, elbowZ);
     }
 
-    // Point at a vote target with the right arm.
-    if (this.point > 0.01 && this.pointAt) {
+    // Hands that reach for things: the right points or aims (straight, with a pistol), the left takes hold or strikes.
+    if ((aiming > 0.01 && this.pointAt) || (reaching > 0.01 && reachTarget) || st <= STRIKE_END) {
       this.root.updateMatrixWorld(true);
-      const shoulder = j.shoulder1;
-      const from = new THREE.Vector3().setFromMatrixPosition(shoulder.matrixWorld);
-      const dir = this.pointAt.clone().sub(from).normalize();
-      const parentInverse = new THREE.Quaternion().setFromRotationMatrix(shoulder.parent!.matrixWorld).invert();
-      dir.applyQuaternion(parentInverse);
-      // The arm (its -y) along the aim, rolled so the hand's back (+z) faces the sky: a pistol held upright, grip
-      // down. (The shortest turn onto the aim left the roll to chance, and aiming ahead held the pistol upside down.)
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(parentInverse);
-      const yAxis = dir.clone().negate();
-      const zAxis = up.sub(yAxis.clone().multiplyScalar(up.dot(yAxis)));
-      if (zAxis.lengthSq() > 1e-4) {
-        zAxis.normalize();
-        const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis);
-        this.aim.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
-      } else {
-        this.aim.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
-      }
-      shoulder.quaternion.slerp(this.aim, this.point);
-      j.elbow1.rotation.x = lerp(j.elbow1.rotation.x, 0.05, this.point);
+      if (aiming > 0.01 && this.pointAt) this.solveArm(1, this.pointAt, Math.min(1, aiming), this._armed);
+      if (st <= STRIKE_END && this.strikePoint) this.solveArm(0, this.strikeTarget(st, this.strikePoint), this.strikeWeight(st), false, STRIKE_POLE);
+      else if (reaching > 0.01 && reachTarget) this.solveArm(0, reachTarget, Math.min(1, reaching), false);
     }
     this.root.updateMatrixWorld(true);
+  }
+
+  /** Where the left fist is during a blow: cocked back by the ear, then driven onto the target, then back. */
+  private strikeTarget(st: number, point: THREE.Vector3): THREE.Vector3 {
+    const shoulder = new THREE.Vector3().setFromMatrixPosition(this.joints.shoulder0.matrixWorld);
+    const yaw = this.root.rotation.y;
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const left = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
+    // Cocked: the fist up by the side of the head, the elbow out.
+    const cocked = shoulder.clone().add(new THREE.Vector3(0, 0.12, 0)).addScaledVector(forward, 0.1).addScaledVector(left, 0.04);
+    if (st < STRIKE_HIT - 0.07) return cocked;
+    if (st < STRIKE_HIT) {
+      // Accelerating into the blow.
+      const k = (st - (STRIKE_HIT - 0.07)) / 0.07;
+      return cocked.lerp(point, k * k);
+    }
+    const back = smoothstep(STRIKE_HIT + 0.04, STRIKE_END, st);
+    return point.clone().lerp(cocked, back);
+  }
+
+  private strikeWeight(st: number): number {
+    return smoothstep(0, 0.12, st) * (1 - smoothstep(STRIKE_END - 0.15, STRIKE_END, st));
+  }
+
+  /**
+   * Two-bone reach: turn the shoulder and bend the elbow so the hand arrives at `target` (the elbow drops down and
+   * out). Out of reach, the arm points at it; `straight` always points (a pistol held at arm's length, grip down).
+   */
+  private solveArm(side: Side, target: THREE.Vector3, weight: number, straight: boolean, elbowOut?: THREE.Vector3): void {
+    const j = this.joints;
+    const shoulder = j[`shoulder${side}`];
+    const elbow = j[`elbow${side}`];
+    const chest = shoulder.parent!;
+    chest.matrixWorld.decompose(_scratchPos, _chestQ, _scratchScale);
+    const from = _from.setFromMatrixPosition(shoulder.matrixWorld);
+    const to = _to.subVectors(target, from);
+    const distance = to.length();
+    if (distance < 1e-4) return;
+    to.divideScalar(distance);
+    const d = straight ? UPPER_ARM + FOREARM : Math.min(Math.max(distance, 0.14), UPPER_ARM + FOREARM - 0.004);
+    const out = side === 0 ? -1 : 1;
+    // Where the elbow points, in the chest's own frame: down and out (or as a blow wants it: out and up).
+    const pole = (elbowOut ? _pole.set(out * elbowOut.x, elbowOut.y, elbowOut.z) : _pole.set(out * 0.55, -1, 0.35)).applyQuaternion(_chestQ);
+    pole.addScaledVector(to, -pole.dot(to));
+    if (pole.lengthSq() < 1e-6) pole.set(0, -1, 0).addScaledVector(to, -to.y);
+    pole.normalize();
+    const cosA = Math.min(1, Math.max(-1, (UPPER_ARM ** 2 + d * d - FOREARM ** 2) / (2 * UPPER_ARM * d)));
+    const sinA = Math.sqrt(1 - cosA * cosA);
+    const upper = _upper.copy(to).multiplyScalar(cosA).addScaledVector(pole, sinA).normalize();
+    // Forearm: from the elbow to where the hand goes.
+    const fore = _fore.copy(to).multiplyScalar(d).addScaledVector(upper, -UPPER_ARM).normalize();
+    const bend = Math.acos(Math.min(1, Math.max(-1, upper.dot(fore))));
+    const y = _y.copy(upper).negate();
+    const z = _z;
+    if (bend > 0.05) {
+      // The forearm folds towards the shoulder's -z.
+      z.copy(fore).addScaledVector(upper, -fore.dot(upper)).normalize().negate();
+    } else {
+      // Straight: the back of the hand faces the sky (a pistol upright, grip down).
+      z.set(0, 1, 0).addScaledVector(y, -y.y);
+      if (z.lengthSq() < 1e-4) z.set(0, 0, 1).applyQuaternion(_chestQ);
+      z.normalize();
+    }
+    const x = _x.crossVectors(y, z);
+    _q.setFromRotationMatrix(_basis.makeBasis(x, y, z));
+    _q.premultiply(_chestQ.invert());
+    shoulder.quaternion.slerp(_q, weight);
+    elbow.rotation.x = lerp(elbow.rotation.x, bend, weight);
+    elbow.rotation.y = lerp(elbow.rotation.y, 0, weight);
+    elbow.rotation.z = lerp(elbow.rotation.z, 0, weight);
+    shoulder.updateMatrixWorld(true);
   }
 }
 
@@ -918,6 +1176,17 @@ export class People {
     return this.actors.get(id);
   }
 
+  /** Everyone drawn and on their feet: where they are and how they move (for the curtain they brush through). */
+  movers(): { x: number; z: number; vx: number; vz: number }[] {
+    const out: { x: number; z: number; vx: number; vz: number }[] = [];
+    for (const actor of this.actors.values()) {
+      if (actor.hidden || !actor.onFeet) continue;
+      const p = actor.root.position;
+      out.push({ x: p.x, z: p.z, vx: actor.velocity.x, vz: actor.velocity.z });
+    }
+    return out;
+  }
+
   /** Anyone (drawn, and on their feet) within `radius` of a point on the floor. */
   anyNear(point: THREE.Vector3, radius: number): boolean {
     for (const actor of this.actors.values()) {
@@ -939,6 +1208,7 @@ export class People {
     if (slot === undefined) return null;
     const actor = new Actor(look);
     actor.standing = true;
+    actor.snapStanding();
     actor.root.position.copy(at);
     this.actors.set(id, actor);
     this.slots.set(id, slot);
@@ -1121,7 +1391,7 @@ export class People {
           (part.head && actor.hideHead) ||
           (part.hair !== undefined && part.hair !== look.hair % HAIR_STYLES.length) ||
           (part.outfit !== undefined && part.outfit !== look.topStyle) ||
-          (part.armed && !actor.armed) ||
+          (part.armed && !actor.gunShown) ||
           (part.accessory !== undefined && (look[part.accessory.slot] ?? 0) !== part.accessory.index) ||
           // A painted face brings its own eyes.
           (part.paint === 'eye' && actor.face !== '');

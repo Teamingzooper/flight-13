@@ -4,9 +4,10 @@ import { captainName } from '../tv/format';
 import { cabinAudio } from './audio';
 import { BULKHEAD_Z, FLIGHT_DECK, eyePosition } from './layout';
 import type { LightMode } from './lighting';
-import type { Actor, People } from './scene/people';
+import { CHARGE_HIT, RISE, STRIKE_HIT, type Actor, type People } from './scene/people';
 import { TARMAC_LENGTH, TarmacSet } from './sets/tarmac';
 import type { WindowView } from './windows';
+import { Spring } from './spring';
 
 /**
  * How Flight 13 ends, seen through your own eyes before the end screen:
@@ -43,8 +44,12 @@ export interface EndingContext {
   windows: WindowView;
   faces: ReadonlyMap<string, string> | null;
   showRunway: () => void;
-  /** Hold the flight deck door open or shut (null gives it back to whoever walks through). */
-  setCockpitDoor: (open: boolean | null) => void;
+  /** Hold the flight deck door open or shut (null gives it back to whoever walks through); `burst`: shoved open. */
+  setCockpitDoor: (open: boolean | null, burst?: boolean) => void;
+  /** Where the flight deck door's handle is right now, on either side. */
+  doorHandle: (side: 'galley' | 'deck') => THREE.Vector3;
+  /** The drink cart: where it is along the aisle (null: none to see), and holding it where the crew pushes it. */
+  cart: { z: () => number | null; hold: (x: number, z: number, yaw: number) => void };
   setLights: (mode: LightMode) => void;
   masksDown: () => void;
   explode: (at: THREE.Vector3) => void;
@@ -58,6 +63,28 @@ export interface EndingContext {
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
+/** A steady pseudo-random 0..1 for a number (so a replayed ending plays the same). */
+const i01 = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+/** The stewardess stands this far behind the cart's middle, hands on its handle. */
+const CART_HANDLE = 0.62;
+
+/** The point `s` metres along a path of straight legs, and the way the path runs there. */
+function pointOn(points: THREE.Vector3[], s: number): { at: THREE.Vector3; dir: THREE.Vector3 } {
+  let left = Math.max(0, s);
+  for (let i = 1; i < points.length; i++) {
+    const leg = points[i].distanceTo(points[i - 1]);
+    const dir = points[i].clone().sub(points[i - 1]).normalize();
+    if (left <= leg || i === points.length - 1) return { at: points[i - 1].clone().addScaledVector(dir, Math.min(left, leg)), dir };
+    left -= leg;
+  }
+  return { at: points[0].clone(), dir: new THREE.Vector3(0, 0, -1) };
+}
+
+/** How long a walk through these points is. */
+const pathLength = (points: THREE.Vector3[]) => points.slice(1).reduce((sum, p, i) => sum + p.distanceTo(points[i]), 0);
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 const span = (t: number, a: number, b: number) => smooth(clamp01((t - a) / (b - a)));
 const FRONT_EXIT = new THREE.Vector3(0, 0, BULKHEAD_Z - 1.1);
@@ -91,8 +118,12 @@ export class EndingDirector {
   private readonly tagEls = new Map<string, HTMLDivElement>();
   private readonly eye = new THREE.Vector3();
   private readonly target = new THREE.Vector3();
-  private readonly smoothEye = new THREE.Vector3();
-  private readonly smoothTarget = new THREE.Vector3();
+  /** The camera on springs: the eyes glide (tight to a body you ride in), and a glance eases round and settles. */
+  private readonly eyeS = [new Spring(), new Spring(), new Spring()];
+  private readonly lookS = [new Spring(), new Spring(), new Spring()];
+  private readonly look = new THREE.Vector3();
+  /** The body your eyes ride in this frame (null: watching from a seat). */
+  private rider: Actor | null = null;
   private readonly you: PlayerSummary | null;
   private readonly players: PlayerSummary[];
   private readonly city: string;
@@ -107,6 +138,8 @@ export class EndingDirector {
   private landingFrom = -1;
   private bankFrom = -1;
   private tagged = new Set<string>();
+  /** The crew pushing the cart out of the aisle: the cart along a path, the stewardess behind it at the handle. */
+  private cartMove: { points: THREE.Vector3[]; from: number; seconds: number; crew: Actor; lastS: number } | null = null;
 
   constructor(
     private readonly ctx: EndingContext,
@@ -153,6 +186,7 @@ export class EndingDirector {
         beat.fn();
       }
     }
+    if (this.cartMove) this.pushCart(t, dt);
     // The landing, from the windows: descending, touching down, braking.
     if (this.landingFrom >= 0) {
       const l = t - this.landingFrom;
@@ -174,14 +208,26 @@ export class EndingDirector {
       this.placeTags(this.tarmac.heads(), this.tarmac.camera);
       return;
     }
+    this.rider = null;
     this.cameraFn(t);
-    // Smooth the eye, add the bank (hijack), and place the name tags.
-    const k = 1 - Math.exp(-dt * 7);
-    this.smoothEye.lerp(this.eye, k);
-    this.smoothTarget.lerp(this.target, 1 - Math.exp(-dt * 5));
+    // The eyes on springs (breathing while you sit and watch), the look easing round; then the bank and the name tags.
     const cam = this.ctx.camera;
-    cam.position.copy(this.smoothEye);
-    cam.lookAt(this.smoothTarget);
+    // (Set by the camera function just run, if it rides in a body.)
+    const rider = this.rider as Actor | null;
+    const eyeHz = rider ? 7 : 1.7;
+    const breathe = rider ? 0 : Math.sin(time * 1.35) * 0.0045;
+    cam.position.set(
+      this.eyeS[0].step(this.eye.x, eyeHz, 1, dt),
+      this.eyeS[1].step(this.eye.y + breathe, eyeHz, 1, dt),
+      this.eyeS[2].step(this.eye.z, eyeHz, 1, dt),
+    );
+    this.look.set(this.lookS[0].step(this.target.x, 1.5, 0.82, dt), this.lookS[1].step(this.target.y, 1.5, 0.82, dt), this.lookS[2].step(this.target.z, 1.5, 0.82, dt));
+    cam.lookAt(this.look);
+    // Riding in a body: its stride rolls the view a little from foot to foot.
+    if (rider) {
+      const { phase, amount } = rider.gait;
+      cam.rotateZ(Math.sin(phase) * 0.012 * Math.min(1, amount));
+    }
     if (this.bankFrom >= 0) this.roll = 0.32 * span(t - this.bankFrom, 0, 2.2);
     // The cabin tilts with the bank; on the flight deck it is the horizon outside that tilts (see bank).
     if (this.roll && cam.position.z > FLIGHT_DECK.doorZ) cam.rotateZ(this.roll);
@@ -241,33 +287,93 @@ export class EndingDirector {
     this.eye.copy(eye);
     this.target.copy(this.restTarget(eye));
     this.cameraFn(0);
-    this.smoothEye.copy(this.eye);
-    this.smoothTarget.copy(this.target);
+    this.eyeS.forEach((s, i) => s.snap(this.eye.getComponent(i)));
+    this.lookS.forEach((s, i) => s.snap(this.target.getComponent(i)));
   }
 
-  /** Watch from where you are: at your seat (or spot), looking at `focus` when there is one (not from behind the flight deck door). */
+  /**
+   * Watch from where you are: at your seat (or spot), looking at `focus` when there is one (not from behind the flight
+   * deck door). Someone far off is followed by their body, someone close by their face; and when a person brushes past
+   * your aisle seat you lean away from them a little.
+   */
   private watch(lookAtWindowUntil = -1): (t: number) => void {
     const home = this.homeEye();
     const onDeck = home.z < FLIGHT_DECK.doorZ;
     return (t) => {
       this.eye.copy(home);
+      let close = 0;
+      for (const m of this.ctx.people.movers()) {
+        const d = Math.hypot(m.x - home.x, m.z - home.z);
+        if (d < 0.9) close = Math.max(close, 1 - d / 0.9);
+      }
+      if (close > 0 && this.you?.seat) this.eye.add(new THREE.Vector3(Math.sign(home.x || 1) * 0.08 * smooth(close), -0.03 * smooth(close), 0));
       const focus = t >= lookAtWindowUntil && !onDeck ? this.interest?.() : null;
-      this.target.copy(focus ?? this.restTarget(home));
+      if (focus) {
+        const far = smooth(clamp01((focus.distanceTo(home) - 1.5) / 2.5));
+        this.target.copy(focus).add(new THREE.Vector3(0, -0.32 * far, 0));
+      } else this.target.copy(this.restTarget(home));
     };
   }
 
   /** Ride along in your own actor's head, looking where it is going (or at `focus`). */
   private ride(actor: Actor, look: () => THREE.Vector3 | null = () => null): (t: number) => void {
     return () => {
+      this.rider = actor;
       actor.eyes(this.eye);
       const custom = look();
       if (custom) {
         this.target.copy(custom);
+        // Looking down at your hands, the head comes forward over them (so your own shoulders stay out of the way).
+        const to = custom.clone().sub(this.eye);
+        const down = clamp01(-to.y / Math.max(0.1, to.length()) - 0.2) * 1.25;
+        to.y = 0;
+        if (down > 0 && to.lengthSq() > 1e-6) this.eye.addScaledVector(to.normalize(), 0.12 * down).y -= 0.04 * down;
         return;
       }
       const heading = actor.root.rotation.y;
       this.target.set(this.eye.x - Math.sin(heading) * 3, this.eye.y - 0.15, this.eye.z - Math.cos(heading) * 3);
     };
+  }
+
+  /**
+   * The stewardess stows the drink cart: she pushes it up the aisle, through the curtain, and parks it on the right of the
+   * forward galley, out of everyone's way. Returns when it is out of the aisle (now, if there is no cart or nobody to
+   * push it).
+   */
+  private stowCart(at: number): number {
+    const z = this.ctx.cart.z();
+    const crew = this.players.find((p) => p.status === 'alive' && p.seat && grid.isAisleSpot(p.seat));
+    const actor = crew ? this.actor(crew.id) : undefined;
+    if (z === null || !actor) return at;
+    const parkZ = BULKHEAD_Z - 0.95;
+    const points = [new THREE.Vector3(0, 0, z + CART_HANDLE), new THREE.Vector3(0, 0, parkZ), new THREE.Vector3(0.95, 0, parkZ)];
+    const length = pathLength(points) - CART_HANDLE;
+    const seconds = Math.min(4.8, Math.max(1.6, length / 1.3));
+    this.at(at, () => (this.cartMove = { points, from: at, seconds, crew: actor, lastS: 0 }));
+    // (Out of the aisle once it is through the curtain.)
+    const throughCurtain = (z - (BULKHEAD_Z - 0.5)) / Math.max(0.1, length);
+    return at + seconds * Math.min(1, Math.max(0.2, throughCurtain + 0.1));
+  }
+
+  /** Move the cart and the stewardess behind it along the stowing path (eased: a push to get going, a pull to stop). */
+  private pushCart(t: number, dt: number): void {
+    const move = this.cartMove!;
+    const k = smooth(clamp01((t - move.from) / move.seconds));
+    const total = pathLength(move.points);
+    const s = k * (total - CART_HANDLE);
+    const cart = pointOn(move.points, s + CART_HANDLE);
+    const her = pointOn(move.points, s);
+    this.ctx.cart.hold(cart.at.x, cart.at.z, Math.atan2(-cart.dir.x, -cart.dir.z));
+    const step = s - move.lastS;
+    move.lastS = s;
+    move.crew.drive({
+      x: her.at.x,
+      z: her.at.z,
+      yaw: Math.atan2(-her.dir.x, -her.dir.z),
+      walk: dt > 0 ? Math.min(1, step / dt / 1.1) : 0,
+      phase: (s / 0.62) * Math.PI,
+      push: true,
+    });
   }
 
   /** Fade in, descend, touch down, brake; the captain welcomes everyone to the destination. */
@@ -285,6 +391,7 @@ export class EndingDirector {
       ctx.fade(0, 0.7);
     });
     this.at(0.9, () => ctx.caption('Cabin crew, seats for landing.'));
+    this.stowCart(1.1);
     this.at(3.6, () => {
       ctx.shake(0.05);
       cabinAudio.thunk();
@@ -306,27 +413,28 @@ export class EndingDirector {
     const ready = this.planLanding(`Welcome to ${this.city}. Police are boarding the aircraft. Please stay in your seats.`);
     const prisoners = this.players.filter((p) => p.team === 'saboteurs' && p.status === 'restrained').slice(0, COP_LOOKS.length);
     this.cameraFn = this.watch(ready);
-    const walk = 2.1;
-    const escort = 1.8;
+    const walk = 1.9;
+    const escort = 1.2;
     let end = ready + 4;
     // One officer per restrained saboteur (or two to look around if there is nobody to take).
     const count = Math.max(prisoners.length, prisoners.length ? 0 : 2);
     const lead: { actor: Actor | null } = { actor: null };
+    const rearLimit = this.rearZ() - 0.2;
     for (let i = 0; i < count; i++) {
       const prisoner = prisoners[i] ?? null;
       const pActor = prisoner ? this.actor(prisoner.id) : undefined;
       const spot = pActor?.restSpot?.clone() ?? new THREE.Vector3(0, 0, BULKHEAD_Z + 1.5 + i);
-      // Aboard through the front door into the galley (short of the flight deck door).
-      const start = new THREE.Vector3(i % 2 ? 0.45 : -0.45, 0, BULKHEAD_Z - 0.9 - Math.floor(i / 2) * 0.5);
-      const reach = new THREE.Vector3(spot.x * 0.6, 0, spot.z - 0.6);
-      const inward = start.distanceTo(AISLE_FRONT) + AISLE_FRONT.distanceTo(new THREE.Vector3(0, 0, reach.z)) + Math.abs(reach.x);
-      const setOff = ready + 0.2 + i * 0.6;
-      const arrive = setOff + inward / walk;
-      const out = [new THREE.Vector3(0, 0, spot.z - 0.9), AISLE_FRONT.clone(), FRONT_EXIT.clone()];
-      const outLength = spot.distanceTo(out[0]) + out[0].distanceTo(AISLE_FRONT) + AISLE_FRONT.distanceTo(FRONT_EXIT);
-      const leave = arrive + 0.6 + i * 0.3;
-      const gone = leave + outLength / escort;
-      end = Math.max(end, prisoner ? gone + 0.9 : arrive + 2);
+      // Aboard through the forward door into the galley, out of sight behind the curtain, and in through it.
+      const start = new THREE.Vector3(i % 2 ? 0.3 : -0.3, 0, BULKHEAD_Z - 1.05 - Math.floor(i / 2) * 0.45);
+      // Behind the prisoner, on the aisle side (with no one to take: somewhere down the aisle, to look around).
+      let meet = new THREE.Vector3(THREE.MathUtils.clamp(spot.x * 0.3, -0.22, 0.22), 0, Math.min(spot.z + 0.5, rearLimit));
+      if (!pActor) meet = spot.clone();
+      else if (meet.z - spot.z < 0.3) meet = new THREE.Vector3(spot.x + (spot.x > 0 ? -0.4 : 0.4), 0, spot.z + 0.1);
+      const side = spot.x > 0.3 ? 0.05 : spot.x < -0.3 ? -0.05 : 0.3;
+      const route = [AISLE_FRONT.clone(), new THREE.Vector3(0, 0, spot.z - 0.6), new THREE.Vector3(side, 0, (spot.z + meet.z) / 2), meet];
+      const setOff = ready + 0.2 + i * 0.7;
+      const arrive = setOff + pathLength([start, ...route]) / walk;
+      end = Math.max(end, arrive + 2);
       this.at(setOff, () => {
         const cop = ctx.people.extra(`cop${i}`, COP_LOOKS[i], start);
         if (!cop) return;
@@ -335,26 +443,57 @@ export class EndingDirector {
           this.interest = () => lead.actor?.eyes() ?? null;
           cabinAudio.clunk();
         }
-        cop.walkAlong([AISLE_FRONT.clone(), new THREE.Vector3(0, 0, reach.z), reach], inward / walk);
+        cop.walkAlong(route, pathLength([start, ...route]) / walk);
       });
       if (!prisoner || !pActor) continue;
+      // The prisoner turns to see who has come for them; the officer takes hold of their shoulder.
+      const shoulder = () => pActor.joints.shoulder0.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.03, 0.02));
+      this.at(arrive - 0.6, () => (pActor.gaze = this.actor(`cop${i}`)?.eyes() ?? null));
       this.at(arrive, () => {
         const cop = this.actor(`cop${i}`);
-        if (cop) cop.gaze = pActor.eyes();
+        if (!cop) return;
+        cop.gaze = pActor.eyes();
+        cop.reachTo = shoulder;
+        if (i === 0) ctx.caption('You are coming with us.', 'Police');
       });
-      // The prisoner is walked up the aisle and off the plane, the officer a step behind.
+      // Up the aisle and off the plane, the officer a step behind with a hand on their shoulder.
+      const out = [new THREE.Vector3(0, 0, spot.z - 0.45), AISLE_FRONT.clone(), FRONT_EXIT.clone()];
+      const outLength = pathLength([spot, ...out]);
+      const leave = arrive + 0.9 + i * 0.3;
+      const gone = leave + outLength / escort;
+      const copOut = [spot.clone(), ...out.slice(0, -1), FRONT_EXIT.clone().add(new THREE.Vector3(0.05, 0, 0.5))];
+      const copGone = leave + 0.08 + pathLength([meet, ...copOut]) / escort;
+      end = Math.max(end, copGone + 0.8);
       this.at(leave, () => {
+        pActor.gaze = null;
         pActor.walkAlong(out, outLength / escort);
-        const cop = this.actor(`cop${i}`);
-        if (cop) cop.gaze = null;
         if (i === 0) this.interest = () => pActor.eyes();
         if (prisoner.id === this.you?.id) this.cameraFn = this.ride(pActor);
       });
-      // The officer a step behind.
-      this.at(leave + 0.5, () => this.actor(`cop${i}`)?.walkAlong(out.map((p) => p.clone().add(new THREE.Vector3(0.05, 0, 0.1))), outLength / escort));
+      this.at(leave + 0.08, () => {
+        const cop = this.actor(`cop${i}`);
+        if (!cop) return;
+        cop.gaze = null;
+        cop.walkAlong(copOut, pathLength([meet, ...copOut]) / escort);
+      });
+      // Through the curtain: off the plane and out of sight.
+      this.at(gone, () => {
+        if (prisoner.id !== this.you?.id) pActor.hidden = true;
+      });
+      this.at(copGone, () => {
+        const cop = this.actor(`cop${i}`);
+        if (!cop) return;
+        cop.reachTo = null;
+        cop.hidden = true;
+      });
     }
     if (count === 2 && prisoners.length === 0) this.at(ready + 3, () => ctx.caption('Nobody left for us to take. Enjoy your stay.', 'Police'));
     this.finish(end);
+  }
+
+  /** The back of the cabin (the aft wall behind the rear galley). */
+  private rearZ(): number {
+    return (this.game.cabin.rows - 1) * 0.82 + 0.62 + 1.5;
   }
 
   // ---------- Escape ----------
@@ -366,15 +505,16 @@ export class EndingDirector {
     this.cameraFn = this.watch(ready);
     const speed = 3.3;
     let last = ready;
-    const youRun = runners.some((p) => p.id === this.you?.id);
+    let yourExit = -1;
     runners.forEach((p, i) => {
       const actor = this.actor(p.id);
       if (!actor || !p.seat) return;
       const seat = eyePosition(p.seat);
+      const from = actor.root.position.clone();
       const path = [new THREE.Vector3(seat.x * 0.4, 0, seat.z), new THREE.Vector3(0, 0, seat.z - 0.4), AISLE_FRONT.clone(), FRONT_EXIT.clone()];
-      const length = Math.abs(seat.x) + Math.max(0.5, seat.z - AISLE_FRONT.z) + 2;
       const go = ready + 0.35 + i * 0.3;
-      const seconds = length / speed + 0.3;
+      // Up out of the seat, then a sprint for the door.
+      const seconds = RISE + pathLength([from, ...path]) / speed;
       last = Math.max(last, go + seconds);
       this.at(go, () => {
         actor.walkAlong(path, seconds, true);
@@ -383,13 +523,14 @@ export class EndingDirector {
         if (i === 0) this.interest = () => actor.eyes();
         if (p.id === this.you?.id) this.cameraFn = this.ride(actor);
       });
+      if (p.id === this.you?.id) yourExit = go + seconds - 0.3;
+      // Through the curtain and out of the door: gone.
+      else this.at(go + seconds, () => (actor.hidden = true));
     });
     this.at(ready + 0.3, () => cabinAudio.chime());
-    if (youRun) {
+    if (yourExit >= 0) {
       // Out of the door, and the rest is outside.
-      const me = runners.find((p) => p.id === this.you?.id)!;
-      const seat = eyePosition(me.seat!);
-      const out = ready + 0.35 + runners.indexOf(me) * 0.3 + (Math.abs(seat.x) + Math.max(0.5, seat.z - AISLE_FRONT.z) + 1.2) / speed;
+      const out = yourExit;
       this.at(out, () => ctx.fade(1, 0.35));
       this.at(out + 0.4, () => {
         this.tarmac = new TarmacSet(ctx.renderer, this.game, runners.map((p) => p.id), ctx.faces);
@@ -432,21 +573,27 @@ export class EndingDirector {
     const youPilot = !!pilot && you?.id === pilot.id;
     const youHostage = !!you && you.status === 'alive' && !youGunman && !youPilot && you.team !== 'saboteurs';
 
+    // The stewardess backs the cart out of the aisle into the galley, out of their way.
+    const cartZ = ctx.cart.z();
+    const aisleClear = this.stowCart(0.3);
     this.at(0, () => {
       ctx.setLights('blackout');
       ctx.setCockpitDoor(false);
       for (let i = 0; i < 3; i++) setTimeout(() => cabinAudio.beep(0.5 + i * 0.2), i * 220);
     });
-    // Up out of their seats, pistols out, into the aisle.
+    // Up out of their seats, pistols drawn from the waistband on the way up, and out into the aisle.
     gunmen.forEach((g, i) => {
       const actor = this.actor(g.id);
       if (!actor || !g.seat) return;
       const seat = eyePosition(g.seat);
-      this.at(0.3 + i * 0.15, () => {
-        actor.armed = true;
-        actor.walkAlong([new THREE.Vector3(seat.x * 0.35, 0, seat.z - 0.2), new THREE.Vector3(0, 0, seat.z - 0.25)], 1.1);
+      const up = 0.3 + i * 0.15;
+      this.at(up, () => {
+        // (Out into the aisle, turning to face up it.)
+        actor.walkAlong([new THREE.Vector3(seat.x * 0.35, 0, seat.z - 0.2), new THREE.Vector3(0, 0, seat.z - 0.3), new THREE.Vector3(0, 0, seat.z - 0.42)], RISE + 0.9);
+        // (The arm comes up to aim once the pistol is out.)
         actor.pointAt = new THREE.Vector3(0, 1.1, seat.z - 3);
       });
+      this.at(up + RISE * 0.7, () => (actor.armed = true));
     });
     if (leader) this.at(0.9, () => ctx.caption('Everybody down! Heads down! Nobody moves!', leader.name));
     this.interest = () => (leaderActor ? leaderActor.eyes() : null);
@@ -464,37 +611,40 @@ export class EndingDirector {
     let bank = 7.5;
     /** When the leader is through the door (from then on, the Pilot is who he watches). */
     let inside = Infinity;
-    /** A rogue Pilot waiting at the door to let them in. */
+    /** A rogue Pilot waiting at the door to let them in, and when he opens it. */
     let waiting = Infinity;
+    let openAt = Infinity;
     if (leaderActor && leader?.seat) {
       const from = eyePosition(leader.seat);
       const toDoor = (Math.max(0.5, from.z - AISLE_FRONT.z) + AISLE_FRONT.distanceTo(DECK_OUTSIDE)) / 1.5 + 0.4;
-      const setOff = 2.6;
+      // (He waits for the cart to be out of his way if it was up ahead of him.)
+      const setOff = cartZ !== null && cartZ < from.z ? Math.max(2.6, aisleClear + 0.2) : 2.6;
       const arrive = setOff + toDoor;
       this.at(setOff, () => {
         leaderActor.walkAlong([AISLE_FRONT.clone(), DECK_OUTSIDE.clone()], toDoor);
         leaderActor.pointAt = DECK_DOORWAY.clone();
       });
       if (pilot && pilotActor && !rogue) {
-        // Locked out: he hammers on the door until it gives, and holds the Pilot at gunpoint.
+        // Locked out: he pounds on the door with his fist (each thud is a blow), then puts his shoulder into it until it
+        // bursts open, and holds the Pilot at gunpoint.
+        const doorFace = new THREE.Vector3(-0.12, 1.32, FLIGHT_DECK.doorZ + 0.05);
         this.at(arrive, () => (pilotActor.gaze = DECK_DOORWAY.clone()));
-        for (const at of [0.1, 0.55, 1.0]) {
+        const blow = (at: number, loud: number, shake: number) => {
+          const jitter = new THREE.Vector3((i01(at) - 0.5) * 0.08, (i01(at * 7) - 0.5) * 0.08, 0);
+          this.at(arrive + at - STRIKE_HIT, () => leaderActor.strike(doorFace.clone().add(jitter)));
           this.at(arrive + at, () => {
-            cabinAudio.thud(1.2);
-            ctx.shake(0.012);
+            cabinAudio.thud(loud);
+            ctx.shake(shake);
           });
-        }
-        this.at(arrive + 0.3, () => ctx.caption('Open this door!', leader.name));
-        this.at(arrive + 1.5, () => ctx.caption('This door stays shut.', captainName(pilot.name)));
-        for (const at of [2.4, 2.8]) {
-          this.at(arrive + at, () => {
-            cabinAudio.thud(1.7);
-            ctx.shake(0.02);
-          });
-        }
-        const burst = arrive + 3.2;
+        };
+        for (const at of [0.35, 0.8, 1.25]) blow(at, 1.2, 0.012);
+        this.at(arrive + 0.45, () => ctx.caption('Open this door!', leader.name));
+        this.at(arrive + 1.7, () => ctx.caption('This door stays shut.', captainName(pilot.name)));
+        for (const at of [2.6, 3.0]) blow(at, 1.7, 0.02);
+        const burst = arrive + 3.75;
+        this.at(burst - CHARGE_HIT, () => leaderActor.charge());
         this.at(burst, () => {
-          ctx.setCockpitDoor(true);
+          ctx.setCockpitDoor(true, true);
           cabinAudio.thud(2.2);
           cabinAudio.clunk();
           ctx.shake(0.05);
@@ -518,13 +668,17 @@ export class EndingDirector {
         const getUp = 1.8;
         // Beside the door (it swings in on the other side), out of the leader's way.
         const byDoor = new THREE.Vector3(0.42, 0, FLIGHT_DECK.doorZ - 0.45);
-        this.at(getUp, () => pilotActor.walkAlong([new THREE.Vector3(-0.1, 0, FLIGHT_DECK.seatZ + 0.45), byDoor], 1.6));
-        waiting = getUp + 1.6;
-        const open = Math.max(getUp + 1.7, arrive - 0.3);
+        this.at(getUp, () => pilotActor.walkAlong([new THREE.Vector3(-0.1, 0, FLIGHT_DECK.seatZ + 0.45), byDoor], RISE + 1.6));
+        waiting = getUp + RISE + 1.6;
+        // His hand goes to the handle, turns it and pulls the door open, letting go once it swings.
+        const open = Math.max(waiting + 0.5, arrive - 0.3);
+        openAt = open;
+        this.at(open - 0.45, () => (pilotActor.reachTo = () => ctx.doorHandle('deck')));
         this.at(open, () => {
           ctx.setCockpitDoor(true);
           cabinAudio.clunk();
         });
+        this.at(open + 0.55, () => (pilotActor.reachTo = null));
         this.at(open + 0.3, () => ctx.caption('Right on schedule. Come on in.', captainName(pilot.name)));
         inside = Math.max(open, arrive) + 0.2;
         this.at(inside, () => {
@@ -541,12 +695,13 @@ export class EndingDirector {
         bank = inside + 3.4;
       } else {
         // Nobody left to fly it: the door gives at the first shove and he takes the controls himself.
+        this.at(arrive + 0.2 - CHARGE_HIT, () => leaderActor.charge());
         this.at(arrive + 0.2, () => {
           cabinAudio.thud(1.8);
-          ctx.setCockpitDoor(true);
+          ctx.setCockpitDoor(true, true);
           ctx.shake(0.03);
         });
-        inside = arrive + 0.4;
+        inside = arrive + 0.45;
         this.at(inside, () => {
           leaderActor.walkAlong([new THREE.Vector3(0, 0, FLIGHT_DECK.doorZ - 0.4), new THREE.Vector3(0, 0, FLIGHT_DECK.seatZ + 0.55)], 1.3);
           leaderActor.pointAt = null;
@@ -572,9 +727,16 @@ export class EndingDirector {
         ride(t);
       };
     } else if (youPilot && pilotActor && rogue) {
-      // Up to let them in (watching the door, then the leader), and back to the controls.
+      // Up to let them in (the door, your hand on its handle, the leader coming in), and back to the controls.
       let now = 0;
-      const ride = this.ride(pilotActor, () => (now < waiting || now >= inside + 0.6 ? null : now >= inside ? (leaderActor?.eyes() ?? DECK_DOORWAY) : DECK_DOORWAY));
+      const windscreen = new THREE.Vector3(FLIGHT_DECK.seatX * 0.5, 1.15, FLIGHT_DECK.noseZ);
+      const ride = this.ride(pilotActor, () => {
+        if (now < waiting) return null;
+        if (now >= inside + 0.6) return windscreen;
+        if (now >= inside) return leaderActor?.eyes() ?? DECK_DOORWAY;
+        if (now >= openAt - 0.55 && now < openAt + 0.35) return ctx.doorHandle('deck');
+        return DECK_DOORWAY;
+      });
       this.cameraFn = (t) => {
         now = t;
         ride(t);
@@ -590,13 +752,16 @@ export class EndingDirector {
         this.target.copy(turned ?? this.restTarget(home));
       };
     } else if (youHostage && you.seat) {
-      // Heads down behind the seat in front, then a peek over it.
+      // Heads down behind the seat in front (eyes on the floor under it), then a peek over it, round towards the aisle.
       const home = this.homeEye();
+      const aisleward = -Math.sign(home.x || 1);
       this.cameraFn = (t) => {
-        const down = span(t, 1.1, 1.7) * (1 - span(t, 3.0, 3.8) * 0.75);
-        this.eye.copy(home).add(new THREE.Vector3(0, -0.32 * down, -0.12 * down));
+        const duck = span(t, 1.1, 1.7);
+        const peek = span(t, 3.0, 3.8);
+        const down = duck * (1 - peek * 0.75);
+        this.eye.copy(home).add(new THREE.Vector3(aisleward * 0.07 * peek, -0.32 * down, -0.12 * down));
         const focus = this.interest?.() ?? this.restTarget(home);
-        this.target.copy(focus).lerp(home.clone().add(new THREE.Vector3(0, -1.2, -0.5)), down);
+        this.target.copy(focus).lerp(home.clone().add(new THREE.Vector3(0, -1.05, -1.15)), down);
       };
     } else {
       this.cameraFn = this.watch();
