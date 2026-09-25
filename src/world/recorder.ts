@@ -19,6 +19,7 @@ const ACT_TAG: Partial<Record<NightAction['kind'], string>> = {
   plant: 'plant',
   treat: 'treat',
   serve: 'poison',
+  poison: 'poison',
   check: 'check',
   sweep: 'sweep',
   inspect: 'inspect',
@@ -34,6 +35,7 @@ function actedAs(action: NightAction, inWashroom: boolean): ClipKind {
     case 'plant':
       return action.where === 'seat' ? 'under_seat' : action.where;
     case 'treat':
+    case 'poison':
       return 'lean';
     case 'serve':
       return 'drink';

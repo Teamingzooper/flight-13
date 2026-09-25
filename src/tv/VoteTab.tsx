@@ -57,7 +57,7 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
               {p.name}
               {p.id === game.you?.id ? ' (you)' : ''}
             </span>
-            {ally && <span class="vote-ally">Saboteur{p.role ? ` · ${roleName(p.role)}` : ''}</span>}
+            {ally && <span class="vote-ally">Saboteur{p.role ? ` · ${roleName(p.role, game.settings)}` : ''}</span>}
             <span class="vote-seat">{seatPill(p.seat)}</span>
             <span class="vote-count">{counts[p.id] ?? 0}</span>
             {voters(p.id).length > 0 && <span class="vote-voters">{voters(p.id).join(', ')}</span>}

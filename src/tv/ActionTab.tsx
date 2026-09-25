@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { NOTE_MAX_LENGTH, ROLES, bombsFor, describeLocation, destinationOf, grid, isPilot, type NightAction, type PlayerView } from '../engine';
+import { NOTE_MAX_LENGTH, bombsFor, customAbility, roleInfo, type CustomAbility, type RoleId, describeLocation, destinationOf, grid, isPilot, type NightAction, type PlayerView } from '../engine';
 import { CarryOn } from './CarryOn';
 import { LunchPanel } from './Lunch';
 import type { TVContext } from './context';
@@ -63,7 +63,7 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
 
 function RoleStrip({ game }: { game: PlayerView }) {
   const you = game.you!;
-  const info = ROLES[you.role];
+  const info = roleInfo(you.role, game.settings);
   return (
     <div class={`role-strip ${you.team}`}>
       <div>
@@ -213,7 +213,7 @@ function WashroomCard({ ctx }: { ctx: TVContext }) {
 }
 
 function AbilityPanel({ ctx }: { ctx: TVContext }) {
-  const { game, send } = ctx;
+  const { game } = ctx;
   const you = game.you!;
   const mine = game.mine!;
   const actions = game.options?.actions ?? [];
@@ -223,7 +223,30 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   if (you.inWashroom) return <WashroomNight ctx={ctx} actions={actions} />;
   let hasAbility = true;
   let body;
-  switch (you.role) {
+  // The host's own roles use the panel of the role they borrowed their ability from.
+  const custom = customAbility(game.settings, you.role);
+  const as = custom === null ? you.role : CUSTOM_PANEL[custom];
+  if (you.usesLeft === 0) {
+    return (
+      <div class="stack">
+        <p class="muted">You have used up your ability for this flight. Keep your eyes open.</p>
+        {canSearch && <SearchCard ctx={ctx} instead={false} />}
+        <RestRow ctx={ctx} hasAbility={false} />
+      </div>
+    );
+  }
+  switch (as) {
+    case 'poison':
+      body = (
+        <TargetPicker
+          ctx={ctx}
+          title="Slip someone poison"
+          hint="Anyone within 1 seat. They fall sick at dawn and die the next dawn unless they are treated, wash it out in the lavatory, or carry an antidote. On the cameras it looks like leaning over."
+          actions={actions.filter((a) => a.kind === 'poison')}
+          empty="Nobody is within 1 seat. Sit next to someone tomorrow night."
+        />
+      );
+      break;
     case 'nurse':
       body = <TargetPicker ctx={ctx} title="Treat someone" actions={actions} empty="Nobody is within reach. Sit next to someone tomorrow night." />;
       break;
@@ -249,7 +272,7 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
       body = <BombPicker ctx={ctx} actions={actions} />;
       break;
     case 'marshal':
-      body = you.cuffsUsed ? (
+      body = you.cuffsUsed && you.usesLeft === null ? (
         <p class="muted">You already used your handcuffs. Keep your eyes open.</p>
       ) : (
         <TargetPicker
@@ -272,24 +295,48 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
   return (
     <div class="stack">
       {body}
+      {hasAbility && you.usesLeft !== null && custom !== 'bomb' && (
+        <p class="muted small">
+          {you.usesLeft === 1 ? 'Your last use this flight.' : `${you.usesLeft} uses left this flight.`}
+        </p>
+      )}
       {/* Looking under your seat is the other option, until you have picked your ability tonight. */}
       {canSearch && !(hasAbility && mine.action) && <SearchCard ctx={ctx} instead={hasAbility} />}
-      <div class="done-row">
-        {mine.acted ? (
-          mine.action ? (
-            <span class="done-ok">✓ Tonight you will {describeAction(game, mine.action)}. You can change your mind until dawn.</span>
-          ) : (
-            <span>You are resting tonight. Changed your mind? Pick something above.</span>
-          )
+      <RestRow ctx={ctx} hasAbility={hasAbility} />
+    </div>
+  );
+}
+
+/** The panel a custom ability uses (the built-in role it borrowed it from). */
+const CUSTOM_PANEL: Record<CustomAbility, RoleId | 'poison'> = {
+  none: 'passenger',
+  treat: 'nurse',
+  sweep: 'investigator',
+  cuff: 'marshal',
+  bomb: 'bomber',
+  poison: 'poison',
+};
+
+/** What you are doing tonight, and Rest. */
+function RestRow({ ctx, hasAbility }: { ctx: TVContext; hasAbility: boolean }) {
+  const { game, send } = ctx;
+  const mine = game.mine!;
+  return (
+    <div class="done-row">
+      {mine.acted ? (
+        mine.action ? (
+          <span class="done-ok">✓ Tonight you will {describeAction(game, mine.action)}. You can change your mind until dawn.</span>
         ) : (
-          <>
-            <span>{hasAbility ? 'Pick what to do above, or rest tonight.' : 'Nothing you want to do? Rest, so the night can end sooner.'}</span>
-            <button class="btn" onClick={() => void send({ kind: 'act', action: null })}>
-              Rest tonight
-            </button>
-          </>
-        )}
-      </div>
+          <span>You are resting tonight. Changed your mind? Pick something above.</span>
+        )
+      ) : (
+        <>
+          <span>{hasAbility ? 'Pick what to do above, or rest tonight.' : 'Nothing you want to do? Rest, so the night can end sooner.'}</span>
+          <button class="btn" onClick={() => void send({ kind: 'act', action: null })}>
+            Rest tonight
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -791,7 +838,7 @@ function GhostPanel({ game }: { game: PlayerView }) {
         <div class="label">You are out</div>
         <h2>{how}</h2>
         <p>
-          You were the <b>{roleName(you.role)}</b> ({teamName(you.team)}). Keep watching, and talk with the other ghosts in Chat.
+          You were the <b>{roleName(you.role, game.settings)}</b> ({teamName(you.team)}). Keep watching, and talk with the other ghosts in Chat.
         </p>
         {you.note && (
           <blockquote class="blackbox-quote">

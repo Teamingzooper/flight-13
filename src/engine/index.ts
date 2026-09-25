@@ -15,6 +15,25 @@ export {
 } from './view';
 export { DISHES, isDish, mealDay, inReach } from './meal';
 export {
+  ABILITIES,
+  ABILITY_ORDER,
+  CUSTOM_ROLE_LIMITS,
+  customAbility,
+  customDef,
+  customRoleId,
+  customHowTo,
+  describeCustomRole,
+  hasAbility,
+  isCustomRole,
+  newCustomRole,
+  roleInfo,
+  roleNameIn,
+  usesFor,
+  validateCustomRoles,
+  type AbilityInfo,
+} from './custom';
+export { customInDeck } from './setup';
+export {
   ROLES,
   SPECIAL_CARDS,
   teamOf,

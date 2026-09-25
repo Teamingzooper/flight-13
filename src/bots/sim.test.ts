@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyIntent, botIntents, phaseDue, tick, viewFor, type BotChatter, type BotSkill, type GameState } from '../engine';
+import { applyIntent, botIntents, emptyCards, phaseDue, tick, viewFor, type BotChatter, type BotSkill, type GameState, type Settings } from '../engine';
 import { defaultSettings } from '../engine/settings';
 import { createGame } from '../engine/setup';
 import { TEST_LOOK } from '../engine/testkit';
@@ -9,8 +9,8 @@ import { BUDGET } from './talk';
 
 const TALK = new Set(['night_move', 'night_act', 'dawn', 'day_discuss', 'day_vote', 'verdict']);
 
-function simulate(seed: number, players: number, botSkill: BotSkill, botChatter: BotChatter) {
-  const settings = { ...defaultSettings(), maxPassengers: players, botSkill, botChatter };
+function simulate(seed: number, players: number, botSkill: BotSkill, botChatter: BotChatter, extra: Partial<Settings> = {}) {
+  const settings = { ...defaultSettings(), maxPassengers: players, botSkill, botChatter, ...extra };
   const roster = Array.from({ length: players }, (_, i) => ({ id: `p${i}`, name: `P${i}`, look: TEST_LOOK }));
   const s: GameState = createGame({ settings, players: roster, seed, now: 0 });
   const brains = new Map(roster.map((p, i) => [p.id, new BotBrain(p.id, seed * 31 + i)]));
@@ -69,5 +69,25 @@ describe('talking bots', () => {
       }
     }
     expect(lines).toBeGreaterThan(50);
+  }, 60_000);
+
+  it('play the host’s own roles too: a poisoning Chef, a Bodyguard who treats, a Bouncer with cuffs', () => {
+    const extra: Partial<Settings> = {
+      rolesMode: 'custom',
+      cards: { ...emptyCards(), bomber: 1, investigator: 1 },
+      customRoles: [
+        { name: 'Chef', team: 'saboteurs', ability: 'poison', uses: 'nightly', count: 1 },
+        { name: 'Bodyguard', team: 'passengers', ability: 'treat', uses: 2, count: 1 },
+        { name: 'Bouncer', team: 'passengers', ability: 'cuff', uses: 1, count: 1 },
+      ],
+    };
+    for (const skill of ['easy', 'normal', 'hard'] as const) {
+      for (const seed of [3, 4, 5]) {
+        const { s, rejected } = simulate(seed, 8, skill, 'normal', extra);
+        expect(rejected, `${skill}/${seed}`).toEqual([]);
+        expect(s.phase.kind).toBe('ended');
+        expect(s.players.map((p) => p.role)).toEqual(expect.arrayContaining(['custom_s1', 'custom_p2', 'custom_p3']));
+      }
+    }
   }, 60_000);
 });

@@ -1,5 +1,5 @@
 import { h, render } from 'preact';
-import { ROLES, destinationOf, type Look, type PlayerSummary, type PlayerView } from '../engine';
+import { destinationOf, roleNameIn, type Look, type PlayerSummary, type PlayerView } from '../engine';
 import { formatCode } from '../net/code';
 import { Avatar } from './Avatar';
 
@@ -303,7 +303,7 @@ export async function drawPostcard({ game, code, faces, photo, date = new Date()
     g.fillText(fit(g, p.name, textW), textX, y + pic / 2 - 2);
     g.font = `600 ${roleSize}px ${BODY}`;
     g.fillStyle = p.team ? TEAM_COLOR[p.team] : MUTED;
-    g.fillText(fit(g, `${p.role ? ROLES[p.role].name : '?'} · ${outcome(p)}`, textW), textX, y + pic / 2 + roleSize + 2);
+    g.fillText(fit(g, `${p.role ? roleNameIn(p.role, game.settings) : '?'} · ${outcome(p)}`, textW), textX, y + pic / 2 + roleSize + 2);
   });
 
   // The small print.

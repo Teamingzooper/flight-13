@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROLES, destinationOf, grid, isPilot, type GameResult, type PlayerSummary, type PlayerView } from '../engine';
+import { destinationOf, grid, isPilot, roleNameIn, type GameResult, type PlayerSummary, type PlayerView } from '../engine';
 import { captainName } from '../tv/format';
 import { cabinAudio } from './audio';
 import { BULKHEAD_Z, FLIGHT_DECK, eyePosition } from './layout';
@@ -214,7 +214,7 @@ export class EndingDirector {
   }
 
   private label(p: PlayerSummary): string {
-    return `${p.name}${p.role ? ` · ${ROLES[p.role].name}` : ''}`;
+    return `${p.name}${p.role ? ` · ${roleNameIn(p.role, this.game.settings)}` : ''}`;
   }
 
   /** Where your eyes are when the ending starts: your seat, your spot in the galley, or the tower's. */

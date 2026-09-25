@@ -1,4 +1,4 @@
-import { grid, type BotSkill, type Cell, type Intent, type MoveTarget, type NightAction, type PlayerView, type RoleId, type SeatId } from '../engine';
+import { customAbility, grid, type BotSkill, type Cell, type CustomAbility, type Intent, type MoveTarget, type NightAction, type PlayerView, type RoleId, type SeatId } from '../engine';
 import type { Order } from './hear';
 import type { Knowledge } from './knowledge';
 import { suspects, type Beliefs, type Reason } from './mind';
@@ -30,6 +30,15 @@ export interface OrderResult extends NightChoice {
 const VOTE_BAR: Record<BotSkill, number> = { easy: 0.3, normal: 0.45, hard: 0.55 };
 const CUFF_BAR: Record<BotSkill, number> = { easy: 1.1, normal: 0.8, hard: 0.7 };
 const THREAT_ROLES: readonly RoleId[] = ['investigator', 'stewardess_loyal', 'marshal', 'nurse'];
+/** The built-in role a custom ability plays like (poison has its own play). */
+const CUSTOM_PLAYS_AS: Record<CustomAbility, RoleId | 'poisoner'> = {
+  none: 'passenger',
+  treat: 'nurse',
+  sweep: 'investigator',
+  cuff: 'marshal',
+  bomb: 'bomber',
+  poison: 'poisoner',
+};
 
 const same = (a: NightAction, b: NightAction) => JSON.stringify(a) === JSON.stringify(b);
 const legal = (view: PlayerView, action: NightAction | undefined): NightAction | undefined =>
@@ -122,7 +131,9 @@ export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: B
     if (flee) return { move: flee };
   }
   if (skill === 'normal' && rng() < 0.5) return {};
-  const role = k.me.role;
+  // The host's own roles play like the built-in role they borrowed their ability from.
+  const custom = customAbility(view.settings, k.me.role);
+  const role: RoleId | 'poisoner' = custom === null ? k.me.role : CUSTOM_PLAYS_AS[custom];
   const saboteur = k.me.team === 'saboteurs';
   const top = suspects(b).find(([id]) => !k.team.includes(id));
   const suspect = top?.[0] ?? null;
@@ -143,7 +154,7 @@ export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: B
       const spot = aisleAt(view, targetSeat);
       return spot ? { move: spot } : {};
     }
-    if (role === 'investigator' || role === 'nurse' || role === 'marshal' || role === 'bomber' || role === 'mastermind') {
+    if (role === 'investigator' || role === 'nurse' || role === 'marshal' || role === 'bomber' || role === 'mastermind' || role === 'poisoner') {
       const seat = seatNextTo(view, targetSeat);
       return seat ? { move: seat } : {};
     }
@@ -191,6 +202,12 @@ export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: B
         const act = target ? legal(view, { kind: 'serve', target }) : undefined;
         return act ? { act } : {};
       }
+      case 'poisoner': {
+        // A saboteur poisons a threat; a passenger only someone it is fairly sure of.
+        const victim = saboteur ? target : suspect && (top?.[1] ?? 0) >= CUFF_BAR[skill] ? suspect : null;
+        const act = victim ? legal(view, { kind: 'poison', target: victim }) : undefined;
+        return act ? { act } : {};
+      }
       default:
         return {};
     }
@@ -227,10 +244,11 @@ export function followOrder(view: PlayerView, k: Knowledge, order: Order): Order
       if (!order.target) return { ok: false, why: 'poison who?' };
       const targetSeat = k.everyone.find((p) => p.id === order.target)?.seat ?? null;
       if (kind === 'night_move') {
-        const spot = aisleAt(view, targetSeat);
-        return spot ? { ok: true, move: spot } : { ok: false, why: "can't get the cart to them" };
+        const spot = aisleAt(view, targetSeat) ?? seatNextTo(view, targetSeat);
+        return spot ? { ok: true, move: spot } : { ok: false, why: "can't get to them" };
       }
-      const act = legal(view, { kind: 'serve', target: order.target });
+      // (A poisoner of the host's making slips it to a neighbour instead of serving a drink.)
+      const act = legal(view, { kind: 'serve', target: order.target }) ?? legal(view, { kind: 'poison', target: order.target });
       return act ? { ok: true, act } : { ok: false, why: "they're not in my row" };
     }
     case 'knockout': {

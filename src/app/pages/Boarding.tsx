@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { CHAT_MAX_LENGTH, ROLES, checkTakeoff, destinationOf, type IntentResult, type RoleId } from '../../engine';
+import { CHAT_MAX_LENGTH, ROLES, checkTakeoff, customRoleId, destinationOf, type IntentResult, type RoleId } from '../../engine';
 import { TutorialCoach } from '../../tutorial/Coach';
 import { formatCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
@@ -28,6 +28,9 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
     if (!result.ok) showToast(result.error);
   };
   const dest = destinationOf(state.settings);
+  // The host's own roles in this flight's deck can be picked too.
+  const ownRoles =
+    state.settings.rolesMode === 'custom' ? state.settings.customRoles.map((def, i) => ({ def, id: customRoleId(i, def.team) })).filter(({ def }) => def.count > 0) : [];
   const me = state.players.find((p) => p.id === state.you) ?? null;
   const takeoffError = checkTakeoff(
     state.settings,
@@ -156,6 +159,15 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
                       ))}
                     </optgroup>
                   ))}
+                  {ownRoles.length > 0 && (
+                    <optgroup label="Made up for this flight">
+                      {ownRoles.map(({ def, id }) => (
+                        <option key={id} value={id}>
+                          {def.name} ({def.team === 'saboteurs' ? 'Saboteurs' : 'Passengers'})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <small class="hint">
                   Only you see this; the others just hear that you picked. If it cannot fit this flight (a rogue Pilot with too few aboard), you

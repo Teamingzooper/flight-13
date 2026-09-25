@@ -1,7 +1,9 @@
 import {
+  ABILITY_ORDER,
   BOT_CHATTERS,
   BOT_SKILLS,
   CUSTOM_LIMITS,
+  CUSTOM_ROLE_LIMITS,
   DESTINATIONS,
   SPECIAL_CARDS,
   TIMERS,
@@ -11,7 +13,9 @@ import {
   type BotChatter,
   type BotSkill,
   type Cards,
+  type CustomAbility,
   type CustomDestination,
+  type CustomRole,
   type Intent,
   type Look,
   type PlayerView,
@@ -190,6 +194,22 @@ export function cleanCustomDestination(raw: unknown): CustomDestination | null {
   return validateCustomDestination(c) ? null : c;
 }
 
+/** The host's own roles, rebuilt from untrusted input (only known fields; validated with the settings). */
+function cleanCustomRoles(raw: unknown): CustomRole[] | null {
+  if (!Array.isArray(raw) || raw.length > CUSTOM_ROLE_LIMITS.roles) return null;
+  const out: CustomRole[] = [];
+  for (const r of raw) {
+    if (!isObj(r) || typeof r.name !== 'string' || r.name.length > 64) return null;
+    const { team, ability, uses, count } = r;
+    if (team !== 'passengers' && team !== 'saboteurs') return null;
+    if (typeof ability !== 'string' || !ABILITY_ORDER.includes(ability as CustomAbility)) return null;
+    if (uses !== 'nightly' && uses !== 1 && uses !== 2) return null;
+    if (!isInt(count)) return null;
+    out.push({ name: r.name.trim(), team, ability: ability as CustomAbility, uses, count });
+  }
+  return out;
+}
+
 /** Rebuild Settings from untrusted input, keeping only known fields (validate separately). */
 export function cleanSettings(raw: unknown): Settings | null {
   if (!isObj(raw) || !isObj(raw.cards)) return null;
@@ -203,6 +223,8 @@ export function cleanSettings(raw: unknown): Settings | null {
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
   const pilotMustFly = raw.pilotMustFly ?? false;
   const mealService = raw.mealService ?? true;
+  const customRoles = cleanCustomRoles(raw.customRoles ?? []);
+  if (!customRoles) return null;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
   const plane = raw.plane ?? 'airliner';
   const botChatter = raw.botChatter ?? 'normal';
@@ -234,6 +256,7 @@ export function cleanSettings(raw: unknown): Settings | null {
     anonymousVotes,
     whispers,
     pilotMustFly,
+    customRoles,
     mealService,
     botChatter: botChatter as BotChatter,
     botSkill: botSkill as BotSkill,

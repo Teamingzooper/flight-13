@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Avatar } from '../app/Avatar';
 import { Credits } from '../meta/Credits';
-import { ITEMS, ROLES, destinationOf, grid, type PlayerView } from '../engine';
+import { ITEMS, destinationOf, grid, roleInfo, type PlayerView } from '../engine';
 import { ACHIEVEMENTS } from '../meta/achievements';
 import { settlementFor } from '../meta/bag';
 import { ItemIcon } from '../meta/ItemIcon';
@@ -126,7 +126,7 @@ function Overlay({ children, onClose, wide = false }: { children: ComponentChild
 
 function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void }) {
   const you = game.you!;
-  const info = ROLES[you.role];
+  const info = roleInfo(you.role, game.settings);
   const d = destinationOf(game.settings);
   const allies = game.players.filter((p) => p.team === 'saboteurs' && p.id !== you.id);
   return (
@@ -168,7 +168,7 @@ function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void
         )}
         {you.team === 'saboteurs' && (
           <p class="pass-allies">
-            Your allies: {allies.length ? allies.map((p) => `${p.name} (${p.role ? roleName(p.role) : '?'})`).join(', ') : 'none. You are on your own.'}
+            Your allies: {allies.length ? allies.map((p) => `${p.name} (${p.role ? roleName(p.role, game.settings) : '?'})`).join(', ') : 'none. You are on your own.'}
           </p>
         )}
       </div>
@@ -211,7 +211,7 @@ function VerdictCard({ game, faces, onClose }: { game: PlayerView; faces: Readon
           <h2>{restrained.name} is restrained</h2>
           {restrained.role && restrained.team && (
             <p>
-              They were the <b>{roleName(restrained.role)}</b> ({teamName(restrained.team)}).
+              They were the <b>{roleName(restrained.role, game.settings)}</b> ({teamName(restrained.team)}).
             </p>
           )}
           {note && (
@@ -337,7 +337,7 @@ function EndScreen({
               <li key={p.id} class={p.team ?? ''}>
                 <Avatar look={p.look} face={flight.client.faces.get(p.id)} size={32} dim={p.status !== 'alive'} />
                 <span class="name">{p.name}</span>
-                <span class="role">{p.role ? roleName(p.role) : '?'}</span>
+                <span class="role">{p.role ? roleName(p.role, game.settings) : '?'}</span>
                 <span class="status">{outcome(p)}</span>
               </li>
             ))}

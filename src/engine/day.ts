@@ -46,7 +46,7 @@ export function resolveVote(s: GameState, now: number): void {
   const votes = s.settings.anonymousVotes ? {} : { votes: { ...s.day.votes } };
   if (restrained) {
     removeFromPlay(s, restrained, 'restrained', s.phase.night);
-    addLog(s, now, 'all', 'verdict', `The passengers restrained ${label(restrained)} and walked them to the rear galley.`, {
+    addLog(s, now, 'all', 'verdict', `The passengers restrained ${label(s, restrained)} and walked them to the rear galley.`, {
       player: restrained.id,
       ...votes,
     });
