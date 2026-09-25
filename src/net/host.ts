@@ -68,6 +68,8 @@ export interface HostSnapshot {
   pausedAt?: number | null;
   /** The pause is the server's own: everyone left, and the flight waits for someone to come back. */
   idlePaused?: boolean;
+  /** The game whose results went to everyone's account stats (server flights). */
+  statsFor?: string;
   /** Tickets to move a seat to another device: the seat (null: the control tower's captaincy), until when. */
   moves?: Record<string, { playerId: string | null; until: number }>;
 }

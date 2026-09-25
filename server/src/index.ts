@@ -10,6 +10,7 @@
  * Client to room: {t:'send', to: peerId | peerId[], m}  ·  {t:'ping'}
  * Room to client: {t:'hello', self, peers}  ·  {t:'join', peer}  ·  {t:'leave', peer}  ·  {t:'msg', from, m}  ·  {t:'pong'}
  * HTTP: POST /flights {settings, controlTower, token} → {code}  ·  GET /board → the departures board (BoardFlight[])
+ *       /auth/… and /me: accounts (auth.ts, accounts.ts)
  */
 
 import { validateSettings } from '../../src/engine';
@@ -17,12 +18,17 @@ import { BOARD_STALE_MS, boardRow, isBoardFlight, sortBoard, type BoardFlight } 
 import { newFlightCode } from '../../src/net/code';
 import { HostSession, newHostSnapshot, type HostSnapshot } from '../../src/net/host';
 import { cleanSettings } from '../../src/net/protocol';
+import { flightResults } from '../../src/net/results';
+import { Accounts } from './accounts';
+import { handleAuth, type AuthEnv } from './auth';
 import { Emitter, type MessageHandler, type PeerHandler, type Transport } from '../../src/net/transport';
 
-interface Env {
+interface Env extends AuthEnv {
   ROOMS: DurableObjectNamespace;
   BOARD: DurableObjectNamespace;
 }
+
+export { Accounts };
 
 const ROOM_PATH = /^\/room\/([A-Za-z0-9-]{1,40})$/;
 const PEER_ID = /^[A-Za-z0-9_-]{6,48}$/;
@@ -61,6 +67,14 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === '/flights' && request.method === 'POST') return bookFlight(request, env);
+    if (url.pathname.startsWith('/auth/') || url.pathname === '/me') {
+      try {
+        const res = await handleAuth(request, env, json);
+        if (res) return res;
+      } catch {
+        return json({ ok: false, error: 'Something went wrong on the server. Try again.' }, 500);
+      }
+    }
     if (url.pathname === '/board' && request.method === 'GET') {
       const res = await board(env).fetch('https://board/list');
       return new Response(res.body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=5', ...CORS } });
@@ -320,8 +334,24 @@ export class Room implements DurableObject {
   private tick(): void {
     if (!this.host) return;
     this.host.tickNow();
+    this.recordResults();
     if (this.dirty && Date.now() - this.savedAt >= SAVE_MS) void this.save();
     this.report();
+  }
+
+  /** The flight has landed: everyone's result goes to their account (once per flight). */
+  private recordResults(): void {
+    const s = this.host?.snapshot;
+    if (!s?.game || s.statsFor === s.game.id) return;
+    const results = flightResults(s);
+    if (!results) return;
+    s.statsFor = s.game.id;
+    this.dirty = true;
+    if (results.length === 0) return;
+    const store = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName('accounts'));
+    void store.record(`${s.code}:${s.game.id}`, results).catch(() => {
+      // Lost this once; the flight goes on.
+    });
   }
 
   /** Keep the departures board up to date: this flight's row while it is listed and boarding, nothing otherwise. */

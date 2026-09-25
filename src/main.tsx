@@ -9,6 +9,8 @@ import './styles/base.css';
 import './styles/pages.css';
 import './styles/tv.css';
 import './styles/world.css';
+import { startAccountSync } from './app/account';
 import { App } from './app/App';
 
+startAccountSync();
 render(<App />, document.getElementById('app')!);

@@ -34,12 +34,22 @@ export function loadProfile(): Profile {
   return fresh;
 }
 
-export function saveProfile(profile: Profile): void {
+const saved = new Set<(profile: Profile) => void>();
+
+/** Hear about every change you make to your profile (your account keeps a copy; see account.ts). */
+export function onProfileSaved(fn: (profile: Profile) => void): () => void {
+  saved.add(fn);
+  return () => void saved.delete(fn);
+}
+
+/** Save the profile. `quiet`: it came from your account, so there is nothing to tell it. */
+export function saveProfile(profile: Profile, quiet = false): void {
   try {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   } catch {
     // Storage unavailable: the profile lives for this page only.
   }
+  if (!quiet) for (const fn of [...saved]) fn(profile);
 }
 
 export function rememberFlight(code: string): void {
