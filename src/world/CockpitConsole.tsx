@@ -99,6 +99,7 @@ export function CockpitConsole({ ctx, cabin, mode, onClose }: { ctx: TVContext; 
         </button>
       </div>
       <div class="cctv-screen" ref={screen}>
+        <canvas class="cctv-feed" aria-hidden="true" />
         <div class="cctv-tint" aria-hidden="true" />
         <div class="cctv-osd" aria-hidden="true">
           <span>{header}</span>

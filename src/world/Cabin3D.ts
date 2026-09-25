@@ -1448,7 +1448,27 @@ export class Cabin3D {
     this.cctv.nightVision.intensity = 0;
     renderer.autoClear = autoClear;
     renderer.shadowMap.autoUpdate = shadows;
+    this.copyFeed(view, r.left - box.left, r.top - box.top, w, h);
     this.placeTags(view, cam, w, h);
+  }
+
+  /**
+   * The console's own picture: a copy of what was just drawn, into the canvas inside its screen. (The console panel
+   * sits over the 3D view and hides it, so the feed has to be in the page itself.) It must happen right after drawing,
+   * while the frame is still there to copy.
+   */
+  private copyFeed(view: ConsoleView, left: number, top: number, w: number, h: number): void {
+    const feed = view.screen.querySelector<HTMLCanvasElement>('canvas.cctv-feed');
+    const g = feed?.getContext('2d');
+    if (!feed || !g) return;
+    const ratio = this.renderer.getPixelRatio();
+    const fw = Math.round(w * ratio);
+    const fh = Math.round(h * ratio);
+    if (feed.width !== fw || feed.height !== fh) {
+      feed.width = fw;
+      feed.height = fh;
+    }
+    g.drawImage(this.renderer.domElement, Math.round(left * ratio), Math.round(top * ratio), fw, fh, 0, 0, fw, fh);
   }
 
   /** Name tags (the console's `[data-cctv-tag]` elements) float over the heads the cameras see. */

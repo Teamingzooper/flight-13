@@ -1847,3 +1847,20 @@ button.sm-num.pick:hover {
   opacity: 1;
   border-color: var(--amber);
 }
+
+/* Saboteurs see their teammates on the vote. */
+.vote-card.ally {
+  border-color: rgba(255, 94, 98, 0.7);
+  background: linear-gradient(180deg, rgba(255, 94, 98, 0.12), rgba(255, 94, 98, 0.03));
+}
+
+.vote-ally {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 94, 98, 0.18);
+  color: var(--red);
+  font: 600 11px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

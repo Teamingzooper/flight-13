@@ -856,9 +856,10 @@
   color: var(--dim);
 }
 
-/* Transparent: the 3D view draws the camera right here, under the tint and the tags. */
+/* The camera picture is copied into the feed canvas each frame (tint and tags go on top). */
 .cctv-screen {
   position: relative;
+  background: #030605;
   width: 100%;
   aspect-ratio: 16 / 9;
   max-height: 62vh;
@@ -1000,4 +1001,93 @@
 
 .recorder-screen .cctv-log li {
   cursor: pointer;
+}
+
+.cctv-feed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* How you are, over the whole view. */
+.status-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  animation: status-in 1.2s ease both;
+}
+
+@keyframes status-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A ghost: the world drained of colour, a white haze closing in from the edges. */
+.status-fx.dead {
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0) 38%, rgba(232, 240, 255, 0.5) 78%, rgba(246, 249, 255, 0.85) 100%);
+  backdrop-filter: grayscale(0.85) brightness(1.08);
+}
+
+/* Drugged: nearly black, a small window that opens and closes like heavy eyelids, and everything soft. */
+.status-fx.asleep,
+.status-fx.knockedout {
+  backdrop-filter: blur(2.5px);
+}
+
+.status-fx.asleep::before,
+.status-fx.knockedout::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0) 0 7%, rgba(0, 0, 0, 0.88) 15%, #000 24%);
+  animation: status-doze 5.5s ease-in-out infinite;
+}
+
+.status-fx.knockedout {
+  backdrop-filter: blur(5px);
+}
+
+.status-fx.knockedout::before {
+  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.35) 0 4%, rgba(0, 0, 0, 0.95) 11%, #000 18%);
+  animation-duration: 9s;
+}
+
+@keyframes status-doze {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.55);
+  }
+  60% {
+    transform: scale(0.5);
+  }
+}
+
+/* Poisoned: a sickly green creeping in, in waves. */
+.status-fx.poisoned {
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(84, 170, 52, 0.42) 100%);
+  animation: status-in 1.2s ease both, status-sick 3.2s ease-in-out infinite;
+}
+
+@keyframes status-sick {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Restrained: a dark red edge, and the colour dulled. */
+.status-fx.restrained {
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 50%, rgba(110, 16, 16, 0.45) 100%);
+  backdrop-filter: saturate(0.6);
+}
+
+/* Buckled in: the seatbelt sign's amber at the edges. */
+.status-fx.buckled {
+  box-shadow: inset 0 0 90px rgba(255, 181, 71, 0.32);
 }

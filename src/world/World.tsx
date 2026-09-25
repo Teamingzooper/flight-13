@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { OpenFlight } from '../app/sessions';
-import { grid } from '../engine';
+import { grid, isNightPhase, type PlayerView } from '../engine';
 import type { ClientSnapshot } from '../net/client';
 import { EMOTES, canEmote } from '../net/emotes';
 import { CoursePicker, PaPanel } from '../tv/PilotPanels';
@@ -38,6 +38,19 @@ function useMuted(): [boolean, () => void] {
   const [muted, setMuted] = useState(cabinAudio.muted);
   useEffect(() => cabinAudio.subscribe(() => setMuted(cabinAudio.muted)), []);
   return [muted, () => cabinAudio.setMuted(!cabinAudio.muted)];
+}
+
+/** How you are, drawn over the whole view (worst first): a ghost's white haze, restraints, a drugged sleep closing in, out cold, poison, the seatbelt sign. */
+function statusFx(game: PlayerView): string | null {
+  const you = game.you;
+  if (!you) return null;
+  if (you.status === 'dead') return 'dead';
+  if (you.status === 'restrained') return 'restrained';
+  if (you.asleep) return 'asleep';
+  if (you.knockedOut) return 'knockedout';
+  if (you.poisoned) return 'poisoned';
+  if (you.buckled && isNightPhase(game.phase.kind)) return 'buckled';
+  return null;
 }
 
 /** The 3D cabin with a minimal HUD; lean into the seatback screen to use the TV. */
@@ -341,6 +354,16 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
   const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
+  const fx = statusFx(game);
+  // What the vignette means, said once in the hint line.
+  const fxHint =
+    fx === 'asleep'
+      ? 'Someone slipped you a sleeping pill. You are drifting off…'
+      : fx === 'knockedout'
+        ? 'You are out cold until morning.'
+        : fx === 'dead' && !scene
+          ? 'You are a ghost: watch on, and talk with the other ghosts.'
+          : null;
   // The captain's own reminders: which control wants him now.
   const captain = atTheControls(game) && !scene && !you?.buckled && !you?.knockedOut;
   const deckHint = !captain
@@ -369,9 +392,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         ? you?.inWashroom
           ? 'Searching the lavatory…'
           : 'Looking under your seat…'
-        : deckHint
-          ? deckHint
-          : needsInput
+        : fxHint
+          ? fxHint
+          : deckHint
+            ? deckHint
+            : needsInput
             ? `Your move: ${useIt}`
             : idleHint;
   const hasScreen = !!you?.seat && !scene;
@@ -379,6 +404,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   return (
     <div class={`world${leaning ? ' leaning' : ''}`}>
       <div class="world-canvas" ref={host} />
+      {fx && !cutscene && <div class={`status-fx ${fx}`} aria-hidden="true" />}
       {!leaning && (
         <div class="world-hud">
           {kind === 'boarding' && you && !skipped && (

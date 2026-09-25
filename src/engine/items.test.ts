@@ -166,7 +166,10 @@ describe('carry-on items', () => {
     advanceTo(s, 'night_act', 1);
     expect(use(s, 'p1', { item: 'pills', target: 'nurse' }).ok).toBe(false);
     act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 });
+    expect(viewFor(s, 'bomber', 0).you?.asleep).toBe(false);
     expect(use(s, 'p1', { item: 'pills', target: 'bomber' })).toEqual({ ok: true });
+    // The sleeper feels it at once (their screen darkens), though what they chose only fizzles at dawn.
+    expect(viewFor(s, 'bomber', 0).you?.asleep).toBe(true);
     advanceTo(s, 'dawn', 1);
     expect(s.bombs).toEqual([]);
     expect(player(s, 'bomber').bombsPlanted).toBe(0);
