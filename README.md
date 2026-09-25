@@ -42,6 +42,34 @@ It is deployed at `wss://flight13-relay.flight-13-relay.workers.dev` (the repo's
 For development, run `npm run dev` in `server/` too, and point the game at it in the browser console:
 `localStorage.setItem('flight13.relay', 'http://127.0.0.1:8787')` (`'off'` for direct connections).
 
+## Accounts
+
+With the game server, players can sign in (**Sign in to keep your progress** on the home page, or `#/account`).
+Your account keeps your passenger, your Duty Free bag and your player token (so your seats follow you to any device you
+sign in on). Flights the server runs add each player's result to their win rate by role.
+
+- **Email and password** work out of the box. Passwords are stored as PBKDF2 hashes, and emails only as SHA-256 hashes.
+  There is no email service, so forgotten passwords cannot be reset.
+- **Steam** works out of the box (OpenID). Optionally, `npx wrangler secret put STEAM_API_KEY` shows people's Steam
+  names instead of "Steam".
+- **Google, Discord and Epic Games** appear once you register an app with each and give the server its credentials.
+  Run these in `server/`; each asks for the value, so it never lands in your shell history.
+
+  | Provider | Register an app at | Redirect URL to register |
+  | --- | --- | --- |
+  | Google | Google Cloud console → APIs & Services → Credentials → OAuth client ID (Web application) | `https://flight13-relay.flight-13-relay.workers.dev/auth/google/callback` |
+  | Discord | discord.com/developers/applications → OAuth2 | `https://flight13-relay.flight-13-relay.workers.dev/auth/discord/callback` |
+  | Epic Games | dev.epicgames.com/portal → Epic Account Services → your application (Basic Profile permission) | `https://flight13-relay.flight-13-relay.workers.dev/auth/epic/callback` |
+
+  ```
+  npx wrangler secret put GOOGLE_CLIENT_ID
+  npx wrangler secret put GOOGLE_CLIENT_SECRET
+  ```
+
+  Likewise `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `EPIC_CLIENT_ID` and `EPIC_CLIENT_SECRET`. Each takes effect as
+  soon as it is set.
+- Sign-ins only return to the origins in `ALLOWED_ORIGINS` (`server/wrangler.jsonc`).
+
 ## Players can't join?
 
 Without the game server (above), the host's browser runs the flight and everyone connects to it directly

@@ -10,11 +10,17 @@
   "durable_objects": {
     "bindings": [
       { "name": "ROOMS", "class_name": "Room" },
-      { "name": "BOARD", "class_name": "Board" }
+      { "name": "BOARD", "class_name": "Board" },
+      { "name": "ACCOUNTS", "class_name": "Accounts" }
     ]
+  },
+  // Sign-ins may only return to the game. Provider app credentials are secrets (wrangler secret put GOOGLE_CLIENT_ID, …).
+  "vars": {
+    "ALLOWED_ORIGINS": "https://teamingzooper.github.io,http://localhost:5173,http://127.0.0.1:5173"
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Room"] },
-    { "tag": "v2", "new_sqlite_classes": ["Board"] }
+    { "tag": "v2", "new_sqlite_classes": ["Board"] },
+    { "tag": "v3", "new_sqlite_classes": ["Accounts"] }
   ]
 }

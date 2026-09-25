@@ -7,6 +7,7 @@ import { ProfileEditor } from '../ProfileEditor';
 import { navigate } from '../router';
 import { bookTutorial } from '../sessions';
 import { Credits } from '../../meta/Credits';
+import { accountsAvailable, useAccount } from '../account';
 import { Departures } from '../Departures';
 
 export function Home() {
@@ -15,6 +16,7 @@ export function Home() {
   const [error, setError] = useState<string | null>(null);
   const previous = lastFlight();
   const bag = useBag();
+  const { account } = useAccount();
 
   const update = (next: Profile) => {
     setProfile(next);
@@ -92,6 +94,11 @@ export function Home() {
               <span>Duty Free</span>
               <Credits amount={bag.credits} />
             </a>
+            {accountsAvailable() && (
+              <a class="account-link" href="#/account">
+                {account ? 'Your account & stats' : 'Sign in to keep your progress'}
+              </a>
+            )}
             {error && <p class="error-text">{error}</p>}
           </div>
         </div>

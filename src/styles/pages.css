@@ -1540,3 +1540,127 @@
 .df-accessory .df-item-top {
   justify-content: center;
 }
+
+/* ---------- Account ---------- */
+.account-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d6fb8;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.account-page .panel h2 {
+  font-size: 26px;
+}
+
+.provider-list {
+  display: grid;
+  gap: 8px;
+}
+
+.btn.provider {
+  justify-content: center;
+  width: 100%;
+}
+
+.email-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: #c6d3ec;
+}
+
+.stat-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.stat-value {
+  font: 700 28px var(--display);
+  color: var(--amber);
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.stats-table th {
+  padding: 6px 8px;
+  text-align: left;
+  font: 600 11px var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.stats-table td {
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.team-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.team-dot.passengers {
+  background: var(--cyan);
+}
+
+.team-dot.saboteurs {
+  background: var(--red);
+}
+
+.rate {
+  position: relative;
+  display: block;
+  min-width: 90px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.rate-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(255, 181, 71, 0.35), rgba(255, 181, 71, 0.7));
+}
+
+.rate-text {
+  position: relative;
+  padding-left: 8px;
+  font-weight: 600;
+  line-height: 20px;
+}
