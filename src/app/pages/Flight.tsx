@@ -13,7 +13,7 @@ import { ProfileEditor } from '../ProfileEditor';
 import { closeFlight, openFlight, type OpenFlight } from '../sessions';
 import { Boarding } from './Boarding';
 
-export function Flight({ code: raw }: { code: string }) {
+export function Flight({ code: raw, move }: { code: string; move?: string }) {
   const code = normalizeCode(raw);
   const [named, setNamed] = useState(() => loadProfile().name.trim().length > 0);
   if (!code) {
@@ -23,8 +23,9 @@ export function Flight({ code: raw }: { code: string }) {
       </Notice>
     );
   }
-  if (!named) return <NamePrompt code={code} onDone={() => setNamed(true)} />;
-  return <FlightSession key={code} code={code} />;
+  // (Moving your seat here from another device: the seat already has your name.)
+  if (!named && !move) return <NamePrompt code={code} onDone={() => setNamed(true)} />;
+  return <FlightSession key={code} code={code} move={move} />;
 }
 
 function NamePrompt({ code, onDone }: { code: string; onDone: () => void }) {
@@ -60,9 +61,13 @@ function NamePrompt({ code, onDone }: { code: string; onDone: () => void }) {
   );
 }
 
-function FlightSession({ code }: { code: string }) {
-  const flight = useMemo(() => openFlight(code), [code]);
-  useEffect(() => () => closeFlight(code), [code]);
+function FlightSession({ code, move }: { code: string; move?: string }) {
+  const flight = useMemo(() => openFlight(code, move), [code]);
+  useEffect(() => {
+    // The move link works once: a reload here should not try it again.
+    if (move) history.replaceState(null, '', `#/f/${code}`);
+    return () => closeFlight(code);
+  }, [code]);
   if (flight.kind === 'blocked') {
     return (
       <Notice title="This flight is open in another tab">
@@ -177,7 +182,7 @@ function Connected({ flight }: { flight: OpenFlight }) {
   const { state } = snap;
   if (snap.status === 'refused') {
     return (
-      <Notice title="You are not on this flight">
+      <Notice title={snap.reason?.startsWith('You moved') ? 'Your seat moved' : snap.reason?.startsWith('The captain ended') ? 'Flight over' : 'You are not on this flight'}>
         <p>{snap.reason ?? 'The host turned you away.'}</p>
       </Notice>
     );

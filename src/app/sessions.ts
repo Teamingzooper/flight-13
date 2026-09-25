@@ -70,8 +70,8 @@ export function bookTutorial(): string {
   return code;
 }
 
-/** Connect to a flight: as its host if this browser booked it, otherwise as a passenger. */
-export function openFlight(code: string): ActiveFlight {
+/** Connect to a flight: as its host if this browser booked it, otherwise as a passenger (`move`: taking over a seat). */
+export function openFlight(code: string, move?: string): ActiveFlight {
   if (active?.flight.code === code) return active.flight;
   if (active) closeFlight(active.flight.code);
   rememberFlight(code);
@@ -128,6 +128,7 @@ export function openFlight(code: string): ActiveFlight {
     name: profile.name,
     look: profile.look,
     face: profile.face,
+    move,
   });
   const flight: OpenFlight = { kind: 'ok', code, client, host: null, media: transport.media ? { channel: transport.media, selfId: transport.selfId } : null };
   exposeForDev(flight);

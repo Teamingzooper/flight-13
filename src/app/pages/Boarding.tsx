@@ -8,6 +8,7 @@ import { useToast } from '../hooks';
 import { NetworkNote, useNetwork } from '../Notice';
 import { loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
+import { MoveDevice } from '../MoveDevice';
 import { flightLink, navigate } from '../router';
 import { endFlight, type OpenFlight } from '../sessions';
 import { SettingsForm, describeRules } from '../SettingsForm';
@@ -21,6 +22,7 @@ const ROLE_CHOICES: { team: string; roles: RoleId[] }[] = [
 export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientState }) {
   const { client } = flight;
   const [editing, setEditing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [toast, showToast] = useToast();
   const network = useNetwork();
   const run = async (request: Promise<IntentResult>) => {
@@ -184,6 +186,11 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
         {state.isHost ? (
           <>
             <EndButton code={state.code} />
+            {!flight.host && (
+              <button class="btn ghost small" onClick={() => setMoving(true)}>
+                Move to another device
+              </button>
+            )}
             <span class="muted grow">{takeoffError ?? 'Everyone aboard? Close the doors to take off.'}</span>
             <button class="btn primary big" disabled={takeoffError !== null} onClick={() => run(client.command({ kind: 'takeoff' }))}>
               Close doors & take off
@@ -194,10 +201,14 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
             <button class="btn ghost small" onClick={() => navigate('/')}>
               Leave
             </button>
+            <button class="btn ghost small" onClick={() => setMoving(true)}>
+              Move to another device
+            </button>
             <span class="muted grow">Waiting for the captain to close the doors…</span>
           </>
         )}
       </footer>
+      {moving && <MoveDevice flight={flight} onClose={() => setMoving(false)} fixed />}
       {toast && (
         <div class="toast" role="alert">
           {toast}

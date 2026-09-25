@@ -26,6 +26,8 @@ import { isEmoteId, type EmoteId } from './emotes';
 import { cleanFace } from './face';
 
 export const PROTOCOL_VERSION = 1;
+/** Tickets to move a seat to another device: 20 letters and digits. */
+export const MOVE_TICKET = /^[a-z2-7]{20}$/;
 export const NAME_MAX_LENGTH = 16;
 
 /** Options per look slot; the avatar and 3D palettes are sized to match. */
@@ -109,7 +111,8 @@ export type HostCommand =
   | { kind: 'end' };
 
 export type ClientMessage =
-  | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean }
+  /** `move`: a ticket from your other device, to take over its seat (see HostSession.moveTicket). */
+  | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean; move?: string }
   | { t: 'intent'; seq: number; intent: Intent }
   | { t: 'lobbyChat'; seq: number; text: string }
   | { t: 'command'; seq: number; command: HostCommand }
@@ -119,12 +122,14 @@ export type ClientMessage =
   /** You turned voice chat on or off. */
   | { t: 'voice'; on: boolean }
   /** The Pilot pressed (or let go of) the PA button. */
-  | { t: 'pa'; on: boolean };
+  | { t: 'pa'; on: boolean }
+  /** Ask for a ticket to move your seat to another device (the ack carries it). */
+  | { t: 'move'; seq: number };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
   | { t: 'state'; state: ClientState }
-  | { t: 'ack'; seq: number; ok: boolean; error?: string }
+  | { t: 'ack'; seq: number; ok: boolean; error?: string; ticket?: string }
   | { t: 'refused'; reason: string }
   /** Everyone's latest pose: player id → [yaw, pitch, lean 0/1]. */
   | { t: 'poses'; poses: Record<string, [number, number, number]> }
@@ -281,6 +286,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
         look: cleanLook(raw.look),
         face: cleanFace(raw.face),
         tower: raw.tower === true,
+        ...(typeof raw.move === 'string' && MOVE_TICKET.test(raw.move) ? { move: raw.move } : {}),
       };
     case 'intent':
       if (!isInt(raw.seq) || !isObj(raw.intent) || typeof raw.intent.kind !== 'string') return null;
@@ -307,6 +313,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return typeof raw.on === 'boolean' ? { t: 'voice', on: raw.on } : null;
     case 'pa':
       return typeof raw.on === 'boolean' ? { t: 'pa', on: raw.on } : null;
+    case 'move':
+      return isInt(raw.seq) ? { t: 'move', seq: raw.seq } : null;
     default:
       return null;
   }

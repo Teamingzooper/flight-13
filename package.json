@@ -24,6 +24,7 @@
     "@trystero-p2p/torrent": "^0.25.4",
     "postprocessing": "^6.39.5",
     "preact": "^10.29.8",
+    "qrcode-generator": "^2.0.4",
     "three": "^0.186.0",
     "trystero": "^0.25.4"
   }

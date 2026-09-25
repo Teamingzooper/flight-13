@@ -1,6 +1,7 @@
 import type { VNode } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useNow, useToast } from '../app/hooks';
+import { MoveDevice } from '../app/MoveDevice';
 import { navigate } from '../app/router';
 import { endFlight, type OpenFlight } from '../app/sessions';
 import { isNightPhase, type ChatMessage, type Intent, type PhaseKind, type PlayerView } from '../engine';
@@ -194,9 +195,11 @@ function useUnread(game: PlayerView, reading: boolean): number {
 }
 
 export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => void }) {
+  const [moving, setMoving] = useState(false);
   // (A browser-hosted flight lives in the captain's tab; the server's carry on without anyone.)
   const hosting = flight.host !== null;
   const captain = hosting || !!flight.client.snapshot.state?.isHost;
+  if (moving) return <MoveDevice flight={flight} onClose={onStay} />;
   return (
     <div class="tv-overlay" role="dialog" aria-modal="true">
       <div class="tv-card">
@@ -215,6 +218,11 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
           <button class="btn ghost" onClick={() => navigate('/')}>
             Leave
           </button>
+          {!hosting && (
+            <button class="btn ghost" onClick={() => setMoving(true)}>
+              Move to another device
+            </button>
+          )}
           {captain && (
             <button
               class="btn danger"

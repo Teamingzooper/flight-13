@@ -3,6 +3,13 @@ import { isEmoteId, type EmoteId } from './emotes';
 import { PROTOCOL_VERSION, type ClientMessage, type ClientState, type HostCommand, type HostMessage, type Pose } from './protocol';
 import type { Transport } from './transport';
 
+/** The host's answer to a request. */
+interface Ack {
+  ok: boolean;
+  error?: string;
+  ticket?: string;
+}
+
 export type ClientStatus = 'searching' | 'joining' | 'joined' | 'refused' | 'lost';
 
 export interface ClientSnapshot {
@@ -24,6 +31,8 @@ export interface ClientOptions {
   /** Your painted face ('' for none). */
   face?: string;
   tower?: boolean;
+  /** A ticket from your other device: take over its seat (used once, for the first join). */
+  move?: string;
   now?: () => number;
   timeoutMs?: number;
 }
@@ -39,7 +48,8 @@ export class ClientSession {
   private emoteSeq = 0;
   private hostPeer: string | null = null;
   private seq = 0;
-  private readonly pending = new Map<number, (result: IntentResult) => void>();
+  private readonly pending = new Map<number, (ack: Ack) => void>();
+  private move: string | null;
   private readonly listeners = new Set<(snapshot: ClientSnapshot) => void>();
   private readonly offs: (() => void)[] = [];
   private profile: { name: string; look: Look; face: string };
@@ -48,6 +58,7 @@ export class ClientSession {
   constructor(private readonly opts: ClientOptions) {
     this.now = opts.now ?? Date.now;
     this.profile = { name: opts.name, look: opts.look, face: opts.face ?? '' };
+    this.move = opts.move ?? null;
     this.offs.push(
       opts.transport.onMessage((msg, peerId) => this.received(msg, peerId)),
       opts.transport.onPeerLeave((peerId) => {
@@ -78,6 +89,13 @@ export class ClientSession {
 
   command(command: HostCommand): Promise<IntentResult> {
     return this.request((seq) => ({ t: 'command', seq, command }));
+  }
+
+  /** A ticket to move your seat to another device (it opens the flight's link with it and takes your place). */
+  requestMove(): Promise<{ ok: true; ticket: string } | { ok: false; error: string }> {
+    return this.ask((seq) => ({ t: 'move', seq })).then((ack) =>
+      ack.ok && ack.ticket ? { ok: true, ticket: ack.ticket } : { ok: false, error: ack.error ?? 'Something went wrong.' },
+    );
   }
 
   /** Share where you are looking (fire and forget; the caller throttles). */
@@ -131,15 +149,18 @@ export class ClientSession {
     if (peerId !== this.hostPeer) return;
     switch (msg.t) {
       case 'state':
+        // (The seat is yours now: from here on your own token finds it.)
+        this.move = null;
         this.update({ status: 'joined', state: msg.state, receivedAt: this.now(), reason: null });
         break;
       case 'ack': {
         const resolve = this.pending.get(msg.seq);
         this.pending.delete(msg.seq);
-        resolve?.(msg.ok ? { ok: true } : { ok: false, error: msg.error ?? 'Something went wrong.' });
+        resolve?.(msg);
         break;
       }
       case 'refused':
+        this.move = null;
         this.update({ status: 'refused', reason: msg.reason });
         break;
       case 'faces':
@@ -168,11 +189,16 @@ export class ClientSession {
       look: this.profile.look,
       face: this.profile.face,
       tower: this.opts.tower ?? false,
+      ...(this.move ? { move: this.move } : {}),
     };
     this.opts.transport.send(this.hostPeer, join);
   }
 
   private request(build: (seq: number) => ClientMessage): Promise<IntentResult> {
+    return this.ask(build).then((ack) => (ack.ok ? { ok: true } : { ok: false, error: ack.error ?? 'Something went wrong.' }));
+  }
+
+  private ask(build: (seq: number) => ClientMessage): Promise<Ack> {
     const host = this.hostPeer;
     if (!host) return Promise.resolve({ ok: false, error: 'Not connected to the flight right now.' });
     const seq = ++this.seq;
@@ -180,9 +206,9 @@ export class ClientSession {
       const timer = setTimeout(() => {
         if (this.pending.delete(seq)) resolve({ ok: false, error: 'The host did not answer. Try again.' });
       }, this.opts.timeoutMs ?? 8000);
-      this.pending.set(seq, (result) => {
+      this.pending.set(seq, (ack) => {
         clearTimeout(timer);
-        resolve(result);
+        resolve(ack);
       });
       this.opts.transport.send(host, build(seq));
     });
