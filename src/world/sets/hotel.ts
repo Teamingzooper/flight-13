@@ -1,17 +1,21 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { ITEMS, ITEM_ORDER, MAX_PACKED, type ItemId } from '../../engine';
+import { SKIN, TOP } from '../../app/Avatar';
+import { ITEMS, ITEM_ORDER, MAX_PACKED, type ItemId, type Look } from '../../engine';
 import { ITEM_COLORS, whenLabel } from '../../meta/shop';
 import { cabinAudio } from '../audio';
+import { Arms, GRAB_POINT, PINCH_POINT, handFacing } from './arms';
 import { buildItem, disposeItem } from './items3d';
 
 /**
- * The night before the flight: a hotel room, your carry-on on the bed, and everything you own laid out
- * around it (the Sons of the Forest inventory: things on a mat, seen from above, picked up by hand).
- * You toss the bag onto the bed, it unzips and falls open, and the view leans in over the bed. Hover an
- * item to lift it and read about it; click to drop it into one of three pockets, click it again to take
- * it back out. When packing ends the lid comes down and the bag zips shut.
+ * The night before the flight: a hotel room, your carry-on on the bed, and everything you own laid out around it
+ * (the Sons of the Forest inventory: things on a mat, seen from above, picked up by hand). Nothing here moves unless
+ * your hands move it. The bag hangs from your hand; you swing it and throw it onto the bed. One hand steadies it
+ * while the other pinches the zip and pulls it round, then fingers catch the lid's lip, lift it past upright and let
+ * it fall open. Leaning over the bed, your hand follows the pointer: hover an item to read about it, click to have
+ * your hand pick it up and set it in one of three pockets (click it again to take it back out). When packing ends
+ * your hand flips the lid over, presses it shut, and zips it closed.
  */
 
 export interface HotelEvents {
@@ -51,9 +55,8 @@ const BAG = { w: 0.56, d: 0.38, h: 0.13, lid: 0.085, wall: 0.012, r: 0.045 };
 /** Where the lid rests once it has fallen open onto the duvet. */
 const LID_OPEN = -(Math.PI + 0.12);
 const SLOT_X = [-0.18, 0, 0.18];
-/** Props are shown a bit larger than life so they read well from above. */
-const ON_BED_SCALE = 1.35;
-const IN_BAG_SCALE = 1.08;
+/** Props are shown a bit larger than life so they read well from above (the same size in the hand and the bag). */
+const ITEM_SCALE = 1.2;
 /** The runner lying across the foot of the bed (items there rest on top of it). */
 const RUNNER = { z: -0.2, depth: 0.34, top: SURFACE + 0.008 };
 const groundAt = (z: number) => (Math.abs(z - RUNNER.z) < RUNNER.depth / 2 ? RUNNER.top : SURFACE);
@@ -564,10 +567,41 @@ const pose = (pos: THREE.Vector3, yaw: number, scale = 1): Pose => ({
   scale,
 });
 
+/** One thing your hand does with an item: pick it up where it lies, carry it, set it down at `to`. */
+interface Carry {
+  inst: Instance;
+  to: Pose;
+  phase: CarryPhase;
+  t: number;
+  /** Where the hand's grab point was, and how it was turned, when this phase began. */
+  from: THREE.Vector3;
+  fromQuat: THREE.Quaternion;
+}
+
+type CarryPhase = 'reach' | 'dip' | 'grab' | 'lift' | 'carry' | 'lower' | 'release' | 'rise';
+const CARRY_ORDER: readonly CarryPhase[] = ['reach', 'dip', 'grab', 'lift', 'carry', 'lower', 'release', 'rise'];
+const CARRY_TIME: Record<CarryPhase, number> = { reach: 0.28, dip: 0.13, grab: 0.1, lift: 0.14, carry: 0.4, lower: 0.15, release: 0.1, rise: 0.16 };
+/** How high the hand floats over the duvet while you look for something, and how high it lifts what it holds. */
+const HOVER_HEIGHT = 0.16;
+const CARRY_HEIGHT = 0.14;
+/** Seconds a thrown bag is in the air. */
+const FLIGHT = 0.5;
+const GRAVITY = new THREE.Vector3(0, -9.81, 0);
+/** Where your hand holds the bag: the top of the side handle, in the bag's own frame. */
+const HANDLE = new THREE.Vector3(BAG.w / 2 + 0.004, 0.07 + 0.045, 0);
+/** Where fingers catch the lid to lift it: under the front lip, in the lid's own frame. */
+const LID_LIP = new THREE.Vector3(0, BAG.lid * 0.45, BAG.d + 0.012);
+const DOWN = new THREE.Vector3(0, -1, 0);
+/** The bag's handle sits in the curled fingers. */
+const HANDLE_GRIP = GRAB_POINT;
+
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
 export class HotelSet {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.02, 30);
   private readonly bag: Suitcase;
+  private readonly arms = new Arms();
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2(0, 0);
   private readonly look = new THREE.Vector2(0, 0);
@@ -586,10 +620,31 @@ export class HotelSet {
   private down: { x: number; y: number } | null = null;
   private pointerInside = false;
   private time = 0;
-  private readonly bagHand = new THREE.Vector3();
   private closedSent = false;
   /** One-shot sounds already played in the current stage. */
   private readonly fired = new Set<string>();
+  /** What your hand is doing with items, one after another. */
+  private carries: Carry[] = [];
+  /** The item in your hand, and where it sits in the hand. */
+  private held: { inst: Instance; local: THREE.Matrix4 } | null = null;
+  /** The lid's angle on its hinge, and how far round the zip pull is (0 shut, 1 all the way open). */
+  private lidAngle = 0;
+  private zip = 0;
+  /** A lid let go of mid-swing, falling the rest of the way open. */
+  private lidFall: { from: number; t: number } | null = null;
+  /** The bag in your hand until you let go of it, then in the air until it lands. */
+  private bagInHand = true;
+  private flight: { from: THREE.Vector3; v: THREE.Vector3; quat: THREE.Quaternion; t: number } | null = null;
+  /** The bag swinging from your hand, about the view's forward and sideways axes. */
+  private readonly swing = new THREE.Vector2();
+  private readonly swingVel = new THREE.Vector2();
+  /** How far you are leaning in over the bed, 0 to 1. */
+  private lean = 0;
+  private shake = 0;
+  /** Something your eyes follow (the bag in the air), or null. */
+  private focus: THREE.Vector3 | null = null;
+  /** Points round the zip, in the bag's frame, for finding where a hand has pulled it to. */
+  private readonly zipSamples: THREE.Vector3[];
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -605,7 +660,8 @@ export class HotelSet {
     buildRoom(this.scene);
     this.bag = buildSuitcase();
     this.scene.add(this.bag.group);
-    this.scene.add(this.camera);
+    this.scene.add(this.camera, this.arms.group);
+    this.zipSamples = Array.from({ length: 97 }, (_, i) => this.bag.zipper.getPointAt(i / 96));
 
     this.tip.className = 'hotel-tip';
     this.tip.hidden = true;
@@ -627,7 +683,7 @@ export class HotelSet {
       this.setPointer(e);
       this.pointerInside = true;
       this.down = { x: e.clientX, y: e.clientY };
-      // Touch has no hover: pick up what is under the finger straight away.
+      // Touch has no hover: find what is under the finger straight away.
       this.updateHover();
     });
     listen<PointerEvent>('pointerup', (e) => {
@@ -639,8 +695,13 @@ export class HotelSet {
       this.pick();
     });
 
-    this.placeBagInHand();
-    this.applyCamera(0);
+    this.applyCamera();
+    this.placeHandsAtStart();
+  }
+
+  /** Your hands and sleeves: your skin, and your top's colour (a T-shirt or tank top leaves the forearms bare). */
+  setLook(look: Look): void {
+    this.arms.setLook(SKIN[look.skin] ?? SKIN[0], TOP[look.top] ?? TOP[0], look.topStyle === 1 || look.topStyle === 3);
   }
 
   /** How many of each item you own (what lies on the bed). */
@@ -650,7 +711,7 @@ export class HotelSet {
     this.rebuild();
   }
 
-  /** What is in the bag, slot by slot; items fly in or out to match. */
+  /** What is in the bag, slot by slot: your hand moves things in or out to match. */
   setPacked(packed: readonly ItemId[]): void {
     this.packed = [...packed];
     this.assignSlots(true);
@@ -662,18 +723,32 @@ export class HotelSet {
     if (!on) this.setHover(null);
   }
 
-  /** Toss the bag onto the bed and open it (once). */
+  /** Throw the bag onto the bed and open it (once). */
   start(): void {
     if (this.stage !== 'wait') return;
     this.goto('toss');
-    cabinAudio.whoosh();
   }
 
-  /** Lid down, zip up; `onClosed` fires when it is done. */
+  /** Flip the lid shut and zip it up; `onClosed` fires when your hands are done. */
   close(): void {
     if (this.stage === 'closing' || this.stage === 'closed') return;
-    // Skipped straight to the end (joined late): the bag is simply on the bed, shut.
-    if (this.stage === 'wait' || this.stage === 'toss' || this.stage === 'land') this.restBag();
+    // Joined late, or packing ended before the bag was even open: it is simply on the bed, shut.
+    if (this.stage === 'wait' || this.stage === 'toss' || this.stage === 'land' || this.stage === 'unzip') {
+      this.flight = null;
+      this.bagInHand = false;
+      this.restBag();
+      this.lidAngle = 0;
+      this.zip = 0;
+      this.finishCarries();
+      this.setHover(null);
+      this.interactive = false;
+      this.goto('closed');
+      this.sendClosed();
+      return;
+    }
+    this.finishCarries();
+    this.lidFall = null;
+    this.lidAngle = LID_OPEN;
     this.setHover(null);
     this.interactive = false;
     this.goto('closing');
@@ -689,11 +764,10 @@ export class HotelSet {
     if (kind !== this.layoutKind) {
       this.layoutKind = kind;
       this.layout = layoutFor(kind);
+      this.finishCarries();
       for (const inst of this.instances) inst.home = this.homePose(inst.item, inst.copy);
-      if (this.stage === 'wait' || this.stage === 'toss') this.placeBagInHand();
-      else this.restBag();
-      this.assignSlots(true);
-      for (const inst of this.instances) if (inst.slot === null) this.travel(inst, inst.home);
+      if (!this.bagInHand) this.restBag();
+      for (const inst of this.instances) this.place(inst, inst.slot === null ? inst.home : this.slotPose(inst.slot));
     }
     this.camera.aspect = this.aspect;
     this.camera.updateProjectionMatrix();
@@ -702,9 +776,16 @@ export class HotelSet {
   update(dt: number, time: number): void {
     this.time = time;
     this.stageTime += dt;
-    this.runStage();
-    for (const inst of this.instances) this.animate(inst, dt);
+    // What the hands aim for, then where the eyes are, then the hands themselves, then whatever they hold.
+    this.runStage(dt);
+    this.applyCamera();
+    const facing = new THREE.Vector3();
+    this.camera.getWorldDirection(facing);
+    this.arms.update(dt, this.camera.position, facing);
+    this.applyHolds(dt);
+    for (const inst of this.instances) this.glow(inst, dt);
     if (this.pointerInside && this.stage === 'ready') this.updateHover();
+    this.dom.style.cursor = this.pointerInside && this.stage === 'ready' && this.interactive ? 'none' : '';
     this.placeTip();
   }
 
@@ -713,6 +794,7 @@ export class HotelSet {
     this.tip.remove();
     this.dom.style.cursor = '';
     for (const inst of this.instances) disposeItem(inst.root);
+    this.arms.dispose();
     this.scene.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       o.geometry.dispose();
@@ -739,20 +821,417 @@ export class HotelSet {
     play();
   }
 
-  private placeBagInHand(): void {
-    const stand = this.layout.stand;
-    this.bagHand.copy(stand.pos).add(new THREE.Vector3(0.36, -0.64, -0.68));
-    this.bag.group.position.copy(this.bagHand);
-    this.bag.group.quaternion.setFromEuler(new THREE.Euler(0.25, -0.6, 1.35));
-    this.bag.group.scale.set(1, 1, 1);
-    this.bag.lid.rotation.x = 0;
-    this.placePull(0);
+  private sendClosed(): void {
+    if (this.closedSent) return;
+    this.closedSent = true;
+    this.events.onClosed?.();
+  }
+
+  /** A point in front of your eyes: x to the right, y up, z towards you (so -z is ahead). */
+  private eye(x: number, y: number, z: number): THREE.Vector3 {
+    this.camera.updateMatrixWorld();
+    return this.camera.localToWorld(new THREE.Vector3(x, y, z));
+  }
+
+  /** Straight ahead, level with the floor. */
+  private ahead(): THREE.Vector3 {
+    const f = new THREE.Vector3();
+    this.camera.getWorldDirection(f);
+    f.y = 0;
+    return f.lengthSq() < 1e-6 ? new THREE.Vector3(0, 0, -1) : f.normalize();
+  }
+
+  /** Palm down, fingers pointing ahead: reaching for things on the bed. */
+  private palmDown(): THREE.Quaternion {
+    return handFacing(this.ahead(), DOWN);
+  }
+
+  /** Where a hand waits when it has nothing to do: down at your side, out of sight. */
+  private rest(side: 'left' | 'right'): THREE.Vector3 {
+    const s = side === 'right' ? 1 : -1;
+    return this.eye(0.34 * s, -0.46, 0.22);
+  }
+
+  /** Holding the bag, before you throw it: low on your right, the bag hanging from your hand. */
+  private carryPoint(): THREE.Vector3 {
+    return this.eye(0.27, -0.31, -0.58).add(new THREE.Vector3(0, Math.sin(this.time * 1.7) * 0.008, 0));
+  }
+
+  private placeHandsAtStart(): void {
+    this.arms.right.snap(this.carryPoint(), this.palmDown());
+    this.arms.right.targetGrip = this.arms.right.grip = 1;
+    const rest = this.rest('left');
+    this.arms.left.snap(rest, this.palmDown());
+    this.bagInHand = true;
+    this.lidAngle = 0;
+    this.zip = 0;
+    this.applyHolds(0);
   }
 
   private restBag(): void {
     this.bag.group.position.copy(this.layout.bag);
     this.bag.group.quaternion.identity();
     this.bag.group.scale.set(1, 1, 1);
+  }
+
+  /** The lid's catch point in the world, for a lid angle. */
+  private lipAt(angle: number): { point: THREE.Vector3; quat: THREE.Quaternion } {
+    const was = this.bag.lid.rotation.x;
+    this.bag.lid.rotation.x = angle;
+    this.bag.group.updateMatrixWorld(true);
+    const point = this.bag.lid.localToWorld(LID_LIP.clone());
+    const lidQuat = new THREE.Quaternion();
+    this.bag.lid.getWorldQuaternion(lidQuat);
+    this.bag.lid.rotation.x = was;
+    this.bag.group.updateMatrixWorld(true);
+    // Fingers over the lid towards the hinge, palm on its top.
+    const quat = lidQuat.multiply(handFacing(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, -1, 0)));
+    return { point, quat };
+  }
+
+  /** The lid angle that puts its lip nearest `point` (a hand lifting the lid turns it about the hinge). */
+  private lidAngleFor(point: THREE.Vector3): number {
+    this.bag.group.updateMatrixWorld(true);
+    const local = this.bag.group.worldToLocal(point.clone());
+    const hinge = this.bag.lid.position;
+    const dy = local.y - hinge.y;
+    const dz = local.z - hinge.z;
+    // The lip sits at LID_LIP from the hinge; turning the lid by a about x moves it from angle θ0 to θ0 - a (in the
+    // hinge's z-y plane). Opening turns it negative, past -π when it lies open behind the bag.
+    const lipAngle = Math.atan2(LID_LIP.y, LID_LIP.z);
+    let angle = lipAngle - Math.atan2(dy, dz);
+    if (angle > 0.5) angle -= 2 * Math.PI;
+    return Math.max(LID_OPEN, Math.min(0, angle));
+  }
+
+  /** The zip pull's place along the zip, for u, in the world; and which way the zip runs there. */
+  private pullAt(u: number): { point: THREE.Vector3; along: THREE.Vector3 } {
+    this.bag.group.updateMatrixWorld(true);
+    const p = this.bag.zipper.getPointAt(clamp01(u));
+    const q = this.bag.zipper.getPointAt(clamp01(clamp01(u) + 0.01));
+    const point = this.bag.group.localToWorld(p.clone().add(new THREE.Vector3(0, 0.006, 0)));
+    const along = this.bag.group.localToWorld(q.clone()).sub(this.bag.group.localToWorld(p.clone())).normalize();
+    return { point, along };
+  }
+
+  /** How far round the zip a hand at `point` has pulled it. */
+  private zipFor(point: THREE.Vector3): number {
+    this.bag.group.updateMatrixWorld(true);
+    const local = this.bag.group.worldToLocal(point.clone());
+    let best = 0;
+    let bestD = Infinity;
+    this.zipSamples.forEach((s, i) => {
+      const d = s.distanceToSquared(local);
+      if (d < bestD) {
+        bestD = d;
+        best = i / (this.zipSamples.length - 1);
+      }
+    });
+    return best;
+  }
+
+  private runStage(dt: number): void {
+    this.bag.group.updateMatrixWorld(true);
+    const t = this.stageTime;
+    const right = this.arms.right;
+    const left = this.arms.left;
+    this.focus = null;
+    this.shake *= Math.exp(-dt * 9);
+    switch (this.stage) {
+      case 'wait': {
+        this.lean = 0;
+        right.stiffness = 70;
+        right.reach(this.carryPoint(), this.palmDown(), HANDLE_GRIP);
+        right.targetGrip = 1;
+        left.stiffness = 60;
+        left.reach(this.rest('left'), this.palmDown());
+        break;
+      }
+      case 'toss': {
+        this.lean = 0;
+        const home = this.carryPoint();
+        const wind = 0.34;
+        if (t < wind) {
+          // The wind-up: the arm swings back and down, the bag with it.
+          const k = ease(t / wind);
+          right.stiffness = 140;
+          right.reach(home.clone().add(this.offsetInView(0.03 * k, -0.13 * k, 0.16 * k)), this.palmDown(), HANDLE_GRIP);
+        } else if (this.bagInHand) {
+          // The swing: forward and up at the bed, letting go near the top.
+          const k = easeOut(clamp01((t - wind) / 0.2));
+          right.stiffness = 260;
+          right.reach(home.clone().add(this.offsetInView(0.03 - 0.1 * k, -0.13 + 0.3 * k, 0.16 - 0.56 * k)), this.palmDown(), HANDLE_GRIP);
+          if (t >= wind + 0.15) this.letGoOfBag();
+        } else {
+          // Follow-through, then the arm drops away out of sight.
+          const k = smooth(clamp01((t - 0.5) / 0.45));
+          right.stiffness = 90;
+          right.targetGrip = 0;
+          right.reach(home.clone().add(this.offsetInView(-0.07, 0.17 - 0.3 * k, -0.4 + 0.2 * k)).lerp(this.rest('right'), k * k), this.palmDown());
+        }
+        if (this.flight) this.focus = this.bag.group.position;
+        left.reach(this.rest('left'), this.palmDown());
+        break;
+      }
+      case 'land': {
+        this.lean = 0;
+        right.reach(this.rest('right'), this.palmDown());
+        left.reach(this.rest('left'), this.palmDown());
+        if (t > 0.5) this.goto('unzip');
+        break;
+      }
+      case 'unzip': {
+        // You step up to the bed: one hand steadies the lid, the other pinches the zip and pulls it round.
+        this.lean = 0.55 * smooth(clamp01(t / 0.7));
+        left.stiffness = 70;
+        left.targetGrip = 0.15;
+        left.reach(this.bag.group.localToWorld(new THREE.Vector3(-0.13, BAG.h + BAG.lid + 0.004, 0.04)), this.palmDown());
+        const start = this.pullAt(0);
+        right.targetPinch = t > 0.45 ? 1 : 0;
+        right.targetGrip = 0;
+        if (t < 0.55) {
+          right.stiffness = 90;
+          right.reach(start.point, handFacing(start.along, DOWN), PINCH_POINT);
+        } else if (t < 1.55) {
+          if (t < 0.6) this.once('zip', () => cabinAudio.zipper(0.95));
+          const u = smooth(clamp01((t - 0.55) / 0.95));
+          const at = this.pullAt(u);
+          right.stiffness = 220;
+          right.reach(at.point, handFacing(at.along, DOWN), PINCH_POINT);
+        } else {
+          right.targetPinch = 0;
+          const at = this.pullAt(1);
+          right.reach(at.point.add(new THREE.Vector3(0, 0.05, 0)), handFacing(at.along, DOWN), PINCH_POINT);
+        }
+        if (t > 1.7) this.goto('open');
+        break;
+      }
+      case 'open': {
+        // Fingers under the lip, the lid lifted past upright, then let go to fall open onto the duvet.
+        this.lean = 0.55 + 0.25 * smooth(clamp01(t / 0.9));
+        left.reach(this.rest('left'), this.palmDown());
+        const lift = 0.24;
+        const let_go = 0.72;
+        if (t < lift) {
+          const lip = this.lipAt(0);
+          right.stiffness = 110;
+          right.targetGrip = t > lift * 0.7 ? 0.7 : 0;
+          right.reach(lip.point, lip.quat);
+        } else if (t < let_go) {
+          const angle = -1.95 * ease(clamp01((t - lift) / (let_go - lift)));
+          const lip = this.lipAt(angle);
+          right.stiffness = 200;
+          right.targetGrip = 0.7;
+          right.reach(lip.point, lip.quat);
+        } else {
+          if (!this.lidFall) this.lidFall = { from: this.lidAngle, t: 0 };
+          right.targetGrip = 0;
+          right.stiffness = 70;
+          right.reach(this.hoverRest(), this.palmDown());
+        }
+        if (t > 1.15) this.goto('enter');
+        break;
+      }
+      case 'enter': {
+        this.lean = 0.8 + 0.2 * smooth(clamp01(t / 0.6));
+        this.arms.right.stiffness = 70;
+        right.reach(this.hoverRest(), this.palmDown());
+        left.reach(this.rest('left'), this.palmDown());
+        if (t > 0.6) this.goto('ready');
+        break;
+      }
+      case 'ready': {
+        this.lean = 1;
+        left.reach(this.rest('left'), this.palmDown());
+        this.runCarries(dt);
+        break;
+      }
+      case 'closing': {
+        this.lean = 1;
+        this.runClosing(t);
+        break;
+      }
+      case 'closed': {
+        this.lean = 1;
+        right.targetGrip = 0;
+        right.targetPinch = 0;
+        right.reach(this.rest('right'), this.palmDown());
+        left.reach(this.rest('left'), this.palmDown());
+        break;
+      }
+    }
+  }
+
+  /** Lid flipped over and pressed shut, then zipped round, then hands away. */
+  private runClosing(t: number): void {
+    const right = this.arms.right;
+    const left = this.arms.left;
+    const reachLid = 0.36;
+    const flipped = 1.0;
+    const pressed = 1.16;
+    const toPull = 1.36;
+    const zipped = 2.1;
+    if (t < reachLid) {
+      const lip = this.lipAt(LID_OPEN);
+      right.stiffness = 100;
+      right.targetGrip = t > reachLid * 0.7 ? 0.7 : 0;
+      right.reach(lip.point, lip.quat);
+      left.reach(this.rest('left'), this.palmDown());
+    } else if (t < flipped) {
+      const k = ease(clamp01((t - reachLid) / (flipped - reachLid)));
+      const lip = this.lipAt(LID_OPEN * (1 - k));
+      right.stiffness = 200;
+      right.targetGrip = 0.7;
+      right.reach(lip.point, lip.quat);
+    } else if (t < pressed) {
+      // A firm press on the closed lid.
+      const lip = this.lipAt(0);
+      right.targetGrip = 0;
+      right.reach(lip.point.add(new THREE.Vector3(0, -0.012, -0.08)), this.palmDown());
+      this.once('shut', () => {
+        cabinAudio.thud(0.6);
+        this.shake = 0.004;
+      });
+    } else {
+      // The left hand holds the lid down; the right runs the zip back round.
+      left.stiffness = 80;
+      left.targetGrip = 0.15;
+      left.reach(this.bag.group.localToWorld(new THREE.Vector3(-0.13, BAG.h + BAG.lid + 0.004, 0.04)), this.palmDown());
+      if (t < toPull) {
+        const end = this.pullAt(1);
+        right.stiffness = 100;
+        right.targetPinch = t > toPull - 0.08 ? 1 : 0;
+        right.reach(end.point, handFacing(end.along.clone().negate(), DOWN), PINCH_POINT);
+      } else if (t < zipped + 0.25) {
+        // (Held a moment at the end, so the hand really gets the pull there before letting go.)
+        this.once('zip', () => cabinAudio.zipper(0.7));
+        // (Aimed a touch past the end, so the pull really gets there.)
+        const u = 1 - 1.06 * smooth(clamp01((t - toPull) / (zipped - toPull)));
+        const at = this.pullAt(u);
+        right.stiffness = 220;
+        right.targetPinch = 1;
+        right.reach(at.point, handFacing(at.along.clone().negate(), DOWN), PINCH_POINT);
+      } else {
+        right.targetPinch = 0;
+        right.reach(this.rest('right'), this.palmDown());
+        left.reach(this.rest('left'), this.palmDown());
+      }
+    }
+    if (t > 2.6) {
+      this.goto('closed');
+      this.sendClosed();
+    }
+  }
+
+  /** Let go of the bag mid-swing: it flies on from there and lands on the bed. */
+  private letGoOfBag(): void {
+    if (!this.bagInHand) return;
+    this.bagInHand = false;
+    this.arms.right.targetGrip = 0;
+    const from = this.bag.group.position.clone();
+    const to = this.layout.bag.clone();
+    // The throw that carries it there in FLIGHT seconds (your swing, aimed at the middle of the bed).
+    const v = to.sub(from).sub(GRAVITY.clone().multiplyScalar(0.5 * FLIGHT * FLIGHT)).divideScalar(FLIGHT);
+    this.flight = { from, v, quat: this.bag.group.quaternion.clone(), t: 0 };
+    cabinAudio.whoosh();
+  }
+
+  /** A vector in the view's frame (x right, y up, z towards you), in the world. */
+  private offsetInView(x: number, y: number, z: number): THREE.Vector3 {
+    const q = new THREE.Quaternion();
+    this.camera.getWorldQuaternion(q);
+    return new THREE.Vector3(x, y, z).applyQuaternion(q);
+  }
+
+  /** Where the hand floats over the middle of the bed while you think. */
+  private hoverRest(): THREE.Vector3 {
+    return this.layout.view.target.clone().add(new THREE.Vector3(0.12, HOVER_HEIGHT - 0.02, 0.22));
+  }
+
+  /** Whatever the hands hold moves with them: the bag, the zip pull, the lid, an item. */
+  private applyHolds(dt: number): void {
+    const right = this.arms.right;
+    const bag = this.bag.group;
+    // The bag hanging from your hand, swinging a little as the hand moves.
+    if (this.bagInHand) {
+      const v = right.velocity;
+      const side = this.offsetInView(1, 0, 0);
+      const fwd = this.offsetInView(0, 0, -1);
+      this.swingVel.x += (-42 * this.swing.x - 5.5 * this.swingVel.x - v.dot(side) * 7) * dt;
+      this.swingVel.y += (-42 * this.swing.y - 5.5 * this.swingVel.y + v.dot(fwd) * 7) * dt;
+      this.swing.addScaledVector(this.swingVel, dt);
+      const up = new THREE.Vector3(0, 1, 0);
+      const across = new THREE.Vector3().crossVectors(this.ahead(), up).normalize();
+      const face = new THREE.Vector3().crossVectors(across, up).normalize();
+      const hang = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(up, face, across));
+      const sway = new THREE.Quaternion()
+        .setFromAxisAngle(this.ahead(), this.swing.x * 0.6)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(across, this.swing.y * 0.6));
+      bag.quaternion.copy(sway.multiply(hang));
+      bag.position.copy(right.point(HANDLE_GRIP)).sub(HANDLE.clone().applyQuaternion(bag.quaternion));
+    } else if (this.flight) {
+      const f = this.flight;
+      f.t += dt;
+      const k = Math.min(f.t, FLIGHT);
+      bag.position.copy(f.from).addScaledVector(f.v, k).addScaledVector(GRAVITY, 0.5 * k * k);
+      const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), (1 - smooth(k / FLIGHT)) * 0.7);
+      bag.quaternion.slerpQuaternions(f.quat, new THREE.Quaternion(), smooth(k / FLIGHT)).premultiply(spin);
+      if (f.t >= FLIGHT) {
+        this.flight = null;
+        this.restBag();
+        cabinAudio.thud(1);
+        this.shake = 0.012;
+        this.goto('land');
+      }
+    } else if (this.stage === 'land') {
+      // A bounce on the springs, the shell squashing into the duvet.
+      const t = this.stageTime;
+      this.restBag();
+      bag.position.y += 0.03 * Math.exp(-9 * t) * Math.abs(Math.sin(16 * t));
+      bag.scale.y = 1 - 0.07 * Math.exp(-11 * t) * Math.cos(20 * t);
+    } else if (this.stage === 'closing' && this.stageTime >= 1.0 && this.stageTime < 1.3) {
+      // Squashed a touch under the press.
+      const k = (this.stageTime - 1.0) / 0.3;
+      this.restBag();
+      bag.scale.y = 1 - 0.035 * Math.sin(Math.PI * k);
+    } else {
+      bag.scale.y = 1;
+    }
+
+    // The zip pull goes where a pinching hand pulls it (and stays put otherwise).
+    if (right.pinch > 0.6) {
+      const u = this.zipFor(right.point(PINCH_POINT));
+      this.zip = this.stage === 'closing' ? Math.min(this.zip, u) : Math.max(this.zip, u);
+    }
+    this.placePull(this.zip);
+
+    // The lid turns only when fingers hold its lip (or when it was let go of and falls the rest of the way).
+    if (this.lidFall) {
+      const f = this.lidFall;
+      f.t += dt;
+      const k = Math.min(1, (f.t / 0.3) ** 2);
+      this.lidAngle = f.from + (LID_OPEN - f.from) * k;
+      if (k >= 1) {
+        const bounce = 0.07 * Math.exp(-8 * (f.t - 0.3)) * Math.abs(Math.sin(14 * (f.t - 0.3)));
+        this.lidAngle = LID_OPEN + bounce;
+        this.once('lid', () => cabinAudio.thud(0.45));
+        if (f.t > 0.9) {
+          this.lidFall = null;
+          this.lidAngle = LID_OPEN;
+        }
+      }
+    } else if (right.grip > 0.5 && (this.stage === 'open' || (this.stage === 'closing' && this.stageTime < 1.02))) {
+      this.lidAngle = this.lidAngleFor(right.point());
+    } else if (this.stage === 'closing' && this.stageTime >= 1.02) {
+      this.lidAngle = 0;
+    }
+    this.bag.lid.rotation.x = this.lidAngle;
+
+    // An item in your hand goes wherever your hand does.
+    if (this.held) {
+      const m = right.matrix().multiply(this.held.local);
+      m.decompose(this.held.inst.root.position, this.held.inst.root.quaternion, new THREE.Vector3());
+    }
   }
 
   private placePull(u: number): void {
@@ -762,118 +1241,30 @@ export class HotelSet {
     this.bag.pull.rotation.set(0, Math.atan2(ahead.x - p.x, ahead.z - p.z), 0);
   }
 
-  private runStage(): void {
-    const t = this.stageTime;
-    const bag = this.bag.group;
-    switch (this.stage) {
-      case 'wait': {
-        // The bag in your hand sways a little while you read your boarding pass.
-        bag.position.copy(this.bagHand).add(new THREE.Vector3(0, Math.sin(this.time * 1.7) * 0.01, 0));
-        this.applyCamera(0);
-        break;
-      }
-      case 'toss': {
-        const d = 0.78;
-        const k = clamp01(t / d);
-        const rest = this.layout.bag;
-        bag.position.lerpVectors(this.bagHand, rest, k);
-        bag.position.y += 0.42 * 4 * k * (1 - k);
-        const from = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.25, -0.6, 1.35));
-        const spin = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (1 - smooth(k)) * 0.9, 0));
-        bag.quaternion.slerpQuaternions(from, new THREE.Quaternion(), smooth(k)).premultiply(spin);
-        this.applyCamera(0);
-        if (k >= 1) {
-          this.goto('land');
-          cabinAudio.thud(1);
-        }
-        break;
-      }
-      case 'land': {
-        this.restBag();
-        // A bounce on the springs, and the shell squashing into the duvet.
-        bag.position.y += 0.03 * Math.exp(-9 * t) * Math.abs(Math.sin(16 * t));
-        bag.scale.y = 1 - 0.07 * Math.exp(-11 * t) * Math.cos(20 * t);
-        this.applyCamera(0, 0.012 * Math.exp(-10 * t));
-        if (t > 0.45) {
-          bag.scale.y = 1;
-          this.goto('unzip');
-          cabinAudio.zipper(0.95);
-        }
-        break;
-      }
-      case 'unzip': {
-        this.placePull(smooth(clamp01(t / 0.95)));
-        this.applyCamera(0);
-        if (t > 1.05) this.goto('open');
-        break;
-      }
-      case 'open': {
-        const k = clamp01(t / 0.62);
-        const swing = k < 1 ? LID_OPEN * (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2) : LID_OPEN;
-        // It flops onto the duvet with a little bounce.
-        const bounce = k >= 1 ? 0.07 * Math.exp(-8 * (t - 0.62)) * Math.abs(Math.sin(14 * (t - 0.62))) : 0;
-        this.bag.lid.rotation.x = swing + bounce;
-        if (k >= 1) this.once('lid', () => cabinAudio.thud(0.45));
-        this.applyCamera(0);
-        if (t > 0.95) this.goto('enter');
-        break;
-      }
-      case 'enter': {
-        this.bag.lid.rotation.x = LID_OPEN;
-        this.applyCamera(smooth(clamp01(t / 0.9)));
-        if (t > 0.9) this.goto('ready');
-        break;
-      }
-      case 'ready':
-        this.bag.lid.rotation.x = LID_OPEN;
-        this.applyCamera(1);
-        break;
-      case 'closing': {
-        const k = clamp01(t / 0.6);
-        this.bag.lid.rotation.x = LID_OPEN * (1 - smooth(k));
-        if (k >= 1) this.once('shut', () => cabinAudio.thud(0.6));
-        if (t > 0.65) {
-          this.placePull(1 - smooth(clamp01((t - 0.65) / 0.7)));
-          this.once('zip', () => cabinAudio.zipper(0.7));
-        }
-        this.applyCamera(1);
-        if (t > 1.5) {
-          this.goto('closed');
-          if (!this.closedSent) {
-            this.closedSent = true;
-            this.events.onClosed?.();
-          }
-        }
-        break;
-      }
-      case 'closed':
-        this.bag.lid.rotation.x = 0;
-        this.placePull(0);
-        this.applyCamera(1);
-        break;
-    }
-  }
-
-  /** Blend the camera from standing at the foot of the bed (0) to leaning over it (1). */
-  private applyCamera(lean: number, shake = 0): void {
+  /** Blend the eyes from standing at the foot of the bed (lean 0) to leaning over it (1), with a breath and a glance. */
+  private applyCamera(): void {
+    const lean = this.lean;
     const view = this.layout.view;
     const fov = view.fov;
     const half = Math.tan(THREE.MathUtils.degToRad(fov / 2));
     const distance = Math.max(1.05, view.halfHeight / half, view.halfWidth / (half * this.aspect));
     const over = view.target.clone().addScaledVector(view.dir, distance);
     const stand = this.layout.stand;
-    const pos = new THREE.Vector3().lerpVectors(stand.pos, over, lean);
-    const target = new THREE.Vector3().lerpVectors(stand.target, view.target, lean);
-    // Breathing, a little parallax with the pointer, and any shake from the landing bag.
+    const k = smooth(lean);
+    const pos = new THREE.Vector3().lerpVectors(stand.pos, over, k);
+    const target = new THREE.Vector3().lerpVectors(stand.target, view.target, k);
+    // Breathing, a little parallax with the pointer, a glance after the bag in the air, a jolt when it lands.
     this.look.lerp(this.pointer, 0.06);
     pos.y += Math.sin(this.time * 1.3) * 0.004;
-    target.x += this.look.x * 0.05;
-    target.z -= this.look.y * 0.03;
-    if (shake > 0) pos.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0));
-    this.camera.fov = THREE.MathUtils.lerp(55, fov, lean);
+    target.x += this.look.x * 0.05 * k;
+    target.z -= this.look.y * 0.03 * k;
+    if (this.focus) target.lerp(this.focus, 0.3);
+    if (this.shake > 0.0005) pos.add(new THREE.Vector3((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake, 0));
+    this.camera.fov = THREE.MathUtils.lerp(55, fov, k);
     this.camera.updateProjectionMatrix();
     this.camera.position.copy(pos);
     this.camera.lookAt(target);
+    this.camera.updateMatrixWorld();
   }
 
   // ---------- Items ----------
@@ -883,15 +1274,16 @@ export class HotelSet {
     const spot = this.layout.spots[Math.max(0, order.indexOf(item))] ?? this.layout.spots[0];
     // Copies make a small pile, the top one a little askew.
     const pos = new THREE.Vector3(spot.x + copy * 0.025, groundAt(spot.z) + copy * 0.018, spot.z + copy * 0.035);
-    return pose(pos, spot.yaw + copy * 0.28, ON_BED_SCALE);
+    return pose(pos, spot.yaw + copy * 0.28, ITEM_SCALE);
   }
 
   private slotPose(slot: number): Pose {
     const base = this.layout.bag;
-    return pose(new THREE.Vector3(base.x + SLOT_X[slot], base.y + this.bag.floorY, base.z), this.layout.slotYaw, IN_BAG_SCALE);
+    return pose(new THREE.Vector3(base.x + SLOT_X[slot], base.y + this.bag.floorY, base.z), this.layout.slotYaw, ITEM_SCALE);
   }
 
   private rebuild(): void {
+    this.finishCarries();
     for (const inst of this.instances) {
       this.scene.remove(inst.root);
       disposeItem(inst.root);
@@ -921,7 +1313,7 @@ export class HotelSet {
     this.assignSlots(false);
   }
 
-  /** Match instances to the packed list, keeping items that are already where they belong. */
+  /** Match instances to the packed list, keeping items already where they belong; the hand moves the rest. */
   private assignSlots(animate: boolean): void {
     const chosen = new Map<Instance, number>();
     const taken = new Set<Instance>();
@@ -942,19 +1334,27 @@ export class HotelSet {
         taken.add(inst);
       }
     });
+    // Your hand moves them (it gets to them once you are leaning over the bag: see runCarries).
+    const byHand = animate;
     for (const inst of this.instances) {
       const slot = chosen.get(inst) ?? null;
       if (slot === inst.slot) continue;
-      const packing = slot !== null && inst.slot === null;
       inst.slot = slot;
       const target = slot === null ? inst.home : this.slotPose(slot);
-      if (animate) {
-        this.travel(inst, target);
-        if (packing) setTimeout(() => cabinAudio.pop(), 380);
-      } else {
-        this.place(inst, target);
-      }
+      // Already on its way somewhere: go there instead.
+      const queued = this.carries.find((c) => c.inst === inst);
+      if (queued) queued.to = target;
+      else if (byHand) this.carries.push({ inst, to: target, phase: 'reach', t: 0, from: this.arms.right.point(), fromQuat: this.arms.right.quat.clone() });
+      else this.place(inst, target);
     }
+  }
+
+  /** Everything the hand still had to move is where it goes, now. */
+  private finishCarries(): void {
+    for (const c of this.carries) this.place(c.inst, c.to);
+    this.carries = [];
+    this.held = null;
+    this.arms.right.targetGrip = 0;
   }
 
   private place(inst: Instance, p: Pose): void {
@@ -965,26 +1365,117 @@ export class HotelSet {
     inst.root.scale.setScalar(p.scale);
   }
 
-  private travel(inst: Instance, p: Pose): void {
-    inst.from = { pos: inst.root.position.clone(), quat: inst.root.quaternion.clone(), scale: inst.root.scale.x };
-    inst.to = p;
-    inst.t = 0;
+  /** The top of an item where it lies: where fingers close on it. */
+  private topOf(pos: THREE.Vector3): THREE.Vector3 {
+    return pos.clone().add(new THREE.Vector3(0, 0.035 * ITEM_SCALE, 0));
   }
 
-  private animate(inst: Instance, dt: number): void {
-    const target = this.hovered === inst && this.interactive ? 1 : 0;
+  /** Your hand at work: following the pointer over the bed, or moving an item in or out of the bag. */
+  private runCarries(dt: number): void {
+    const right = this.arms.right;
+    const c = this.carries[0];
+    if (!c) {
+      // Hovering: over the thing under the pointer, or wherever the pointer is over the bed.
+      right.stiffness = 75;
+      right.targetPinch = 0;
+      right.targetGrip = this.hovered ? 0.18 : 0.08;
+      const at = this.hovered ? this.topOf(this.hovered.root.position).add(new THREE.Vector3(0, 0.07 + Math.sin(this.time * 3) * 0.004, 0)) : this.pointerOverBed();
+      right.reach(at, this.palmDown());
+      return;
+    }
+    c.t += dt;
+    const k = clamp01(c.t / CARRY_TIME[c.phase]);
+    const start = this.topOf(c.inst.root.position);
+    const end = this.topOf(c.to.pos);
+    const lifted = (p: THREE.Vector3, h: number) => p.clone().add(new THREE.Vector3(0, h, 0));
+    let goal: THREE.Vector3;
+    let turn = this.palmDown();
+    right.stiffness = 170;
+    switch (c.phase) {
+      case 'reach':
+        goal = c.from.clone().lerp(lifted(start, 0.09), ease(k));
+        goal.y += Math.sin(Math.PI * k) * 0.03;
+        right.targetGrip = 0.1;
+        break;
+      case 'dip':
+        goal = lifted(start, 0.09 * (1 - ease(k)));
+        right.targetGrip = 0.1;
+        break;
+      case 'grab':
+        goal = start;
+        right.targetGrip = 1;
+        if (k >= 1 && !this.held) this.held = { inst: c.inst, local: right.matrix().invert().multiply(c.inst.root.matrixWorld.clone()) };
+        break;
+      case 'lift':
+        goal = c.from.clone().lerp(lifted(c.from, CARRY_HEIGHT), ease(k));
+        right.targetGrip = 1;
+        break;
+      case 'carry': {
+        // Over to above where it goes, turning the wrist so it arrives the right way round.
+        goal = c.from.clone().lerp(lifted(end, CARRY_HEIGHT), ease(k));
+        goal.y += Math.sin(Math.PI * k) * 0.06;
+        const localQuat = new THREE.Quaternion();
+        if (this.held) this.held.local.decompose(new THREE.Vector3(), localQuat, new THREE.Vector3());
+        const arrive = c.to.quat.clone().multiply(localQuat.invert());
+        turn = c.fromQuat.clone().slerp(arrive, ease(k));
+        right.targetGrip = 1;
+        break;
+      }
+      case 'lower':
+        goal = c.from.clone().lerp(end, ease(k));
+        turn = c.fromQuat.clone();
+        right.targetGrip = 1;
+        break;
+      case 'release':
+        goal = end;
+        turn = c.fromQuat.clone();
+        right.targetGrip = 0.05;
+        if (k >= 0.5 && this.held) {
+          // Let go: it settles exactly where it belongs.
+          this.held = null;
+          this.place(c.inst, c.to);
+          if (c.inst.slot !== null) cabinAudio.pop();
+        }
+        break;
+      default:
+        goal = c.from.clone().lerp(lifted(end, 0.1), ease(k));
+        right.targetGrip = 0.05;
+        break;
+    }
+    right.reach(goal, turn);
+    if (k >= 1) {
+      const next = CARRY_ORDER[CARRY_ORDER.indexOf(c.phase) + 1];
+      if (next) {
+        c.phase = next;
+        c.t = 0;
+        c.from = right.point();
+        c.fromQuat = right.quat.clone();
+      } else {
+        this.carries.shift();
+        const after = this.carries[0];
+        if (after) {
+          after.from = right.point();
+          after.fromQuat = right.quat.clone();
+        }
+      }
+    }
+  }
+
+  /** Where the pointer points on a plane just over the bed (kept over the bed). */
+  private pointerOverBed(): THREE.Vector3 {
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(SURFACE + HOVER_HEIGHT));
+    const hit = new THREE.Vector3();
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) return this.hoverRest();
+    hit.x = Math.max(-0.9, Math.min(0.9, hit.x));
+    hit.z = Math.max(-1.35, Math.min(0.1, hit.z));
+    return hit;
+  }
+
+  /** A soft glow on what your hand is over (it lights up; it does not move). */
+  private glow(inst: Instance, dt: number): void {
+    const target = this.hovered === inst && this.interactive && this.carries.length === 0 ? 1 : 0;
     inst.hover += (target - inst.hover) * (1 - Math.exp(-14 * dt));
-    if (inst.t < 1) inst.t = Math.min(1, inst.t + dt / 0.46);
-    const k = easeOut(inst.t);
-    const r = inst.root;
-    r.position.lerpVectors(inst.from.pos, inst.to.pos, k);
-    // Lifted over the edge of the bag on the way in or out.
-    r.position.y += Math.sin(Math.PI * inst.t) * 0.2;
-    r.quaternion.slerpQuaternions(inst.from.quat, inst.to.quat, k);
-    r.scale.setScalar(THREE.MathUtils.lerp(inst.from.scale, inst.to.scale, k));
-    // Hovered: picked up a little, tilted towards you, glowing.
-    r.position.y += inst.hover * 0.035;
-    r.rotateX(-inst.hover * 0.12);
     for (const g of inst.glow) {
       g.material.emissive.copy(g.color).lerp(HOVER_TINT, inst.hover * 0.8);
       g.material.emissiveIntensity = THREE.MathUtils.lerp(g.intensity, Math.max(g.intensity, 0.5), inst.hover);
@@ -1005,7 +1496,7 @@ export class HotelSet {
     }
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits = this.raycaster.intersectObjects(
-      this.instances.map((i) => i.root),
+      this.instances.filter((i) => i !== this.held?.inst).map((i) => i.root),
       true,
     );
     let found: Instance | null = null;
@@ -1023,7 +1514,6 @@ export class HotelSet {
   private setHover(inst: Instance | null): void {
     if (inst === this.hovered) return;
     this.hovered = inst;
-    this.dom.style.cursor = inst ? 'pointer' : '';
     if (!inst) {
       this.tip.hidden = true;
       return;
@@ -1054,6 +1544,7 @@ export class HotelSet {
   private pick(): void {
     const inst = this.hovered;
     if (!inst || !this.interactive || this.stage !== 'ready') return;
+    if (this.carries.some((c) => c.inst === inst)) return;
     if (inst.slot !== null) this.events.onUnpack(inst.slot);
     else if (this.packed.length < MAX_PACKED) this.events.onPack(inst.item);
   }

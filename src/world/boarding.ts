@@ -2,12 +2,12 @@
 export type BoardingShot = 'pack' | 'queue' | 'scan' | 'aisle';
 
 export const BOARDING_SHOTS: readonly { shot: BoardingShot; start: number; end: number }[] = [
-  // The bag zips shut in the hotel room.
-  { shot: 'pack', start: 0, end: 2.2 },
+  // Your hands flip the lid shut and zip the bag in the hotel room.
+  { shot: 'pack', start: 0, end: 3.2 },
   // Standing in line at gate 13.
-  { shot: 'queue', start: 2.2, end: 8.2 },
+  { shot: 'queue', start: 3.2, end: 8.6 },
   // Your boarding pass on the scanner.
-  { shot: 'scan', start: 8.2, end: 12.8 },
+  { shot: 'scan', start: 8.6, end: 12.8 },
   // In through the front of the cabin, down the aisle, into your seat.
   { shot: 'aisle', start: 12.8, end: 22 },
 ];
