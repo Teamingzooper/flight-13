@@ -4,7 +4,7 @@ import { DEFAULT_PREFS, cleanPrefs, personKey, personVolume } from './prefs';
 describe('your settings', () => {
   it('fills in anything missing and keeps values in range', () => {
     expect(cleanPrefs(null)).toEqual(DEFAULT_PREFS);
-    const odd = cleanPrefs({ sound: 3, voice: -1, fov: 99, quality: 'ultra', textSize: 'huge', pushToTalk: 'yes', people: { 'AB12:p1': 0, 'AB12:p2': 7 } });
+    const odd = cleanPrefs({ sound: 3, voice: -1, fov: 99, quality: 'cinematic', textSize: 'huge', pushToTalk: 'yes', people: { 'AB12:p1': 0, 'AB12:p2': 7 } });
     expect(odd.sound).toBe(1);
     expect(odd.voice).toBe(0);
     expect(odd.fov).toBe(20);
