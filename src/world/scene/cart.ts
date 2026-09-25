@@ -18,6 +18,8 @@ export class Cart {
   private placed = false;
   /** Metres per second: walking pace, or careering down the aisle when it breaks loose. */
   private speed = 0.9;
+  /** Pushed somewhere by hand in an ending (its row no longer places it). */
+  private held = false;
 
   constructor() {
     this.group.name = 'cart';
@@ -58,6 +60,18 @@ export class Cart {
     });
   }
 
+  /** Where the cart is along the aisle, or null when there is no cart to see. */
+  get aisleZ(): number | null {
+    return this.group.visible ? this.z : null;
+  }
+
+  /** Put the cart where the hands pushing it have it (an ending): on the floor at x, z, its handle end facing `yaw`. */
+  hold(x: number, z: number, yaw: number): void {
+    this.held = true;
+    this.group.position.set(x, 0, z);
+    this.group.rotation.set(0, yaw, 0);
+  }
+
   setRow(row: number, destroyed: boolean, runaway = false): void {
     this.group.visible = !destroyed;
     if (rowZ(row) !== this.targetZ) this.speed = runaway ? 3.2 : 0.9;
@@ -80,6 +94,7 @@ export class Cart {
   }
 
   update(dt: number, time: number): void {
+    if (this.held) return;
     const diff = this.targetZ - this.z;
     // Roll rather than snap; a runaway cart wobbles as it goes.
     const step = Math.sign(diff) * Math.min(Math.abs(diff), dt * this.speed);

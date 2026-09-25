@@ -133,13 +133,13 @@ function rearSpot(rows: number, i: number): THREE.Vector3 {
   return new THREE.Vector3(-0.55 - ((i - 7) % 4) * 0.34, 0, partition - 0.13);
 }
 
-/** The 3D cabin seen from your seat. Framework-free; the World component drives it. */
 /** How sharp the cabin renders: fewer pixels on low settings (and on phones and tablets). */
 function pixelRatioFor(quality: Quality): number {
   const most = { low: 1, medium: 1.25, high: 1.75 }[quality];
   return Math.min(devicePixelRatio, TOUCH ? Math.min(most, 1.25) : most);
 }
 
+/** The 3D cabin seen from your seat. Framework-free; the World component drives it. */
 export class Cabin3D {
   static supported(): boolean {
     try {
@@ -204,6 +204,8 @@ export class Cabin3D {
   };
   /** An ending holding the flight deck door open or shut (null: people walking through open it). */
   private cockpitDoor: boolean | null = null;
+  /** The door was just shoved open (it flies open and bangs against the wall). */
+  private cockpitBurst = false;
   /** The endings' landing: the runway comes up to meet the flight deck. */
   private landingView = false;
   private landingFrom = 0;
@@ -547,7 +549,12 @@ export class Cabin3D {
           this.landingView = true;
           this.landingFrom = this.time;
         },
-        setCockpitDoor: (open) => (this.cockpitDoor = open),
+        setCockpitDoor: (open, burst = false) => {
+          this.cockpitDoor = open;
+          if (burst) this.cockpitBurst = true;
+        },
+        doorHandle: (side) => built.flightDeck.handle(side),
+        cart: { z: () => this.cart.aisleZ, hold: (x, z, yaw) => this.cart.hold(x, z, yaw) },
         setLights: (mode) => (this.wantedMode = mode),
         masksDown: () => built.effects.masks.drop(),
         explode: (at) => built.effects.explode(at),
@@ -926,6 +933,7 @@ export class Cabin3D {
       built.lighting.update(dt);
       built.windows.update(dt);
       built.effects.update(dt, time, this.cart.group.position.z);
+      built.cabin.curtain.update(dt, this.people.movers());
     }
     this.flash *= Math.exp(-dt * 5);
     // (Fewer flashes: a blast still shows, but only as a soft glow.)
@@ -937,8 +945,16 @@ export class Cabin3D {
       this.people.update(dt, time);
       this.ending.update(this.time - this.endingFrom, dt, time);
       if (this.endingShake > 0.001) {
-        const s = this.endingShake;
-        this.camera.position.add(new THREE.Vector3(rand(-s, s), rand(-s, s), rand(-s, s)));
+        // A jolt that rolls through the body (layered waves, not frame-to-frame jitter); none with reduced motion.
+        const s = getPrefs().reduceMotion ? 0 : this.endingShake;
+        this.camera.position.add(
+          new THREE.Vector3(
+            s * (Math.sin(time * 31.7 + 1.3) * 0.6 + Math.sin(time * 57.1) * 0.4),
+            s * (Math.sin(time * 27.3 + 0.7) * 0.6 + Math.sin(time * 49.9 + 2.1) * 0.4),
+            s * Math.sin(time * 23.1 + 0.4) * 0.5,
+          ),
+        );
+        this.camera.rotateZ(s * 0.9 * Math.sin(time * 19.3));
         this.endingShake *= Math.exp(-dt * 3);
       }
       this.composer.render(dt);
@@ -1323,7 +1339,8 @@ export class Cabin3D {
       this.renderCameras(time, built);
     }
     // Held by an ending, or open while someone is in the doorway.
-    built.flightDeck.setDoor(this.cockpitDoor ?? this.people.anyNear(built.flightDeck.doorway, 0.9));
+    built.flightDeck.setDoor(this.cockpitDoor ?? this.people.anyNear(built.flightDeck.doorway, 0.9), this.cockpitBurst);
+    this.cockpitBurst = false;
     built.flightDeck.update(dt);
   }
 

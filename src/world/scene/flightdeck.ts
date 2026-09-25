@@ -3,7 +3,11 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { ControlId, DeckLook } from '../cockpit';
 import { CABIN_HALF_WIDTH, FLIGHT_DECK, screenPose } from '../layout';
 import { signTexture } from '../textures';
+import { Spring } from '../spring';
 import { SCREEN_H, SCREEN_W } from './seats';
+
+/** How far the flight deck door opens before it meets the wall. */
+const DOOR_STOP = 1.62;
 
 export interface FlightDeck {
   group: THREE.Group;
@@ -31,8 +35,10 @@ export interface FlightDeck {
   controls: THREE.Object3D[];
   /** Show tonight's calls: the seatbelt switch and lamp, the CALL light, the lever, the dial and the handset. */
   setLook(look: DeckLook): void;
-  /** Swing the door open (true) or shut. */
-  setDoor(open: boolean): void;
+  /** Swing the door open (true) or shut; `burst`: it is shoved, flies open and bangs against the wall. */
+  setDoor(open: boolean, burst?: boolean): void;
+  /** Where the door's handle is now, on the galley side or the flight deck side (for a hand to take hold of). */
+  handle(side: 'galley' | 'deck', out?: THREE.Vector3): THREE.Vector3;
   update(dt: number): void;
   dispose(): void;
 }
@@ -125,7 +131,10 @@ export function buildFlightDeck(): FlightDeck {
   hinge.position.set(-doorHalf + 0.02, 0, back - 0.03);
   group.add(hinge);
   add(new RoundedBoxGeometry(doorHalf * 2 - 0.04, 1.88, 0.05, 2, 0.02), doorMat, doorHalf - 0.02, 0.95, 0, 0, 0, hinge);
-  add(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8), bezel, doorHalf * 2 - 0.14, 1.0, 0.04, Math.PI / 2, 0, hinge);
+  const galleyHandle = add(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8), bezel, doorHalf * 2 - 0.14, 1.0, 0.04, Math.PI / 2, 0, hinge);
+  const deckHandle = add(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 8), bezel, doorHalf * 2 - 0.14, 1.0, -0.04, Math.PI / 2, 0, hinge);
+  /** The door on its hinge: a spring towards open or shut, stopped by the wall (where a shoved door bangs and bounces). */
+  const swing = new Spring();
 
   // The room: floor, ceiling and sides narrowing towards the nose.
   const floor = new THREE.Shape();
@@ -344,7 +353,6 @@ export function buildFlightDeck(): FlightDeck {
   // Tonight's calls, eased into place.
   let look: DeckLook = { belt: false, call: false, lever: false, dial: null, handsetUp: false };
   const ease = { belt: 0, lever: 0, dial: 0, handset: 0 };
-  let open = 0;
   let wanted = 0;
   return {
     group,
@@ -385,12 +393,25 @@ export function buildFlightDeck(): FlightDeck {
       belt.material = next.belt ? beltOn : beltOff;
       call.material = next.call ? callOn : callOff;
     },
-    setDoor(value) {
+    setDoor(value, burst = false) {
       wanted = value ? 1 : 0;
+      if (value && burst) swing.v = Math.max(swing.v, 9);
+    },
+    handle(side, out = new THREE.Vector3()) {
+      const mesh = side === 'galley' ? galleyHandle : deckHandle;
+      mesh.updateWorldMatrix(true, false);
+      return out.setFromMatrixPosition(mesh.matrixWorld);
     },
     update(dt) {
-      open += (wanted - open) * Math.min(1, dt * 5);
-      hinge.rotation.y = open * 1.45;
+      swing.step(wanted * 1.45, 1.1, 0.72, dt);
+      if (swing.x > DOOR_STOP) {
+        swing.x = DOOR_STOP;
+        swing.v = -Math.abs(swing.v) * 0.3;
+      } else if (swing.x < 0) {
+        swing.x = 0;
+        swing.v = Math.abs(swing.v) * 0.15;
+      }
+      hinge.rotation.y = swing.x;
       const k = Math.min(1, dt * 8);
       ease.belt += ((look.belt ? 1 : 0) - ease.belt) * k;
       ease.lever += ((look.lever ? 1 : 0) - ease.lever) * k;

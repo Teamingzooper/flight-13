@@ -5,6 +5,7 @@ import { grid, type SeatId } from '../../engine';
 import { BULKHEAD_Z, CABIN_HALF_WIDTH, rowZ } from '../layout';
 import { carpetTexture, seatbeltSignTexture, signTexture, skyTexture } from '../textures';
 import type { LavatoryBox } from './lavatory';
+import { Spring } from '../spring';
 
 const WALL_X = CABIN_HALF_WIDTH - 0.02;
 const WINDOW_Y = 1.14;
@@ -33,6 +34,8 @@ export interface CabinParts {
   /** Light the seatbelt sign above one row side ("12L" / "12R"), or none. */
   lightSeatbelt(key: string | null): void;
   lavatoryDoor: THREE.Mesh;
+  /** The galley curtain: it parts around anyone walking through, then swings back and settles. */
+  curtain: { update(dt: number, movers: readonly Mover[]): void };
   /** The lavatory's box (its inside is built separately, for nights spent in there). */
   lavatory: LavatoryBox;
   frontZ: number;
@@ -80,6 +83,80 @@ class Batcher {
 
 const m4 = (x: number, y: number, z: number, ry = 0, rx = 0, rz = 0) =>
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ')), new THREE.Vector3(1, 1, 1));
+
+/** Someone on their feet, for cloth they brush past: where they are and how fast they move over the floor. */
+export interface Mover {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+}
+
+const CURTAIN_COLUMNS = 49;
+
+/**
+ * The galley curtain as cloth hanging from its rail: each column of it is a spring, pushed ahead of anyone walking
+ * through (and aside, around their body), swinging back and settling once they are past. The top stays on the rail.
+ */
+function clothCurtain(mesh: THREE.Mesh, halfWidth: number, height: number): { update(dt: number, movers: readonly Mover[]): void } {
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  const pos = geometry.attributes.position as THREE.BufferAttribute;
+  const baseX = new Float32Array(pos.count);
+  const baseY = new Float32Array(pos.count);
+  const column = new Uint8Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    baseX[i] = pos.getX(i);
+    baseY[i] = pos.getY(i);
+    column[i] = Math.round(((baseX[i] + halfWidth) / (halfWidth * 2)) * (CURTAIN_COLUMNS - 1));
+  }
+  const bulge = Array.from({ length: CURTAIN_COLUMNS }, () => new Spring());
+  const part = Array.from({ length: CURTAIN_COLUMNS }, () => new Spring());
+  const wantBulge = new Float32Array(CURTAIN_COLUMNS);
+  const wantPart = new Float32Array(CURTAIN_COLUMNS);
+  let settled = false;
+  const write = () => {
+    for (let i = 0; i < pos.count; i++) {
+      // Hanging from the rail: the lower the cloth, the further it swings out; pushed aside, it slides along the rail.
+      const hang = Math.pow((height / 2 - baseY[i]) / height, 1.15);
+      const c = column[i];
+      const x = Math.max(-halfWidth, Math.min(halfWidth, baseX[i] + part[c].x * (0.55 + 0.45 * hang)));
+      pos.setXYZ(i, x, baseY[i], Math.sin(baseX[i] * 34) * 0.025 + bulge[c].x * hang);
+    }
+    pos.needsUpdate = true;
+    geometry.computeVertexNormals();
+  };
+  write();
+  return {
+    update(dt, movers) {
+      wantBulge.fill(0);
+      wantPart.fill(0);
+      const planeZ = mesh.position.z;
+      for (const m of movers) {
+        const off = m.z - planeZ;
+        if (Math.abs(off) > 0.55 || Math.abs(m.x) > halfWidth + 0.3) continue;
+        const close = 1 - Math.abs(off) / 0.55;
+        const near = close * close * (3 - 2 * close);
+        // Pushed the way they walk (or, standing against it, away from them).
+        const dir = Math.abs(m.vz) > 0.15 ? Math.sign(m.vz) : -Math.sign(off || 1);
+        for (let c = 0; c < CURTAIN_COLUMNS; c++) {
+          const x = -halfWidth + (c / (CURTAIN_COLUMNS - 1)) * halfWidth * 2;
+          const lateral = x - m.x;
+          // The body opens a gap its own width (the cloth bunches up either side of it) and pushes the rest ahead.
+          wantBulge[c] += dir * 0.3 * near * Math.exp(-((lateral / 0.36) ** 2));
+          wantPart[c] += Math.sign(lateral || (c < CURTAIN_COLUMNS / 2 ? -1 : 1)) * Math.max(0, 0.3 - Math.abs(lateral)) * near;
+        }
+      }
+      let moving = false;
+      for (let c = 0; c < CURTAIN_COLUMNS; c++) {
+        bulge[c].step(wantBulge[c], 1.5, 0.28, dt);
+        part[c].step(wantPart[c], 1.7, 0.35, dt);
+        if (Math.abs(bulge[c].x) + Math.abs(bulge[c].v) + Math.abs(part[c].x) + Math.abs(part[c].v) > 2e-4) moving = true;
+      }
+      if (moving || !settled) write();
+      settled = !moving;
+    },
+  };
+}
 
 export function buildCabin(rows: number): CabinParts {
   const group = new THREE.Group();
@@ -253,13 +330,11 @@ export function buildCabin(rows: number): CabinParts {
   }
   statics.add(new THREE.PlaneGeometry(opening * 2, 0.22), wall, m4(0, CEILING_Y - 0.11, frontZ));
   statics.add(new THREE.PlaneGeometry(opening * 2, 0.22), wall, m4(0, CEILING_Y - 0.11, frontZ - 0.01, Math.PI));
-  const curtainGeometry = new THREE.PlaneGeometry(opening * 2, CEILING_Y - 0.22, 48, 1);
-  const pos = curtainGeometry.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 34) * 0.025);
-  curtainGeometry.computeVertexNormals();
-  const curtainMesh = new THREE.Mesh(curtainGeometry, curtain);
-  curtainMesh.position.set(0, (CEILING_Y - 0.22) / 2, frontZ - 0.12);
+  const curtainHeight = CEILING_Y - 0.22;
+  const curtainMesh = new THREE.Mesh(new THREE.PlaneGeometry(opening * 2, curtainHeight, CURTAIN_COLUMNS - 1, 10), curtain);
+  curtainMesh.position.set(0, curtainHeight / 2, frontZ - 0.12);
   group.add(curtainMesh);
+  const curtainCloth = clothCurtain(curtainMesh, opening, curtainHeight);
   statics.add(new THREE.BoxGeometry(0.3, 0.09, 0.02), exitSigns, m4(0, CEILING_Y - 0.11, frontZ + 0.012));
 
   // Rear: lavatory (left), crew area (right), rear exit.
@@ -327,6 +402,7 @@ export function buildCabin(rows: number): CabinParts {
       litSign.matrixWorldNeedsUpdate = true;
     },
     lavatoryDoor,
+    curtain: curtainCloth,
     lavatory: { minX: -(0.3 + lavWidth), maxX: -0.3, frontZ: lavFront, backZ: lavFront + REAR_ZONE - 0.1, height: CEILING_Y - 0.02 },
     frontZ,
     rearZ,
