@@ -11,6 +11,7 @@ import { BoardingPanel, PackingPanel } from './CarryOn';
 import { ChatTab } from './ChatTab';
 import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
+import { captainName } from './format';
 import { Header } from './Header';
 import { VoiceButton } from './VoiceButton';
 import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
@@ -38,7 +39,7 @@ function PaBanner({ game }: { game: PlayerView }) {
   const who = game.players.find((p) => p.id === shown.from)?.name ?? '';
   return (
     <div class="pa-banner" role="status">
-      <b>📢 Captain {who}</b> {shown.text}
+      <b>📢 {captainName(who)}</b> {shown.text}
     </div>
   );
 }

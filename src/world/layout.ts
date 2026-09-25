@@ -15,6 +15,14 @@ export const STANDING_EYE = 1.58;
 export const CREW_BEHIND = 0.62;
 /** The crew tablet on the cart: where it sits (from the cart's centre) and how far it tilts back. */
 export const TABLET = { y: 1.22, z: 0.05, tilt: -0.6 };
+/** The flight deck, past the galley: its door, its nose, the captain's seat and the jump seat behind it. */
+export const FLIGHT_DECK = {
+  doorZ: BULKHEAD_Z - 1.8,
+  noseZ: BULKHEAD_Z - 3.9,
+  seatX: -0.42,
+  seatZ: BULKHEAD_Z - 3.0,
+  jumpSeatX: -0.3,
+};
 
 /** x centre of grid column 0..6 (3 is the aisle). */
 export function colX(col: number): number {
@@ -30,6 +38,7 @@ export function rowZ(row: number): number {
 
 /** Where a seat is on the cabin floor (for the Stewardess's aisle spot: where she stands, behind the cart). */
 export function seatPose(id: SeatId): { x: number; z: number } {
+  if (grid.isCockpit(id)) return { x: FLIGHT_DECK.seatX, z: FLIGHT_DECK.seatZ };
   const cell = grid.parsePlace(id);
   if (!cell) throw new Error(`Bad seat ${id}`);
   return { x: colX(cell.col), z: rowZ(cell.row) + (cell.col === grid.AISLE_COL ? CREW_BEHIND : 0) };
@@ -43,6 +52,8 @@ export function eyePosition(id: SeatId): { x: number; y: number; z: number } {
 
 /** Centre of the screen a passenger uses: the back of the seat ahead, or the bulkhead for row 1. */
 export function screenPose(id: SeatId): { x: number; y: number; z: number } {
+  // The captain's screen, on the instrument panel in front of his seat.
+  if (grid.isCockpit(id)) return { x: FLIGHT_DECK.seatX, y: 0.98, z: FLIGHT_DECK.seatZ - 0.5 };
   const cell = grid.parsePlace(id);
   if (!cell) throw new Error(`Bad seat ${id}`);
   // Crew use the tablet on the drink cart.

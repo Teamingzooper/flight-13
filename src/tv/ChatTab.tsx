@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { TOP } from '../app/Avatar';
 import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerView } from '../engine';
 import type { TVContext } from './context';
-import { nameOf, nameWithSeat, playerById } from './format';
+import { captainName, nameOf, nameWithSeat, playerById } from './format';
 
 type Channel = 'cabin' | 'saboteurs' | 'ghosts' | 'whisper';
 
@@ -113,7 +113,7 @@ function ChatLine({ game, m }: { game: PlayerView; m: ChatMessage }) {
   if (m.channel === 'pa') {
     return (
       <li class="msg pa">
-        <b>📢 Captain {from}</b>
+        <b>📢 {captainName(from)}</b>
         {m.text}
       </li>
     );

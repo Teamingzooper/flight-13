@@ -35,6 +35,11 @@ export function seatPill(seat: string | null): string {
   return grid.isCockpit(seat) ? 'Pilot' : grid.isAisleSpot(seat) ? 'Crew' : seat;
 }
 
+/** How the Pilot signs PA announcements ("Captain Ann"; a name that already says Captain is left alone). */
+export function captainName(name: string): string {
+  return /^captain\b/i.test(name.trim()) ? name.trim() : `Captain ${name}`.trim();
+}
+
 export function shortName(name: string): string {
   const first = name.split(' ')[0] || name;
   return first.length > 7 ? `${first.slice(0, 6)}…` : first;

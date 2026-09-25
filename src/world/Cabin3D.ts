@@ -25,6 +25,7 @@ import { Lighting, type LightMode } from './lighting';
 import { buildCabin, type CabinParts } from './scene/cabin';
 import { Cart } from './scene/cart';
 import { Effects } from './scene/effects';
+import { buildFlightDeck, type FlightDeck } from './scene/flightdeck';
 import { buildLavatory, type LavatoryInterior } from './scene/lavatory';
 import { People } from './scene/people';
 import { SCREEN_H, SCREEN_W, buildSeats, type SeatParts } from './scene/seats';
@@ -55,11 +56,15 @@ export interface Cabin3DOptions {
 
 export type SceneKind = 'walk' | 'search' | 'glance';
 
+/** A night away from your seat: in the lavatory, or up on the flight deck. */
+type Away = 'wc' | 'deck' | null;
+
 interface Built {
   rows: number;
   cabin: CabinParts;
   seats: SeatParts;
   lavatory: LavatoryInterior;
+  flightDeck: FlightDeck;
   lighting: Lighting;
   windows: WindowView;
   effects: Effects;
@@ -301,6 +306,7 @@ export class Cabin3D {
     const grounded = kind === 'packing' || kind === 'boarding' || kind === 'takeoff';
     const sky = grounded ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
     windows.show(sky, fresh || grounded ? 0 : 1.4);
+    this.built!.flightDeck.setSky(sky);
     if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
@@ -318,26 +324,29 @@ export class Cabin3D {
     );
 
     const seat = game.you?.seat ?? null;
-    const washroom = !!game.you?.inWashroom && game.you.status === 'alive';
-    const key = seat ? (washroom ? `wc:${seat}` : seat) : game.you ? 'aft' : 'tower';
+    // A night away from your seat: locked in the lavatory, or up in the Pilot's jump seat.
+    const alive = game.you?.status === 'alive';
+    const away: Away = alive && game.you?.inWashroom ? 'wc' : alive && game.you?.inJumpSeat ? 'deck' : null;
+    const key = seat ? (away ? `${away}:${seat}` : seat) : game.you ? 'aft' : 'tower';
     if (key !== this.seatKey) {
-      const fromWashroom = this.seatKey?.startsWith('wc:') ?? false;
+      const wasAway = /^(wc|deck):/.test(this.seatKey ?? '');
       const first = this.seatKey === null;
-      const animate = !first && !washroom && !fromWashroom && seat !== null && this.seatKey !== 'aft' && this.seatKey !== 'tower';
+      const animate = !first && !away && !wasAway && seat !== null && this.seatKey !== 'aft' && this.seatKey !== 'tower';
       this.seatKey = key;
-      if ((washroom || fromWashroom) && !first) {
-        // Into the lavatory for the night (or back to your seat at dawn) behind a quick fade.
-        this.fade(1, 0.45, washroom ? 'You slip into the lavatory and lock the door.' : '');
-        this.later(washroom ? 1.2 : 0.5, () => {
+      if ((away || wasAway) && !first) {
+        // Off for the night (or back to your seat at dawn) behind a quick fade.
+        const text = away === 'wc' ? 'You slip into the lavatory and lock the door.' : away === 'deck' ? 'The captain calls you up to the flight deck.' : '';
+        this.fade(1, 0.45, text);
+        this.later(away ? 1.2 : 0.5, () => {
           if (this.seatKey !== key) return;
-          this.placeCamera(seat, false, washroom);
+          this.placeCamera(seat, false, away);
           this.fade(0, 0.7);
         });
       } else {
-        this.placeCamera(seat, animate, washroom);
+        this.placeCamera(seat, animate, away);
       }
     }
-    const crewRow = seat && !washroom ? grid.aisleRow(seat) : null;
+    const crewRow = seat && !away ? grid.aisleRow(seat) : null;
     this.tabletFollows = crewRow !== null && !game.cabin.cartDestroyed && game.cabin.cartRow === crewRow;
     const runaway = cues.some((c) => c.kind === 'cartRoll' && c.runaway);
     this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed, runaway);
@@ -536,35 +545,42 @@ export class Cabin3D {
     const lav = cabin.lavatoryDoor.position;
     const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7));
     const lavatory = buildLavatory(cabin.lavatory);
-    group.add(cabin.group, seats.group, effects.group, lavatory.group);
+    const flightDeck = buildFlightDeck();
+    group.add(cabin.group, seats.group, effects.group, lavatory.group, flightDeck.group);
     this.scene.add(group);
     const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
-    this.built = { rows, cabin, seats, lavatory, lighting, windows, effects, skies, group };
+    this.built = { rows, cabin, seats, lavatory, flightDeck, lighting, windows, effects, skies, group };
     this.seatKey = null;
   }
 
-  private placeCamera(seat: SeatId | null, animate: boolean, washroom = false): void {
-    const { seats, lighting, cabin, lavatory } = this.built!;
-    seats.hideScreen(washroom ? null : seat);
+  private placeCamera(seat: SeatId | null, animate: boolean, away: Away = null): void {
+    const { seats, lighting, cabin, lavatory, flightDeck } = this.built!;
+    seats.hideScreen(away ? null : seat);
     // The lavatory's inside is only drawn while you are in it.
-    lavatory.group.visible = washroom;
+    lavatory.group.visible = away === 'wc';
     const useScreen = (screen: THREE.Matrix4) => {
       this.liveMesh.matrix.copy(screen);
       this.liveMesh.matrixWorldNeedsUpdate = true;
       this.liveMesh.visible = true;
       lighting.placeScreenGlow(new THREE.Vector3(0, 0, 0.25).applyMatrix4(screen));
     };
-    if (seat && washroom) {
+    if (seat && away === 'wc') {
       // A night locked in the lavatory: at the mirror, with a little screen beside it.
       this.controls.setSeat(lavatory.eye.clone(), lavatory.screen, false, lavatory.restYaw);
       useScreen(lavatory.screen);
       return;
     }
+    if (seat && away === 'deck') {
+      // Up in the jump seat behind the captain, with the first officer's screen to use.
+      this.controls.setSeat(flightDeck.jumpSeatEye.clone(), flightDeck.guestScreen, false, 0);
+      useScreen(flightDeck.guestScreen);
+      return;
+    }
     if (seat) {
       const e = eyePosition(seat);
-      // Crew stand behind the drink cart and use the tablet on it.
+      // Crew stand behind the drink cart and use the tablet on it; the Pilot has the flight deck's screen.
       const row = grid.aisleRow(seat);
-      const screen = row === null ? seats.screenMatrix(seat) : Cart.tabletAt(row);
+      const screen = grid.isCockpit(seat) ? flightDeck.captainScreen : row === null ? seats.screenMatrix(seat) : Cart.tabletAt(row);
       this.controls.setSeat(new THREE.Vector3(e.x, e.y, e.z), screen, animate, 0, row !== null);
       useScreen(screen);
       return;
@@ -798,6 +814,8 @@ export class Cabin3D {
       if (!bubble) {
         bubble = { el: document.createElement('div'), until: 0 };
         bubble.el.className = 'emote-bubble';
+        // Out of sight until the next frame puts it over the right head.
+        bubble.el.hidden = true;
         this.bubbles.appendChild(bubble.el);
         this.bubbleEls.set(id, bubble);
       }
@@ -859,6 +877,7 @@ export class Cabin3D {
       if (!el) {
         el = document.createElement('div');
         el.className = 'talk-badge';
+        el.hidden = true;
         el.innerHTML = '<i></i><i></i><i></i>';
         this.bubbles.appendChild(el);
         this.talkEls.set(id, el);
@@ -1000,7 +1019,7 @@ export class Cabin3D {
         this.captionAt = at + 4.5;
         // (Announcements still queued when an ending starts are dropped: the ending tells its own story.)
         this.later(at - this.time, () => !this.ending && cabinAudio.ding());
-        this.later(at - this.time + 0.9, () => !this.ending && this.opts.onCaption?.(cue.text));
+        this.later(at - this.time + 0.9, () => !this.ending && this.opts.onCaption?.(cue.text, cue.who ?? 'Flight deck'));
         break;
       }
     }
@@ -1037,8 +1056,11 @@ export class Cabin3D {
     const players = this.holdAlive.size
       ? game.players.map((p) => (this.holdAlive.has(p.id) ? { ...p, status: 'alive' as const, cause: null } : p))
       : game.players;
-    const door = this.built?.lavatory.door;
-    this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, game.washroom && door ? { id: game.washroom, door } : null);
+    // Nights away from a seat: the lavatory, or the flight deck's jump seat.
+    const away: { id: string; door: THREE.Vector3 }[] = [];
+    if (this.built && game.washroom) away.push({ id: game.washroom, door: this.built.lavatory.door });
+    if (this.built && game.jumpseat) away.push({ id: game.jumpseat, door: this.built.flightDeck.door });
+    this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, away);
   }
 
   private later(seconds: number, fn: () => void): void {
