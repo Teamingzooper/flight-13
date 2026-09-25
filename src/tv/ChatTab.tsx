@@ -53,7 +53,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
 
   let blocked: string | null = null;
   if (!you) blocked = 'The control tower listens but cannot talk.';
-  else if (channel === 'cabin') blocked = kind === 'ended' ? null : !alive ? 'Ghosts cannot talk to the living.' : night ? 'Lights out. The cabin is silent at night.' : null;
+  else if (channel === 'cabin') blocked = kind === 'ended' ? null : !alive ? 'Ghosts cannot talk to the living.' : night ? (game.settings.voiceMode !== 'off' && game.settings.nightVoiceRange > 0 ? 'Lights out: no typing at night (on voice, you can whisper to the seats right round you).' : 'Lights out. The cabin is silent at night.') : null;
   else if (channel === 'saboteurs') blocked = !alive ? 'You are out.' : night ? null : 'The saboteur channel only works at night.';
   else if (channel === 'whisper') {
     if (!day) blocked = 'You can only whisper during the day.';
@@ -64,8 +64,11 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
   const submit = async (e: Event) => {
     e.preventDefault();
     if (blocked || !text.trim()) return;
-    const ok = channel === 'whisper' ? await send({ kind: 'whisper', to: to!, text }) : await send({ kind: 'chat', channel, text });
-    if (ok) setText('');
+    // Cleared at once (it is on its way); put back if it could not be sent.
+    const said = text;
+    setText('');
+    const ok = channel === 'whisper' ? await send({ kind: 'whisper', to: to!, text: said }) : await send({ kind: 'chat', channel, text: said });
+    if (!ok) setText((now) => now || said);
   };
 
   const ready = game.mine?.ready ?? false;

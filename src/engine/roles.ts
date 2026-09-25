@@ -28,7 +28,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     team: 'passengers',
     blurb: 'An ordinary traveller with sharp eyes.',
     howTo:
-      'No special ability, but at night you can look under your seat for anything left behind, and once per flight you can hide in the washroom for the night. Change seats, watch closely, argue, and vote.',
+      'An ordinary passenger: at night you can look under your seat for anything left behind, and once per flight you can hide in the washroom for the night. Change seats, watch closely, argue, and vote.',
   },
   pilot: {
     id: 'pilot',

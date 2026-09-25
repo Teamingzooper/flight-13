@@ -114,8 +114,8 @@ export function customHowTo(def: CustomRole, nights: number): string {
   switch (def.ability) {
     case 'none':
       return def.team === 'saboteurs'
-        ? 'No special ability, but you know your fellow saboteurs and plot with them at night. Blend in, steer the vote, and stay free until landing.'
-        : 'No special ability, but at night you can look under your seat, and once per flight you can hide in the washroom. Watch closely, argue, and vote.';
+        ? 'An ordinary saboteur: you know your fellow saboteurs and plot with them at night. Blend in, steer the vote, and stay free until landing.'
+        : 'An ordinary passenger: at night you can look under your seat, and once per flight you can hide in the washroom. Watch closely, argue, and vote.';
     case 'bomb': {
       const n = usesLimit(def, nights)!;
       return `You carry ${n === 1 ? 'one bomb' : `${n} bombs`} and plant at most one a night: under your seat, on the drink cart (from an aisle seat next to it) or in the lavatory (from a seat next to it). Each goes off at the end of tomorrow night or the night after, and everyone within 2 seats is caught in the blast.`;

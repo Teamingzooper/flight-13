@@ -206,13 +206,19 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
   // (A browser-hosted flight lives in the captain's tab; the server's carry on without anyone.)
   const hosting = flight.host !== null;
   const captain = hosting || !!flight.client.snapshot.state?.isHost;
+  // (Landed: there is nothing left to pause or come back to.)
+  const landed = flight.client.snapshot.state?.game?.phase.kind === 'ended';
   if (moving) return <MoveDevice flight={flight} onClose={onStay} />;
   return (
     <div class="tv-overlay" role="dialog" aria-modal="true">
       <div class="tv-card">
-        <h2>Leave the flight?</h2>
+        <h2>{landed ? 'Leave the plane?' : 'Leave the flight?'}</h2>
         <p>
-          {hosting
+          {landed
+            ? captain
+              ? 'The flight is over. You can board again with everyone from the end screen, or close the flight for good.'
+              : 'The flight is over. Head back to the terminal whenever you like.'
+            : hosting
             ? 'You are the host. If you leave, the flight pauses for everyone until you come back to this page.'
             : captain
               ? 'The flight carries on without you. Come back with the same link to take your seat again; if you stay away for a minute, someone else aboard becomes captain.'
@@ -225,7 +231,7 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
           <button class="btn ghost" onClick={() => navigate('/')}>
             Leave
           </button>
-          {!hosting && (
+          {!hosting && !landed && (
             <button class="btn ghost" onClick={() => setMoving(true)}>
               Move to another device
             </button>
@@ -238,7 +244,7 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
                 navigate('/');
               }}
             >
-              End flight for everyone
+              {landed ? 'Close the flight' : 'End flight for everyone'}
             </button>
           )}
         </div>

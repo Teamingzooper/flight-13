@@ -135,7 +135,7 @@ describe('custom roles', () => {
     s.settings.customRoles[1] = role({ name: 'Tourist', team: 'passengers', ability: 'none', uses: 'nightly' });
     advanceTo(s, 'night_act', 1);
     expect(viewFor(s, 'bouncer', 0).options?.actions).toEqual([{ kind: 'search' }]);
-    expect(roleInfo('custom_p2', s.settings).howTo).toMatch(/^No special ability/);
+    expect(roleInfo('custom_p2', s.settings).howTo).toMatch(/^An ordinary passenger/);
   });
 
   it('can be the host’s own pick, while it is in the deck', () => {
