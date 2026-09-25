@@ -2,7 +2,8 @@ import { destinationOf } from './destinations';
 import { COCKPIT, aisleSpot, allSeats } from './grid';
 import { PLANES, rowsFor } from './planes';
 import { nextFloat, shuffle, type RngHolder } from './rng';
-import { ROLES, giveRole, isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
+import { giveRole, isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
+import { customCards, isCustomRole, roleInfo } from './custom';
 import { newMeal } from './meal';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
@@ -53,8 +54,14 @@ export function cardsForGame(settings: Settings, players: number): Cards {
   return settings.rolesMode === 'auto' ? presetCards(players) : settings.cards;
 }
 
-export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChance: number, pilotRogueChance = 0): RoleId[] {
-  const deck: RoleId[] = [];
+/** The host's own roles in play this flight (only when they choose the roles). */
+export function customInDeck(settings: Settings): Settings['customRoles'] {
+  return settings.rolesMode === 'custom' ? (settings.customRoles ?? []).filter((r) => r.count > 0) : [];
+}
+
+/** `custom`: the host's own cards (custom role ids), dealt in place of Passengers. */
+export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChance: number, pilotRogueChance = 0, custom: readonly RoleId[] = []): RoleId[] {
+  const deck: RoleId[] = [...custom];
   const add = (role: RoleId, count: number) => {
     for (let i = 0; i < count; i++) deck.push(role);
   };
@@ -84,7 +91,7 @@ export function checkTakeoff(settings: Settings, players: NewPlayer[]): string |
   if (players.length < least) return `Need at least ${least} passengers to take off${least > MIN_PLAYERS ? ` in the ${PLANES[settings.plane].name.toLowerCase()}` : ''}.`;
   if (players.length > settings.maxPassengers) return 'More passengers than seats booked.';
   if (new Set(players.map((p) => p.id)).size !== players.length) return 'Duplicate passenger ids.';
-  return validateCards(cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance);
+  return validateCards(cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, customInDeck(settings));
 }
 
 export function createGame(opts: CreateGameOptions): GameState {
@@ -120,9 +127,17 @@ export function createGame(opts: CreateGameOptions): GameState {
     recorder: [],
     meal: settings.mealService ? newMeal(destination.nights) : null,
   };
-  let roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
+  let roles = dealRoles(
+    s,
+    cardsForGame(settings, players.length),
+    players.length,
+    settings.stewardessRogueChance,
+    settings.pilotRogueChance,
+    customCards(settings),
+  );
   // The host may have picked their own role: they get it, out of the same deck (see giveRole).
-  const chosen = opts.chosen;
+  // (A role of the host's own that is no longer in this flight's deck cannot be picked: deal at random.)
+  const chosen = opts.chosen && (!isCustomRole(opts.chosen.role) || customCards(settings).includes(opts.chosen.role)) ? opts.chosen : undefined;
   const chooser = chosen ? players.findIndex((p) => p.id === chosen.player) : -1;
   const refused = chosen && chooser >= 0 ? giveRole(roles, chooser, chosen.role) : null;
   if (Array.isArray(refused)) roles = refused;
@@ -161,10 +176,11 @@ export function createGame(opts: CreateGameOptions): GameState {
     roughAirUsed: false,
     courseUsed: false,
     knockedOutNight: null,
+    abilityUses: 0,
   }));
   for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };
   if (chosen && typeof refused === 'string') {
-    addLog(s, now, [chosen.player], 'info', `You could not be the ${ROLES[chosen.role].name} this flight (${refused}), so your role was dealt at random.`);
+    addLog(s, now, [chosen.player], 'info', `You could not be the ${roleInfo(chosen.role, settings).name} this flight (${refused}), so your role was dealt at random.`);
   }
   return s;
 }

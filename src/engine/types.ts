@@ -10,7 +10,29 @@ export type RoleId =
   | 'bomber'
   | 'mastermind'
   | 'stewardess_rogue'
-  | 'pilot_rogue';
+  | 'pilot_rogue'
+  | CustomRoleId;
+
+/**
+ * A role the host made (settings.customRoles): `p` for the passengers' side, `s` for the saboteurs', and which of the
+ * (up to three) custom roles it is. The team is in the id, so every team check works without the settings.
+ */
+export type CustomRoleId = 'custom_p1' | 'custom_p2' | 'custom_p3' | 'custom_s1' | 'custom_s2' | 'custom_s3';
+
+/** What a custom role can do: one piece, borrowed from a role the game already has (or nothing). */
+export type CustomAbility = 'none' | 'treat' | 'sweep' | 'cuff' | 'poison' | 'bomb';
+
+/** How often: every night, or so many times per flight. */
+export type CustomUses = 'nightly' | 1 | 2;
+
+export interface CustomRole {
+  name: string;
+  team: Team;
+  ability: CustomAbility;
+  uses: CustomUses;
+  /** Cards dealt per flight (only when the host chooses the roles). */
+  count: number;
+}
 
 /** Special cards the host puts in the deck. A stewardess card turns loyal or rogue when dealt. */
 export type SpecialCard = 'bomber' | 'mastermind' | 'stewardess' | 'pilot' | 'nurse' | 'investigator' | 'marshal';
@@ -53,6 +75,8 @@ export interface Settings {
   whispers: boolean;
   /** Restraining the Pilot (with no other Pilot free) hands the saboteurs the win. */
   pilotMustFly: boolean;
+  /** Roles the host made (up to three), dealt when the host chooses the roles. */
+  customRoles: CustomRole[];
   /** Lunch is served once, halfway through the flight: chicken or pasta (and the saboteurs may drug one of them). */
   mealService: boolean;
   botChatter: BotChatter;
@@ -153,6 +177,8 @@ export interface PlayerState {
   courseUsed: boolean;
   /** Pilot: knocked out cold by his guest, and out of action on this night. */
   knockedOutNight: number | null;
+  /** A custom role's ability: times used so far (for those limited per flight). */
+  abilityUses: number;
 }
 
 export type BombLocation =
@@ -199,6 +225,8 @@ export type NightAction =
   | { kind: 'search' }
   /** Air Marshal, once per game: handcuff someone within 2 seats. */
   | { kind: 'cuff'; target: string }
+  /** A custom role: slip poison to someone within 1 seat. */
+  | { kind: 'poison'; target: string }
   /** Pilot: watch three rows on the cabin cameras. */
   | { kind: 'watch'; startRow: number }
   /** A saboteur in the jump seat knocks the Pilot out cold. */

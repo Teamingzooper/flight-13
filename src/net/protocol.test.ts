@@ -46,6 +46,19 @@ describe('protocol sanitising', () => {
     expect(cleanSettings({ ...s, botSkill: 'hard' })).toEqual({ ...s, botSkill: 'hard' });
   });
 
+  it('rebuilds the host’s own roles, and older settings without them', () => {
+    const chef = { name: ' Chef ', team: 'saboteurs', ability: 'poison', uses: 1, count: 1 } as const;
+    const s = { ...defaultSettings(), rolesMode: 'custom' as const, customRoles: [{ ...chef, name: 'Chef' }] };
+    expect(cleanSettings({ ...s, customRoles: [{ ...chef, extra: 'ignored' }] })).toEqual(s);
+    const { customRoles: _roles, ...older } = defaultSettings();
+    expect(cleanSettings(older)).toEqual(defaultSettings());
+    expect(cleanSettings({ ...s, customRoles: [{ ...chef, ability: 'teleport' }] })).toBeNull();
+    expect(cleanSettings({ ...s, customRoles: [{ ...chef, team: 'pilots' }] })).toBeNull();
+    expect(cleanSettings({ ...s, customRoles: [{ ...chef, uses: 3 }] })).toBeNull();
+    expect(cleanSettings({ ...s, customRoles: [chef, chef, chef, chef] })).toBeNull();
+    expect(cleanSettings({ ...s, customRoles: 'lots' })).toBeNull();
+  });
+
   it('rebuilds a custom destination and rejects a bad one', () => {
     const s = { ...defaultSettings(), destination: 'custom' as const, customDestination: { city: 'Atlantis', code: 'ATL', nights: 7, twists: ['triangle' as const] } };
     expect(cleanSettings(JSON.parse(JSON.stringify(s)))).toEqual(s);

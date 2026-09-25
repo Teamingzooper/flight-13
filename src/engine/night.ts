@@ -1,9 +1,10 @@
 import { destinationOf, hasTwist } from './destinations';
 import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder, seatsWithin } from './grid';
+import { customDef, roleInfo } from './custom';
 import { consumeItem } from './items';
 import { lunchDrowsiness } from './meal';
 import { nextInt, pick } from './rng';
-import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
+import { isPilot, isSaboteur, isStewardess } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
@@ -240,6 +241,7 @@ function sighting(s: GameState, actor: PlayerState, action: NightAction): string
   const target = 'target' in action ? getPlayer(s, action.target) : undefined;
   switch (action.kind) {
     case 'treat':
+    case 'poison':
       return target && target.id !== actor.id ? `${actor.name} leaned over to ${target.name}` : `${actor.name} rummaged in a bag`;
     case 'serve':
       return target ? `${actor.name} handed ${target.name} a drink` : null;
@@ -267,6 +269,7 @@ function sighting(s: GameState, actor: PlayerState, action: NightAction): string
 function looksLike(action: NightAction): Sighting['kind'] {
   switch (action.kind) {
     case 'treat':
+    case 'poison':
       return 'lean';
     case 'serve':
       return 'drink';
@@ -356,6 +359,12 @@ export function resolveNight(s: GameState, now: number): void {
     );
   }
 
+  // A custom role's ability, used once more (those limited per flight run out).
+  const used = (actor: PlayerState) => {
+    if (customDef(s.settings, actor.role)) actor.abilityUses += 1;
+  };
+  const roleOf = (p: PlayerState) => roleInfo(p.role, s.settings).name;
+
   // 1b. Handcuffs: the Air Marshal's target is out before anyone acts, and does nothing tonight.
   const cuffed = new Set<string>();
   for (const { actor, action } of acts) {
@@ -364,13 +373,14 @@ export function resolveNight(s: GameState, now: number): void {
     if (!isActive(t)) continue;
     const seat = t.seat;
     visit(t.id, `${actor.name} snapped handcuffs on you`);
+    used(actor);
     if (consumeItem(t, 'bobbypin')) {
       actor.cuffsUsed = true;
       addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}), but they picked the lock and slipped free. Your cuffs are gone.`, {
         target: t.id,
       });
       addLog(s, now, [t.id], 'item', 'Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
-      addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}, who picked the lock with a bobby pin.`);
+      addLog(s, now, 'end', 'cuff', `Night ${n}: ${roleOf(actor)} ${actor.name} handcuffed ${t.name}, who picked the lock with a bobby pin.`);
       continue;
     }
     actor.cuffsUsed = true;
@@ -378,8 +388,8 @@ export function resolveNight(s: GameState, now: number): void {
     removeFromPlay(s, t, 'restrained', n);
     s.incidentAtDawn = true;
     addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}).`, { target: t.id });
-    addLog(s, now, 'all', 'cuff', `The Air Marshal handcuffed ${label(t)} in ${seat} and walked them to the rear galley.`, { player: t.id });
-    addLog(s, now, 'end', 'cuff', `Night ${n}: Air Marshal ${actor.name} handcuffed ${t.name}.`);
+    addLog(s, now, 'all', 'cuff', `The ${roleOf(actor)} handcuffed ${label(s, t)} in ${seat} and walked them to the rear galley.`, { player: t.id });
+    addLog(s, now, 'end', 'cuff', `Night ${n}: ${roleOf(actor)} ${actor.name} handcuffed ${t.name}.`);
     readNote(s, t, now);
   }
   for (let i = acts.length - 1; i >= 0; i--) {
@@ -424,8 +434,9 @@ export function resolveNight(s: GameState, now: number): void {
     nursesOf.set(t.id, [...(nursesOf.get(t.id) ?? []), actor.id]);
     if (t.id !== actor.id) visit(t.id, `${actor.name} treated you`);
     if (t.id === actor.id) actor.selfTreatUsed = true;
+    used(actor);
     addLog(s, now, [actor.id], 'treat', t.id === actor.id ? 'You treated yourself tonight.' : `You treated ${t.name} (${t.seat}).`, { target: t.id });
-    addLog(s, now, 'end', 'treat', `Night ${n}: Nurse ${actor.name} treated ${t.name}.`);
+    addLog(s, now, 'end', 'treat', `Night ${n}: ${roleOf(actor)} ${actor.name} treated ${t.name}.`);
   }
 
   // 3. Bombs are planted.
@@ -453,15 +464,22 @@ export function resolveNight(s: GameState, now: number): void {
     addLog(s, now, 'saboteurs', 'plant', `${actor.name} planted a bomb ${where}. It goes off at the end of night ${bomb.detonateNight}.`, {
       bomb: bomb.id,
     });
-    addLog(s, now, 'end', 'plant', `Night ${n}: ${ROLES[actor.role].name} ${actor.name} planted a bomb ${where} (fuse ${action.fuse}).`);
+    addLog(s, now, 'end', 'plant', `Night ${n}: ${roleOf(actor)} ${actor.name} planted a bomb ${where} (fuse ${action.fuse}).`);
   }
 
-  // 4. Poisoned drinks.
+  // 4. Poisoned drinks (and a custom role's poison, slipped to a neighbour).
   for (const { actor, action } of acts) {
-    if (action.kind !== 'serve' || actor.role !== 'stewardess_rogue') continue;
+    const drink = action.kind === 'serve' && actor.role === 'stewardess_rogue';
+    if (!drink && action.kind !== 'poison') continue;
     const t = playerById(action.target);
-    visit(t.id, `${actor.name} served you a drink`);
-    addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`, { target: t.id });
+    if (drink) {
+      visit(t.id, `${actor.name} served you a drink`);
+      addLog(s, now, [actor.id], 'serve', `You served ${t.name} (${t.seat}) a poisoned drink.`, { target: t.id });
+    } else {
+      used(actor);
+      visit(t.id, `${actor.name} leaned over to you`);
+      addLog(s, now, [actor.id], 'serve', `You slipped poison to ${t.name} (${t.seat}).`, { target: t.id });
+    }
     if (treated.has(t.id)) {
       rescued(t.id);
       addLog(s, now, [t.id], 'saved', 'Someone slipped poison into your drink, but the treatment you got tonight neutralized it.');
@@ -506,6 +524,7 @@ export function resolveNight(s: GameState, now: number): void {
   }
   for (const { actor, action } of acts) {
     if (action.kind !== 'sweep' && action.kind !== 'inspect') continue;
+    used(actor);
     let found: Bomb[];
     let what: string;
     let covered: Record<string, unknown>;
@@ -627,7 +646,7 @@ export function resolveNight(s: GameState, now: number): void {
       }
     }
     const where = describeLocation(bomb.location, bomb.location.kind === 'cart' ? s.cabin.cartRow : undefined);
-    const casualties = victims.length ? ` Killed: ${victims.map(label).join(', ')}.` : ' Nobody was caught in the blast.';
+    const casualties = victims.length ? ` Killed: ${victims.map((v) => label(s, v)).join(', ')}.` : ' Nobody was caught in the blast.';
     addLog(s, now, 'all', 'explosion', `BOOM! A bomb went off ${where}.${casualties}`, {
       bomb: bomb.id,
       cells: centers,
@@ -649,7 +668,7 @@ export function resolveNight(s: GameState, now: number): void {
         if (p.poisonedBy && !isSaboteur(p.role)) statsOf(s, p.poisonedBy).kills++;
         removeFromPlay(s, p, 'poison', n);
         s.incidentAtDawn = true;
-        addLog(s, now, 'all', 'death', `${label(p)} died of poisoning.`, { player: p.id, cause: 'poison' });
+        addLog(s, now, 'all', 'death', `${label(s, p)} died of poisoning.`, { player: p.id, cause: 'poison' });
         readNote(s, p, now);
       }
     } else {

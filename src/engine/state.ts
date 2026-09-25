@@ -1,6 +1,6 @@
 import { SEAT_COLS, allSeats, isCockpit, parsePlace } from './grid';
 import { bombsFor, destinationOf } from './destinations';
-import { ROLES, canPlantBombs } from './roles';
+import { hasAbility, roleInfo, usesLeft } from './custom';
 import { normalizeSettings, phaseDurationMs } from './settings';
 import type { Bomb, BombLocation, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
 
@@ -68,8 +68,8 @@ export function setPhase(s: GameState, kind: PhaseKind, now: number): void {
 }
 
 /** Name plus role once the role is public. */
-export function label(p: PlayerState): string {
-  return p.revealed ? `${p.name} (${ROLES[p.role].name})` : p.name;
+export function label(s: GameState, p: PlayerState): string {
+  return p.revealed ? `${p.name} (${roleInfo(p.role, s.settings).name})` : p.name;
 }
 
 /** Read someone's black box note out to the cabin, once they have left play. */
@@ -91,9 +91,11 @@ export function fuseText(bomb: Bomb, night: number): string {
   return `set to go off in ${left} nights`;
 }
 
-/** Bombs a Bomber or the Mastermind still carries: one for every three scheduled nights of the flight. */
+/** Bombs a Bomber or the Mastermind still carries: one for every three scheduled nights of the flight (a custom bomb role: as many as the host gave it). */
 export function bombsLeft(s: GameState, p: PlayerState): number {
-  if (!canPlantBombs(p.role)) return 0;
+  if (!hasAbility(s.settings, p.role, 'bomb')) return 0;
+  const custom = usesLeft(s, p);
+  if (custom !== null) return custom;
   return Math.max(0, bombsFor(destinationOf(s.settings).nights) - p.bombsPlanted);
 }
 
@@ -138,6 +140,7 @@ export function normalizeGame(s: GameState): GameState {
     p.roughAirUsed ??= false;
     p.courseUsed ??= false;
     p.knockedOutNight ??= null;
+    p.abilityUses ??= 0;
     // Older games gave each Bomber one bomb and only noted whether it was used.
     const old = p as PlayerState & { bombUsed?: boolean };
     p.bombsPlanted ??= old.bombUsed ? 1 : 0;

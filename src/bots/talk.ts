@@ -1,4 +1,4 @@
-import { ROLES, grid, isNightPhase, type BotChatter, type BotSkill, type ChatChannel, type PlayerView, type RoleId } from '../engine';
+import { ROLES, grid, isNightPhase, roleNameIn, type BotChatter, type BotSkill, type ChatChannel, type PlayerView, type RoleId, type Settings } from '../engine';
 import type { Knowledge, Seen } from './knowledge';
 import type { TalkLimiter } from './limiter';
 import { suspects, SABOTEUR_ROLES, type Beliefs, type HeardLine, type Reason } from './mind';
@@ -67,10 +67,11 @@ export interface TalkContext {
   name: (id: string) => string;
 }
 
-export function roleName(role: RoleId): string {
+/** A role as bots say it (the host's own roles by the name the host gave them). */
+export function roleName(role: RoleId, settings?: Settings): string {
   if (role === 'stewardess_loyal' || role === 'stewardess_rogue') return 'Stewardess';
   if (role === 'pilot_rogue') return 'Pilot';
-  return ROLES[role].name;
+  return settings ? roleNameIn(role, settings) : ROLES[role].name;
 }
 
 /** A reason as a clause: "a bomb turned up under 5C". */
@@ -197,7 +198,7 @@ export function wants(ctx: TalkContext): Say[] {
     if (h.accuse.some((a) => a.id === k.me.id)) {
       const claim = myClaim(ctx);
       const result = myResult(ctx);
-      const why = claim !== 'passenger' ? `I'm the ${roleName(claim)}` : result ? `I searched ${result.fill.seats}` : "I've just been sitting here";
+      const why = claim !== 'passenger' ? `I'm the ${roleName(claim, view.settings)}` : result ? `I searched ${result.fill.seats}` : "I've just been sitting here";
       out.push({ kind: 'defend_self', channel: 'cabin', fill: { why }, priority: 100, key: `defend:${l.id}`, at: typed(ctx, l.t), reply: true, line: l.id });
       continue;
     }
@@ -205,7 +206,7 @@ export function wants(ctx: TalkContext): Say[] {
     const toMe = h.to.includes(k.me.id) || (h.to.includes('*') && h.ask !== 'general' && h.ask !== null && rng() < 0.3);
     if (toMe && h.ask) {
       if (h.ask === 'role') {
-        out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(myClaim(ctx)) }, priority: 95, key: `ask:${l.id}`, at: typed(ctx, l.t, 20), reply: true, line: l.id });
+        out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(myClaim(ctx), view.settings) }, priority: 95, key: `ask:${l.id}`, at: typed(ctx, l.t, 20), reply: true, line: l.id });
       } else if (h.ask === 'result') {
         const r = myResult(ctx);
         out.push({ ...(r ?? { kind: 'answer_result' as LineKind, fill: {} }), channel: 'cabin', priority: 95, key: `ask:${l.id}`, at: typed(ctx, l.t), reply: true, line: l.id });
@@ -260,7 +261,7 @@ export function wants(ctx: TalkContext): Say[] {
     if (result && !saboteur) {
       const bomb = result.kind === 'result_bomb';
       if (bomb && skill !== 'easy' && k.me.role !== 'passenger' && !grid.isCockpit(k.me.seat)) {
-        out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(k.me.role) }, priority: 85, key: 'claim', at: soon(3, 6), reply: false });
+        out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(k.me.role, view.settings) }, priority: 85, key: 'claim', at: soon(3, 6), reply: false });
       }
       out.push({ ...result, channel: 'cabin', priority: bomb ? 80 : k.me.role === 'passenger' ? 25 : 45, key: `result:${day}`, at: soon(4, 9), reply: false });
     } else if (result && saboteur && chance(ctx, `fake:${day}`, 0.4)) {
@@ -305,7 +306,7 @@ export function wants(ctx: TalkContext): Say[] {
       out.push({
         kind: right ? 'verdict_right' : 'verdict_wrong',
         channel: 'cabin',
-        fill: { name: name(v.restrained), role: roleName(role) },
+        fill: { name: name(v.restrained), role: roleName(role, view.settings) },
         priority: 70,
         key: `verdict:${day}`,
         at: phaseStart + (1 + rng() * 3) * 1000,

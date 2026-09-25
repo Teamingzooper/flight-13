@@ -19,6 +19,17 @@ import {
   destinationOf,
   hasTwist,
   mealDay,
+  ABILITIES,
+  ABILITY_ORDER,
+  CUSTOM_ROLE_LIMITS,
+  customHowTo,
+  customInDeck,
+  describeCustomRole,
+  newCustomRole,
+  usesFor,
+  type CustomAbility,
+  type CustomRole,
+  type CustomUses,
   presetCards,
   validateCards,
   validateSettings,
@@ -61,7 +72,7 @@ export function minPlayersFor(settings: Settings): number | null {
   const plane = PLANES[settings.plane] ?? PLANES.airliner;
   for (let n = Math.max(MIN_PLAYERS, plane.minPlayers); n <= plane.maxPlayers; n++) {
     const cards = settings.rolesMode === 'auto' ? presetCards(n) : settings.cards;
-    if (validateCards(cards, n, settings.stewardessRogueChance) === null) return n;
+    if (validateCards(cards, n, settings.stewardessRogueChance, customInDeck(settings)) === null) return n;
   }
   return null;
 }
@@ -82,6 +93,7 @@ export function describeRules(s: Settings): string[] {
     s.rolesMode === 'auto'
       ? 'Roles are balanced automatically for however many passengers board.'
       : `Roles: ${describeCards(s.cards)}. Everyone else is a Passenger.`,
+    ...(customInDeck(s).length ? [`Roles made up for this flight: ${customInDeck(s).map(describeCustomRole).join('; ')}.`] : []),
     `The Stewardess turns rogue ${Math.round(s.stewardessRogueChance * 100)}% of the time.`,
     `The Pilot turns rogue ${Math.round(s.pilotRogueChance * 100)}% of the time (never if the saboteurs would stop being outnumbered).`,
     `Pace: nights ${t.night_move + t.night_act}s, discussion ${discuss}s, votes ${t.day_vote}s.`,
@@ -95,6 +107,93 @@ export function describeRules(s: Settings): string[] {
       : 'No meal service.',
     `Bots: ${BOT_CHATTER_NAMES[s.botChatter].toLowerCase()} chatter, ${BOT_SKILL_NAMES[s.botSkill].toLowerCase()} skill.`,
   ];
+}
+
+const USES_NAME: Record<string, string> = { nightly: 'Every night', 2: 'Twice', 1: 'Once' };
+
+/** How often, as the builder's buttons say it (bombs: how many). */
+function usesLabel(role: CustomRole, uses: CustomUses, nights: number): string {
+  if (role.ability !== 'bomb') return USES_NAME[String(uses)];
+  const n = uses === 'nightly' ? bombsFor(nights) : uses;
+  return uses === 'nightly' ? `${n} (1 per 3 nights)` : `${n} bomb${n === 1 ? '' : 's'}`;
+}
+
+/** The host's own roles: a name, a side, an ability borrowed from the game's roles, how often, and how many cards. */
+function CustomRolesEditor({ roles, nights, onChange }: { roles: CustomRole[]; nights: number; onChange: (roles: CustomRole[]) => void }) {
+  const update = (i: number, patch: Partial<CustomRole>) =>
+    onChange(
+      roles.map((r, k) => {
+        if (k !== i) return r;
+        const next = { ...r, ...patch };
+        // Bombs are the saboteurs' alone, and each ability has its own choices of how often.
+        if (next.team === 'passengers' && next.ability === 'bomb') next.ability = 'none';
+        if (!usesFor(next.ability).includes(next.uses)) next.uses = usesFor(next.ability)[0];
+        return next;
+      }),
+    );
+  return (
+    <div class="custom-roles">
+      <div class="label">Roles of your own</div>
+      <p class="hint">Make up to {CUSTOM_ROLE_LIMITS.roles} roles: a name, a side, and one ability borrowed from the game’s roles.</p>
+      {roles.map((r, i) => (
+        <div class={`custom-role ${r.team}`} key={i}>
+          <div class="custom-role-head">
+            <input
+              class="input"
+              value={r.name}
+              maxLength={CUSTOM_ROLE_LIMITS.nameLength}
+              aria-label="Role name"
+              placeholder="Name"
+              onInput={(e) => update(i, { name: e.currentTarget.value })}
+            />
+            <div class="stepper" aria-label="Cards this flight">
+              <button type="button" aria-label={`Fewer ${r.name} cards`} onClick={() => update(i, { count: Math.max(0, r.count - 1) })}>
+                −
+              </button>
+              <b>{r.count}</b>
+              <button type="button" aria-label={`More ${r.name} cards`} onClick={() => update(i, { count: Math.min(CUSTOM_ROLE_LIMITS.cards, r.count + 1) })}>
+                +
+              </button>
+            </div>
+            <button type="button" class="btn ghost tiny" onClick={() => onChange(roles.filter((_, k) => k !== i))}>
+              Remove
+            </button>
+          </div>
+          <div class="custom-role-row">
+            <div class="segmented" role="group" aria-label="Side">
+              {(['passengers', 'saboteurs'] as const).map((team) => (
+                <button type="button" key={team} class={r.team === team ? 'on' : ''} onClick={() => update(i, { team })}>
+                  {team === 'passengers' ? 'Passengers' : 'Saboteurs'}
+                </button>
+              ))}
+            </div>
+            <select class="input" value={r.ability} aria-label="Ability" onChange={(e) => update(i, { ability: e.currentTarget.value as CustomAbility })}>
+              {ABILITY_ORDER.filter((a) => ABILITIES[a].teams.includes(r.team)).map((a) => (
+                <option key={a} value={a}>
+                  {ABILITIES[a].name}
+                </option>
+              ))}
+            </select>
+            {r.ability !== 'none' && (
+              <div class="segmented" role="group" aria-label={r.ability === 'bomb' ? 'Bombs' : 'How often'}>
+                {usesFor(r.ability).map((u) => (
+                  <button type="button" key={String(u)} class={r.uses === u ? 'on' : ''} onClick={() => update(i, { uses: u })}>
+                    {usesLabel(r, u, nights)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p class="hint custom-role-how">{customHowTo(r, nights)}</p>
+        </div>
+      ))}
+      {roles.length < CUSTOM_ROLE_LIMITS.roles && (
+        <button type="button" class="btn ghost small" onClick={() => onChange([...roles, newCustomRole(roles)])}>
+          + Make a role
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Toggle({ checked, onChange, title, hint }: { checked: boolean; onChange: (v: boolean) => void; title: string; hint?: string }) {
@@ -365,6 +464,7 @@ export function SettingsForm({
         {s.rolesMode === 'auto' ? (
           <p class="hint">
             Balanced for however many passengers board. With a full cabin of {s.maxPassengers}: {describeCards(presetCards(s.maxPassengers))}.
+            Want roles of your own? Pick Custom to make them.
           </p>
         ) : (
           <>
@@ -389,6 +489,7 @@ export function SettingsForm({
               ))}
             </div>
             <p class="hint">Everyone else is a Passenger.{minPlayers ? ` Needs at least ${minPlayers} passengers.` : ''}</p>
+            <CustomRolesEditor roles={s.customRoles} nights={destinationOf(s).nights} onChange={(customRoles) => set({ customRoles })} />
           </>
         )}
         <label class="field">

@@ -1,4 +1,4 @@
-import type { Cards, RoleId, SpecialCard, Team } from './types';
+import type { Cards, CustomRole, CustomRoleId, RoleId, SpecialCard, Team } from './types';
 
 export interface RoleInfo {
   id: RoleId;
@@ -8,6 +8,17 @@ export interface RoleInfo {
   blurb: string;
   /** How the ability works, for the Action tab. */
   howTo: string;
+}
+
+/** Stand-ins for the host's own roles (their names and how-tos come from the settings: see custom.ts). */
+function customStandIn(id: CustomRoleId): RoleInfo {
+  return {
+    id,
+    name: 'Custom role',
+    team: id.startsWith('custom_s') ? 'saboteurs' : 'passengers',
+    blurb: 'A role made up for this flight.',
+    howTo: 'A role made up for this flight: see the flight rules.',
+  };
 }
 
 export const ROLES: Record<RoleId, RoleInfo> = {
@@ -90,6 +101,12 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     howTo:
       'Everything the Pilot can do, for the saboteurs. Buckle in whoever gets close, call passengers up to the jump seat so they cannot use their abilities, feed the camera footage to your team, and take the shortcut: land a night early while the saboteurs are still free. Everyone thinks you are on their side.',
   },
+  custom_p1: customStandIn('custom_p1'),
+  custom_p2: customStandIn('custom_p2'),
+  custom_p3: customStandIn('custom_p3'),
+  custom_s1: customStandIn('custom_s1'),
+  custom_s2: customStandIn('custom_s2'),
+  custom_s3: customStandIn('custom_s3'),
 };
 
 export const SPECIAL_CARDS: readonly SpecialCard[] = ['bomber', 'mastermind', 'stewardess', 'pilot', 'nurse', 'investigator', 'marshal'];
@@ -143,15 +160,18 @@ export function maxSaboteurs(cards: Cards, rogueChance: number): number {
   return cards.bomber + cards.mastermind + (rogueChance > 0 ? cards.stewardess : 0);
 }
 
-export function validateCards(cards: Cards, players: number, rogueChance: number): string | null {
+/** `custom`: the host's own roles in the deck (each dealt `count` times). */
+export function validateCards(cards: Cards, players: number, rogueChance: number, custom: readonly CustomRole[] = []): string | null {
   for (const card of SPECIAL_CARDS) {
     const count = cards[card];
     if (!Number.isInteger(count) || count < 0) return `Invalid number of ${card} cards.`;
   }
-  if (cards.bomber + cards.mastermind < 1) return 'Add at least one Bomber or Mastermind.';
-  if (countSpecials(cards) > players) return `Too many special roles for ${players} passengers.`;
+  const customCount = custom.reduce((n, r) => n + r.count, 0);
+  const customSaboteurs = custom.filter((r) => r.team === 'saboteurs').reduce((n, r) => n + r.count, 0);
+  if (cards.bomber + cards.mastermind + customSaboteurs < 1) return 'Add at least one saboteur: a Bomber, a Mastermind, or a saboteur role of your own.';
+  if (countSpecials(cards) + customCount > players) return `Too many special roles for ${players} passengers.`;
   if (cards.pilot > 1) return 'Only one Pilot fits on the flight deck.';
-  if (maxSaboteurs(cards, rogueChance) * 2 >= players) {
+  if ((maxSaboteurs(cards, rogueChance) + customSaboteurs) * 2 >= players) {
     return 'Too many possible saboteurs: they must start as a minority.';
   }
   return null;
@@ -209,7 +229,8 @@ export function giveRole(roles: readonly RoleId[], who: number, wanted: RoleId):
       k = find('marshal', 'investigator', 'nurse', 'stewardess_loyal');
       break;
     default:
-      k = find('passenger', 'marshal', 'investigator', 'nurse', 'stewardess_loyal');
+      // (The host's own saboteur roles come out of a Bomber's card; their passenger roles, like the others, a Passenger's.)
+      k = wanted.startsWith('custom_s') ? find('bomber', 'mastermind') : find('passenger', 'marshal', 'investigator', 'nurse', 'stewardess_loyal');
   }
   if (k < 0) return `there is no card on this flight that could become the ${ROLES[wanted].name}`;
   out[k] = wanted;

@@ -2,6 +2,7 @@ import { voteWeight } from './day';
 import { isNightPhase, isWhisperPhase, phaseDue } from './engine';
 import { WHISPER_RADIUS, distance } from './grid';
 import { possibleItemUses, type ItemUse } from './items';
+import { usesLeft } from './custom';
 import { lunchOpen, tamperReach } from './meal';
 import { isPilot, isSaboteur, teamOf } from './roles';
 import { checkCourse, checkJumpseat, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
@@ -68,6 +69,8 @@ export interface YouView {
   buckled: 'pilot' | 'turbulence' | 'rough' | null;
   /** Bombs you still carry (Bombers and the Mastermind: one for every three nights of the flight). */
   bombsLeft: number;
+  /** A custom role's ability: uses left this flight (null: not a custom role, or every night). */
+  usesLeft: number | null;
   selfTreatUsed: boolean;
   lastSeatbeltTarget: string | null;
   /** Your black box note (read out if you die or are restrained). */
@@ -279,6 +282,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     poisoned: me.poisonedNight !== null && isActive(me),
     buckled: isNightPhase(s.phase.kind) ? s.night.buckled[me.id] ?? null : null,
     bombsLeft: bombsLeft(s, me),
+    usesLeft: usesLeft(s, me),
     selfTreatUsed: me.selfTreatUsed,
     lastSeatbeltTarget: me.lastSeatbeltTarget,
     note: me.note ?? '',

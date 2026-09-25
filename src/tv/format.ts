@@ -1,4 +1,4 @@
-import { ROLES, describeLocation, grid, type Dish, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
+import { describeLocation, grid, roleNameIn, type Dish, type Settings, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
 
 export function clock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -8,7 +8,8 @@ export function clock(ms: number): string {
 export const teamName = (team: Team): string => (team === 'saboteurs' ? 'Saboteurs' : 'Passengers');
 
 export const DISH_ICON: Record<Dish, string> = { chicken: '🍗', pasta: '🍝' };
-export const roleName = (role: RoleId): string => ROLES[role].name;
+/** A role's name (the host's own roles by the name they gave them, from the flight's settings). */
+export const roleName = (role: RoleId, settings: Settings): string => roleNameIn(role, settings);
 
 export function playerById(game: PlayerView, id: string | null | undefined): PlayerSummary | undefined {
   return id ? game.players.find((p) => p.id === id) : undefined;
@@ -119,6 +120,8 @@ export function describeAction(game: PlayerView, action: NightAction): string {
       return action.what === 'cart' ? 'inspect the drink cart' : 'inspect the lavatory';
     case 'serve':
       return `serve ${nameWithSeat(game, action.target)} a poisoned drink`;
+    case 'poison':
+      return `slip poison to ${nameWithSeat(game, action.target)}`;
     case 'check':
       return `check under the ${action.side === 'left' ? 'A, B and C' : 'D, E and F'} seats of your row`;
     case 'plant': {

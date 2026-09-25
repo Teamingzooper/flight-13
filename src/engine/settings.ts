@@ -1,3 +1,4 @@
+import { validateCustomRoles } from './custom';
 import { CUSTOM_LIMITS, DESTINATIONS, destinationOf, hasTwist } from './destinations';
 import { PLANES, isPlaneId } from './planes';
 import { emptyCards } from './roles';
@@ -53,6 +54,7 @@ export function defaultSettings(): Settings {
     anonymousVotes: false,
     whispers: true,
     pilotMustFly: false,
+    customRoles: [],
     mealService: true,
     botChatter: 'normal',
     botSkill: 'normal',
@@ -61,7 +63,7 @@ export function defaultSettings(): Settings {
 
 /** Fill in fields that settings saved by an older version do not have. */
 export function normalizeSettings(s: Settings): Settings {
-  return { ...defaultSettings(), ...s, cards: { ...emptyCards(), ...s.cards } };
+  return { ...defaultSettings(), ...s, cards: { ...emptyCards(), ...s.cards }, customRoles: s.customRoles ?? [] };
 }
 
 /** Length of a phase in milliseconds. */
@@ -115,6 +117,8 @@ export function validateSettings(s: Settings): string | null {
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';
   if (typeof s.mealService !== 'boolean') return 'Meal service is on or off.';
+  const custom = validateCustomRoles(s.customRoles);
+  if (custom) return custom;
   if (!BOT_CHATTERS.includes(s.botChatter)) return 'Unknown bot chatter.';
   if (!BOT_SKILLS.includes(s.botSkill)) return 'Unknown bot skill.';
   return null;

@@ -1,4 +1,4 @@
-import { ITEMS, MAX_PACKED, ROLES, type PlayerView } from '../engine';
+import { ITEMS, MAX_PACKED, roleNameIn, type PlayerView } from '../engine';
 import { ItemIcon } from '../meta/ItemIcon';
 import type { Packing } from '../tv/packing';
 
@@ -14,7 +14,7 @@ export function PackingHud({ game, packing, onRole }: { game: PlayerView; packin
       <div class="packing-top">
         <button class="hud-chip hud-button packing-role" onClick={onRole} title="Read your boarding pass again">
           <span class="label">Your role</span>
-          <b class={you.team}>{ROLES[you.role].name}</b>
+          <b class={you.team}>{roleNameIn(you.role, game.settings)}</b>
         </button>
       </div>
       {!owned && (
