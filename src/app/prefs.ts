@@ -4,7 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
  * Your own settings for this browser (not the flight's rules): sound and voice, the people you muted, graphics, and
  * accessibility. Changed from the settings screen (on the home page and on the seatback TV) and applied as they change.
  */
-export type Quality = 'low' | 'medium' | 'high';
+export type Quality = 'basic' | 'low' | 'medium' | 'high' | 'ultra';
 export type TextSize = 'normal' | 'large' | 'larger';
 
 export interface Prefs {
@@ -43,7 +43,7 @@ export const DEFAULT_PREFS: Prefs = {
   fewerFlashes: false,
 };
 
-export const QUALITIES: readonly Quality[] = ['low', 'medium', 'high'];
+export const QUALITIES: readonly Quality[] = ['basic', 'low', 'medium', 'high', 'ultra'];
 export const TEXT_SIZES: Record<TextSize, number> = { normal: 1, large: 1.15, larger: 1.3 };
 export const FOV_RANGE = { min: -10, max: 20 } as const;
 /** Mutes and volumes kept, at most (the oldest go first). */

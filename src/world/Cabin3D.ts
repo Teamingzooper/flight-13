@@ -1,6 +1,8 @@
 import {
   BlendFunction,
   BloomEffect,
+  ChromaticAberrationEffect,
+  type Effect,
   EffectComposer,
   EffectPass,
   NoiseEffect,
@@ -10,6 +12,7 @@ import {
   ToneMappingMode,
   VignetteEffect,
 } from 'postprocessing';
+import { N8AOPostPass } from 'n8ao';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
@@ -17,7 +20,9 @@ import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
 import type { ClientState, Pose } from '../net/protocol';
-import { getPrefs, subscribePrefs, type Quality } from '../app/prefs';
+import { getPrefs, subscribePrefs } from '../app/prefs';
+import { graphicsProfile, setDetail, type GraphicsProfile } from './graphics';
+import { WindowShafts } from './shafts';
 import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
 import { directorCues, type Cue } from './director';
@@ -108,6 +113,8 @@ interface Built {
   flightDeck: FlightDeck;
   lighting: Lighting;
   windows: WindowView;
+  /** Sunbeams (and dust) through the windows, on the graphics settings that have them. */
+  shafts: WindowShafts;
   effects: Effects;
   skies: Record<SkyKind, THREE.Texture>;
   group: THREE.Group;
@@ -133,12 +140,6 @@ function rearSpot(rows: number, i: number): THREE.Vector3 {
   return new THREE.Vector3(-0.55 - ((i - 7) % 4) * 0.34, 0, partition - 0.13);
 }
 
-/** How sharp the cabin renders: fewer pixels on low settings (and on phones and tablets). */
-function pixelRatioFor(quality: Quality): number {
-  const most = { low: 1, medium: 1.25, high: 1.75 }[quality];
-  return Math.min(devicePixelRatio, TOUCH ? Math.min(most, 1.25) : most);
-}
-
 /** The 3D cabin seen from your seat. Framework-free; the World component drives it. */
 export class Cabin3D {
   static supported(): boolean {
@@ -154,6 +155,13 @@ export class Cabin3D {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(68, 1, 0.03, 60);
   private readonly composer: EffectComposer;
+  /** What the graphics setting turns on (see graphics.ts); changed live from the settings screen. */
+  private profile: GraphicsProfile;
+  /** The cabin's reflections (kept while a lower setting goes without them). */
+  private readonly envMap: THREE.Texture;
+  private shownCamera: THREE.Camera;
+  private aoPass: N8AOPostPass | null = null;
+  private passEffects: Effect[] = [];
   private readonly controls: SeatControls;
   private readonly timer = new THREE.Timer();
   private readonly liveScreen = new LiveScreen();
@@ -283,20 +291,21 @@ export class Cabin3D {
     private readonly opts: Cabin3DOptions,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
-    // Graphics quality (the settings screen): sharpness now; shadows and effects when the cabin is next built.
-    const quality = getPrefs().quality;
-    this.renderer.setPixelRatio(pixelRatioFor(quality));
-    this.renderer.shadowMap.enabled = !TOUCH && quality !== 'low';
+    // Graphics quality (the settings screen): Basic to Ultra, applied now and whenever it changes.
+    this.profile = graphicsProfile(getPrefs().quality, TOUCH);
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, this.profile.pixelRatio));
+    this.renderer.shadowMap.enabled = this.profile.shadows;
     // Not PCFSoftShadowMap: three.js dropped it and swaps in PCF at the first shadow pass, but shaders compiled
     // before then keep the old shadow code, and draws with them go dark (the camera monitor was nearly black).
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMapping = this.profile.post === 'none' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.classList.add('world-gl');
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = this.profile.environment ? this.envMap : null;
     this.scene.environmentIntensity = 0.3;
     this.scene.background = new THREE.Color('#05070c');
     pmrem.dispose();
@@ -306,20 +315,14 @@ export class Cabin3D {
     this.liveMesh.visible = false;
     this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision, this.trays.group);
 
-    this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType, multisampling: this.profile.multisampling });
     this.shownScene = this.scene;
-    const bloom = new BloomEffect({ mipmapBlur: true, luminanceThreshold: 0.82, luminanceSmoothing: 0.2, intensity: 0.75, radius: 0.65 });
-    const vignette = new VignetteEffect({ offset: 0.3, darkness: 0.6 });
-    const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
-    noise.blendMode.opacity.value = 0.07;
-    const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
-    if (quality === 'low') this.composer.addPass(new EffectPass(this.camera, vignette, tone));
-    else this.composer.addPass(new EffectPass(this.camera, bloom, vignette, noise, tone));
-    if (quality === 'high') this.composer.addPass(new EffectPass(this.camera, new SMAAEffect()));
+    this.shownCamera = this.camera;
+    this.buildPasses();
+    setDetail(this.profile.detail, this.profile.anisotropy);
     this.offPrefs = subscribePrefs((prefs) => {
-      this.renderer.setPixelRatio(pixelRatioFor(prefs.quality));
-      this.resize();
+      if (prefs.quality !== this.profile.quality) this.applyGraphics(graphicsProfile(prefs.quality, TOUCH));
+      else this.resize();
     });
 
     this.controls = new SeatControls(this.camera, this.renderer.domElement, {
@@ -672,7 +675,9 @@ export class Cabin3D {
         }
       }
     });
-    this.scene.environment?.dispose();
+    this.envMap.dispose();
+    this.aoPass?.dispose();
+    for (const effect of this.passEffects) effect.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -681,6 +686,7 @@ export class Cabin3D {
     if (this.built) {
       this.scene.remove(this.built.group);
       this.built.lighting.dispose();
+      this.built.shafts.dispose();
     }
     const group = new THREE.Group();
     const cabin = buildCabin(rows);
@@ -709,8 +715,13 @@ export class Cabin3D {
     // The jumbo's spiral staircase up to the upper deck, in the front galley.
     if (plane === 'jumbo') group.add(buildStaircase());
     this.scene.add(group);
-    const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
-    this.built = { rows, plane, cabin, seats, lavatory, flightDeck, lighting, windows, effects, skies, group };
+    const lighting = new Lighting(this.scene, cabin, seats, windows, this.profile.shadows);
+    lighting.setShadows(this.profile.shadows, this.profile.shadowMapSize, this.profile.shadowRadius);
+    lighting.setEnvironment(this.profile.environment);
+    const shafts = new WindowShafts(cabin.windows);
+    shafts.dustOn = this.profile.dust;
+    group.add(shafts.group);
+    this.built = { rows, plane, cabin, seats, lavatory, flightDeck, lighting, windows, shafts, effects, skies, group };
     this.seatKey = null;
   }
 
@@ -816,8 +827,106 @@ export class Cabin3D {
   private show(scene: THREE.Scene, camera: THREE.Camera): void {
     if (this.shownScene === scene) return;
     this.shownScene = scene;
+    this.shownCamera = camera;
     this.composer.setMainScene(scene);
     this.composer.setMainCamera(camera);
+    if (this.aoPass) {
+      this.aoPass.scene = scene;
+      this.aoPass.camera = camera;
+    }
+  }
+
+  /** Draw the frame: through the effects chain, or (on Basic) straight to the screen. */
+  private present(dt: number): void {
+    if (this.profile.post === 'none') this.renderer.render(this.shownScene, this.shownCamera);
+    else this.composer.render(dt);
+  }
+
+  /**
+   * The effects chain for the graphics setting: ambient occlusion straight after the scene, then bloom, lens
+   * fringing, vignette, film grain and tone mapping, and SMAA to smooth edges.
+   */
+  private buildPasses(): void {
+    const p = this.profile;
+    this.composer.removeAllPasses();
+    this.aoPass?.dispose();
+    this.aoPass = null;
+    for (const effect of this.passEffects) effect.dispose();
+    this.passEffects = [];
+    this.composer.multisampling = p.multisampling;
+    this.composer.addPass(new RenderPass(this.shownScene, this.shownCamera));
+    if (p.post === 'none') return;
+    const width = this.container.clientWidth || 1;
+    const height = this.container.clientHeight || 1;
+    if (p.ao !== 'off') {
+      const ao = new N8AOPostPass(this.shownScene, this.shownCamera, width, height);
+      ao.configuration.aoRadius = 0.42;
+      ao.configuration.distanceFalloff = 1;
+      ao.configuration.intensity = 2.4;
+      ao.configuration.color = new THREE.Color('#0b0d14');
+      ao.configuration.gammaCorrection = false;
+      ao.setQualityMode(p.ao);
+      if (p.ao !== 'High') ao.configuration.halfRes = true;
+      this.composer.addPass(ao);
+      this.aoPass = ao;
+    }
+    const main: Effect[] = [];
+    if (p.bloom) {
+      main.push(
+        new BloomEffect({
+          mipmapBlur: true,
+          luminanceThreshold: p.tone === 'neutral' ? 0.88 : 0.82,
+          luminanceSmoothing: 0.2,
+          intensity: p.quality === 'ultra' ? 0.85 : 0.75,
+          radius: p.quality === 'ultra' ? 0.72 : 0.65,
+          levels: p.quality === 'ultra' ? 9 : 7,
+        }),
+      );
+    }
+    main.push(new VignetteEffect({ offset: 0.3, darkness: p.post === 'light' ? 0.45 : 0.6 }));
+    if (p.grain > 0) {
+      const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
+      noise.blendMode.opacity.value = p.grain;
+      main.push(noise);
+    }
+    main.push(new ToneMappingEffect({ mode: p.tone === 'neutral' ? ToneMappingMode.NEUTRAL : ToneMappingMode.ACES_FILMIC }));
+    this.passEffects.push(...main);
+    this.composer.addPass(new EffectPass(this.shownCamera, ...main));
+    if (p.fringe) {
+      const fringe = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0.0007, 0.0005), radialModulation: true, modulationOffset: 0.4 });
+      this.passEffects.push(fringe);
+      this.composer.addPass(new EffectPass(this.shownCamera, fringe));
+    }
+    if (p.smaa) {
+      const smaa = new SMAAEffect();
+      this.passEffects.push(smaa);
+      this.composer.addPass(new EffectPass(this.shownCamera, smaa));
+    }
+  }
+
+  /** Switch graphics setting while running: resolution, shadows, reflections, surface detail, effects, sunbeams. */
+  private applyGraphics(profile: GraphicsProfile): void {
+    const before = this.profile;
+    this.profile = profile;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, profile.pixelRatio));
+    this.renderer.toneMapping = profile.post === 'none' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    this.renderer.shadowMap.enabled = profile.shadows;
+    this.built?.lighting.setShadows(profile.shadows, profile.shadowMapSize, profile.shadowRadius);
+    this.scene.environment = profile.environment ? this.envMap : null;
+    this.built?.lighting.setEnvironment(profile.environment);
+    setDetail(profile.detail, profile.anisotropy);
+    if (this.built) this.built.shafts.dustOn = profile.dust;
+    // Shadows on or off (or tone mapping moving into the renderer) changes every material's shader.
+    if (before.shadows !== profile.shadows || (before.post === 'none') !== (profile.post === 'none')) {
+      for (const scene of new Set([this.scene, this.shownScene])) {
+        scene.traverse((o) => {
+          const material = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+          for (const m of Array.isArray(material) ? material : material ? [material] : []) m.needsUpdate = true;
+        });
+      }
+    }
+    this.buildPasses();
+    this.resize();
   }
 
   private dropHotel(): void {
@@ -863,7 +972,7 @@ export class Cabin3D {
         this.showing = 'hotel';
         this.show(this.hotel.scene, this.hotel.camera);
         this.hotel.update(dt, time);
-        this.composer.render(dt);
+        this.present(dt);
         return true;
       case 'queue':
       case 'scan': {
@@ -878,7 +987,7 @@ export class Cabin3D {
         this.showing = 'gate';
         this.show(this.gate.scene, this.gate.camera);
         this.gate.show(moment.shot, moment.t, dt, time);
-        this.composer.render(dt);
+        this.present(dt);
         return true;
       }
       case 'aisle': {
@@ -920,7 +1029,7 @@ export class Cabin3D {
     if (this.lastView?.phase.kind === 'boarding' && this.snap && this.boardingFrame(dt, time)) return;
     if (this.showing === 'hotel' && this.hotel) {
       this.hotel.update(dt, time);
-      this.composer.render(dt);
+      this.present(dt);
       return;
     }
     const built = this.built;
@@ -934,6 +1043,9 @@ export class Cabin3D {
       built.windows.update(dt);
       built.effects.update(dt, time, this.cart.group.position.z);
       built.cabin.curtain.update(dt, this.people.movers());
+      // Sunbeams (or moonbeams) through the windows, as strong as the light outside.
+      const beams = this.profile.shafts && this.showing === 'cabin' ? built.lighting.shaftStrength() : 0;
+      built.shafts.update(dt, time, built.lighting.lightDirection, beams, built.lighting.key.color, this.renderer.getPixelRatio());
     }
     this.flash *= Math.exp(-dt * 5);
     // (Fewer flashes: a blast still shows, but only as a soft glow.)
@@ -957,7 +1069,7 @@ export class Cabin3D {
         this.camera.rotateZ(s * 0.9 * Math.sin(time * 19.3));
         this.endingShake *= Math.exp(-dt * 3);
       }
-      this.composer.render(dt);
+      this.present(dt);
       if (this.ending.done) this.finishEnding();
       return;
     }
@@ -992,7 +1104,7 @@ export class Cabin3D {
       this.aimControl = control;
       this.opts.onAimControl?.(control);
     }
-    this.composer.render(dt);
+    this.present(dt);
     this.drawConsole();
   }
 
@@ -1422,7 +1534,7 @@ export class Cabin3D {
     try {
       this.people.withHead(this.youId, () =>
         built.lighting.withMode('day', () => {
-          this.composer.render(0);
+          this.present(0);
           const { width: w, height: h } = shot;
           shot.getContext('2d')!.drawImage(canvas, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h, 0, 0, w, h);
         }),
@@ -1432,7 +1544,7 @@ export class Cabin3D {
       cam.quaternion.copy(saved.quaternion);
       cam.fov = saved.fov;
       cam.updateProjectionMatrix();
-      this.composer.render(0);
+      this.present(0);
     }
     return shot;
   }

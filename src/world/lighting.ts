@@ -19,6 +19,8 @@ interface Preset {
   keyDir: THREE.Vector3;
   ceiling: number;
   cove: number;
+  /** The cove lights' colour: cool white by day, the deep blue of an airliner's night mood lighting. */
+  coveColor: THREE.Color;
   floor: number;
   screens: number;
   glow: number;
@@ -39,6 +41,7 @@ const PRESETS: Record<LightMode, Preset> = {
     keyDir: new THREE.Vector3(-1, -0.42, 0.22).normalize(),
     ceiling: 2.2,
     cove: 1.3,
+    coveColor: new THREE.Color('#e9f0ff'),
     floor: 0.05,
     screens: 0.85,
     glow: 0,
@@ -54,7 +57,8 @@ const PRESETS: Record<LightMode, Preset> = {
     keyColor: new THREE.Color('#9db4ff'),
     keyDir: new THREE.Vector3(1, -0.5, -0.18).normalize(),
     ceiling: 0,
-    cove: 0.06,
+    cove: 0.42,
+    coveColor: new THREE.Color('#3149c9'),
     floor: 2.6,
     screens: 1.8,
     glow: 0.12,
@@ -71,6 +75,7 @@ const PRESETS: Record<LightMode, Preset> = {
     keyDir: new THREE.Vector3(-1, -0.42, 0.22).normalize(),
     ceiling: 0,
     cove: 0.05,
+    coveColor: new THREE.Color('#e9f0ff'),
     floor: 1.8,
     screens: 0.9,
     glow: 0.05,
@@ -131,21 +136,59 @@ export class Lighting {
     this.ceiling.lookAt(0, 0, midZ);
 
     this.key.castShadow = shadows;
-    if (shadows) {
-      this.key.shadow.mapSize.set(2048, 2048);
-      const cam = this.key.shadow.camera;
-      cam.left = -length / 2 - 1;
-      cam.right = length / 2 + 1;
-      cam.top = 3;
-      cam.bottom = -3;
-      cam.near = 0.1;
-      cam.far = 14;
-      this.key.shadow.bias = -0.0004;
-      this.key.shadow.normalBias = 0.02;
-    }
+    this.key.shadow.mapSize.set(2048, 2048);
+    const cam = this.key.shadow.camera;
+    cam.left = -length / 2 - 1;
+    cam.right = length / 2 + 1;
+    cam.top = 3;
+    cam.bottom = -3;
+    cam.near = 0.1;
+    cam.far = 14;
+    this.key.shadow.bias = -0.0004;
+    this.key.shadow.normalBias = 0.02;
     this.key.target.position.set(0, 0.8, midZ);
     scene.add(this.hemi, this.ambient, this.key, this.key.target, this.ceiling, this.screenGlow, this.lightning);
     this.apply(PRESETS.day);
+  }
+
+  /** Shadows on or off, how detailed (the shadow map's size) and how soft their edges are. */
+  setShadows(on: boolean, mapSize: number, radius: number): void {
+    this.key.castShadow = on;
+    if (this.key.shadow.mapSize.x !== mapSize) {
+      this.key.shadow.mapSize.set(mapSize, mapSize);
+      this.key.shadow.map?.dispose();
+      this.key.shadow.map = null;
+    }
+    this.key.shadow.radius = radius;
+  }
+
+  /**
+   * Without the environment's reflections (the Basic setting) the cabin lacks its bounce light: make it up with a
+   * little more fill.
+   */
+  setEnvironment(on: boolean): void {
+    this.noEnvironment = !on;
+    this.apply(this.snapshotTarget());
+  }
+
+  private noEnvironment = false;
+
+  private snapshotTarget(): Preset {
+    return this.t < 1 ? this.snapshot() : this.to;
+  }
+
+  /** Which way the sun (or moon) shines. */
+  get lightDirection(): THREE.Vector3 {
+    return this.keyDir;
+  }
+
+  /**
+   * How bright the beams of light through the windows are: sunbeams by day (and in a blackout), faint moonbeams at
+   * night, none while the lights are switching.
+   */
+  shaftStrength(): number {
+    const base = this.mode === 'night' ? 0.05 : 0.14;
+    return base * this.key.intensity * (0.3 + 0.7 * this.windows.brightness);
   }
 
   /** Safe to call every frame: only a change of mode starts a transition. */
@@ -240,6 +283,7 @@ export class Lighting {
       keyDir: this.keyDir.clone(),
       ceiling: this.ceiling.intensity,
       cove: this.cabin.cove.emissiveIntensity,
+      coveColor: this.cabin.cove.emissive.clone(),
       floor: this.cabin.floorLights.emissiveIntensity,
       screens: this.seats.screenMaterial.emissiveIntensity,
       glow: this.screenGlow.intensity,
@@ -262,6 +306,7 @@ export class Lighting {
       keyDir: a.keyDir.clone().lerp(b.keyDir, t).normalize(),
       ceiling: n(a.ceiling, b.ceiling),
       cove: n(a.cove, b.cove),
+      coveColor: a.coveColor.clone().lerp(b.coveColor, t),
       floor: n(a.floor, b.floor),
       screens: n(a.screens, b.screens),
       glow: n(a.glow, b.glow),
@@ -274,13 +319,17 @@ export class Lighting {
     this.hemi.intensity = p.hemi;
     this.hemi.color.copy(p.hemiSky);
     this.hemi.groundColor.copy(p.hemiGround);
-    this.ambient.intensity = p.ambient;
+    this.ambient.intensity = p.ambient + (this.noEnvironment ? p.env * 1.4 : 0);
     this.key.intensity = p.key;
     this.key.color.copy(p.keyColor);
     this.keyDir.copy(p.keyDir);
     this.key.position.copy(this.key.target.position).addScaledVector(p.keyDir, -6);
     this.ceiling.intensity = p.ceiling;
     this.cabin.cove.emissiveIntensity = p.cove;
+    this.cabin.cove.emissive.copy(p.coveColor);
+    // The cove lights wash the ceiling panels (a stand-in for the light they bounce).
+    this.cabin.ceiling.emissiveIntensity = p.cove * 0.32;
+    this.cabin.ceiling.emissive.copy(p.coveColor);
     this.cabin.floorLights.emissiveIntensity = p.floor;
     this.seats.screenMaterial.emissiveIntensity = p.screens;
     this.screenGlow.intensity = p.glow;
