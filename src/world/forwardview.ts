@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /** What the windscreen looks out on: the runway (taxiing, taking off, landing) or the sky by time of day. */
-export type ViewMode = 'runway' | 'day' | 'night' | 'dawn' | 'aurora';
+export type ViewMode = 'runway' | 'day' | 'cloudy' | 'sunset' | 'night' | 'storm' | 'dawn' | 'aurora';
 
 const W = 1024;
 const H = 300;
@@ -17,6 +17,9 @@ const SKIES: Record<Exclude<ViewMode, 'runway'>, Sky> = {
   night: { top: '#03070f', horizon: '#0d1b38', sea: ['#0d1629', '#050a14'] },
   dawn: { top: '#2a3a6e', horizon: '#f2a46c', sea: ['#f0c7a4', '#7c6479'] },
   aurora: { top: '#02060e', horizon: '#0b2432', sea: ['#0b1a28', '#040a12'] },
+  storm: { top: '#05070c', horizon: '#1e2532', sea: ['#1a1f2a', '#090c12'] },
+  cloudy: { top: '#7b8ba0', horizon: '#c6cfda', sea: ['#e2e6ec', '#a8b2bf'] },
+  sunset: { top: '#2b2f5e', horizon: '#f28c56', sea: ['#f3b087', '#865b70'] },
 };
 
 /** A little seeded randomness, so the stars and clouds stay put between frames. */
@@ -43,6 +46,8 @@ export class ForwardView {
   private travel = 0;
   private drift = 0;
   private drawnAt = -Infinity;
+  /** Lightning, 0..1: the whole view flashes white. */
+  flash = 0;
 
   constructor() {
     this.canvas.width = W;
@@ -75,6 +80,10 @@ export class ForwardView {
     if (mode === 'runway') this.drawRunway(g, horizon);
     else this.drawAir(g, mode, horizon, time);
     g.restore();
+    if (this.flash > 0.01) {
+      g.fillStyle = `rgba(226, 236, 255, ${Math.min(0.9, this.flash)})`;
+      g.fillRect(0, 0, W, H);
+    }
     this.texture.needsUpdate = true;
   }
 
@@ -140,6 +149,18 @@ export class ForwardView {
     top.addColorStop(1, sky.horizon);
     g.fillStyle = top;
     g.fillRect(-W, -H * 2, W * 3, H * 5);
+    if (mode === 'storm') {
+      // Thunderheads piled up on the horizon.
+      for (const c of this.clouds) {
+        const x = c.x * W;
+        const y = horizon * (0.55 + c.z * 0.45);
+        const w = 60 + c.w * 140;
+        g.fillStyle = `rgba(${34 + c.z * 20}, ${40 + c.z * 20}, ${52 + c.z * 24}, 0.85)`;
+        g.beginPath();
+        g.ellipse(x, y, w, w * 0.45, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
     if (mode === 'night' || mode === 'aurora') {
       g.fillStyle = '#ffffff';
       for (const s of this.stars) {
@@ -169,7 +190,12 @@ export class ForwardView {
     sea.addColorStop(1, sky.sea[1]);
     g.fillStyle = sea;
     g.fillRect(-W, horizon, W * 3, H * 3);
-    const light = mode === 'day' ? 'rgba(255, 255, 255, 0.55)' : mode === 'dawn' ? 'rgba(255, 220, 190, 0.45)' : 'rgba(120, 140, 180, 0.12)';
+    const light =
+      mode === 'day' || mode === 'cloudy'
+        ? 'rgba(255, 255, 255, 0.55)'
+        : mode === 'dawn' || mode === 'sunset'
+          ? 'rgba(255, 220, 190, 0.45)'
+          : 'rgba(120, 140, 180, 0.12)';
     g.fillStyle = light;
     for (const c of this.clouds) {
       const z = (c.z + this.drift) % 1;

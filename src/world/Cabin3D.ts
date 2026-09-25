@@ -36,7 +36,8 @@ import { EndingDirector } from './endings';
 import { LiveScreen } from './screen';
 import { GateSet } from './sets/gate';
 import { HotelSet } from './sets/hotel';
-import { auroraSkyTexture, dawnSkyTexture, runwayTexture } from './textures';
+import { auroraSkyTexture, cloudySkyTexture, dawnSkyTexture, runwayTexture, stormSkyTexture, sunsetSkyTexture } from './textures';
+import { skyFor, type SkyKind } from './weather';
 import { WindowView } from './windows';
 import { personality } from '../bots/personality';
 import { proximityGain } from '../net/voiceRules';
@@ -106,7 +107,7 @@ interface Built {
   lighting: Lighting;
   windows: WindowView;
   effects: Effects;
-  skies: { day: THREE.Texture; night: THREE.Texture; dawn: THREE.Texture; aurora: THREE.Texture; runway: THREE.Texture };
+  skies: Record<SkyKind, THREE.Texture>;
   group: THREE.Group;
 }
 
@@ -222,6 +223,15 @@ export class Cabin3D {
   private readonly flashEl = document.createElement('div');
   private turbulentNight: number | null = null;
   private nextBump = 0;
+  /** Storm lightning, 0..1, and when the next strike comes. */
+  private lightning = 0;
+  private nextLightning = 0;
+  /** A sleepy cabin at night: when each passenger last moved their head, and when the next snore, stretch and light come. */
+  private readonly poseMovedAt = new Map<string, number>();
+  private readonly lastPoses = new Map<string, Pose>();
+  private nextZzz = 0;
+  private nextStretch = 0;
+  private nextLamp = 0;
   private gearUp = false;
   private engine = CRUISE;
   /** Your phone flashlight, for looking under your seat. */
@@ -385,10 +395,11 @@ export class Cabin3D {
     // The Bermuda Triangle's nights have aurora skies, wherever the flight is headed.
     const bermuda = hasTwist(destinationOf(game.settings), 'triangle');
     const grounded = kind === 'packing' || kind === 'boarding' || kind === 'takeoff';
-    const sky = grounded ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
-    windows.show(sky, fresh || grounded ? 0 : 1.4);
-    // Through the windscreen: the runway on the ground, then the sky for the time of day.
-    this.viewMode = grounded ? 'runway' : night ? (bermuda ? 'aurora' : 'night') : kind === 'dawn' ? 'dawn' : 'day';
+    // The weather: storms on turbulent nights (and now and then anyway), cloudy days, a sunset over the verdict.
+    const sky = skyFor(game, bermuda);
+    windows.show(skies[sky], fresh || grounded ? 0 : 1.4);
+    // Through the windscreen: the same sky.
+    this.viewMode = sky;
     if (kind !== 'ended') this.landingView = false;
     // The captain's controls show tonight's calls (and the handset is up while he is on the PA).
     this.built!.flightDeck.setLook(deckLook(game, !!game.you && state.pa === game.you.id));
@@ -643,7 +654,16 @@ export class Cabin3D {
     const group = new THREE.Group();
     const cabin = buildCabin(rows);
     const seats = buildSeats(rows, cols, plane === 'jet');
-    const skies = { day: cabin.skyDay, night: cabin.skyNight, dawn: dawnSkyTexture(), aurora: auroraSkyTexture(), runway: runwayTexture() };
+    const skies: Record<SkyKind, THREE.Texture> = {
+      day: cabin.skyDay,
+      night: cabin.skyNight,
+      dawn: dawnSkyTexture(),
+      aurora: auroraSkyTexture(),
+      runway: runwayTexture(),
+      storm: stormSkyTexture(),
+      cloudy: cloudySkyTexture(),
+      sunset: sunsetSkyTexture(),
+    };
     const windows = new WindowView(cabin.windowGlass, skies.day);
     const lav = cabin.lavatoryDoor.position;
     const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7), cols);
@@ -877,7 +897,7 @@ export class Cabin3D {
       // The lights stay off after a blast for a moment, and until you are back up from under your seat.
       const mode = this.wantedMode !== 'night' && (time < this.darkUntil || this.searching) ? 'night' : this.wantedMode;
       built.lighting.setMode(mode);
-      this.flight(time, built);
+      this.flight(time, built, dt);
       this.flyDeck(dt, time, built);
       built.lighting.update(dt);
       built.windows.update(dt);
@@ -912,6 +932,7 @@ export class Cabin3D {
       this.liveMesh.matrixWorldNeedsUpdate = true;
     }
     this.applyPoses(time);
+    this.doze(time);
     this.playEmotes(time);
     this.playTape(time);
     this.people.update(dt, time);
@@ -1093,7 +1114,14 @@ export class Cabin3D {
     for (const p of this.state?.game?.players ?? []) {
       if (p.id === this.youId) continue;
       const actor = this.people.actor(p.id);
-      if (actor) actor.pose = this.poseSource?.get(p.id) ?? null;
+      const pose = this.poseSource?.get(p.id) ?? null;
+      if (actor) actor.pose = pose;
+      // When they last looked about (a passenger who keeps still at night nods off).
+      const last = this.lastPoses.get(p.id);
+      if (pose && (!last || Math.abs(last.yaw - pose.yaw) > 0.05 || Math.abs(last.pitch - pose.pitch) > 0.05)) {
+        this.lastPoses.set(p.id, pose);
+        this.poseMovedAt.set(p.id, time);
+      }
     }
     if (this.youId) {
       const me = this.people.actor(this.youId);
@@ -1108,8 +1136,60 @@ export class Cabin3D {
     }
   }
 
+  /**
+   * A sleepy cabin at night: whoever keeps still nods off (bots always do), someone snores now and then, someone
+   * stretches, and reading lights click on and off.
+   */
+  private doze(time: number): void {
+    const game = this.lastView;
+    const built = this.built;
+    if (!game || !built || !isNightPhase(game.phase.kind) || this.ending) return;
+    const dozers: string[] = [];
+    for (const p of game.players) {
+      if (p.id === this.youId || p.status !== 'alive') continue;
+      const actor = this.people.actor(p.id);
+      if (!actor || actor.walking || actor.away || actor.hidden || actor.crew) continue;
+      if (time - (this.poseMovedAt.get(p.id) ?? -Infinity) < 6) continue;
+      const seed = (p.id.charCodeAt(p.id.length - 1) % 17) * 0.7;
+      actor.pose = { yaw: Math.sin(time * 0.13 + seed) * 0.25, pitch: -0.62 + Math.sin(time * 0.37 + seed) * 0.05, lean: false };
+      dozers.push(p.id);
+    }
+    const anyone = () => dozers[Math.floor(Math.random() * dozers.length)];
+    if (time >= this.nextZzz) {
+      this.nextZzz = time + rand(4, 9);
+      if (dozers.length) this.showBubble(anyone(), '💤', 'Asleep', 3);
+    }
+    if (time >= this.nextStretch) {
+      this.nextStretch = time + rand(12, 26);
+      const actor = dozers.length ? this.people.actor(anyone()) : undefined;
+      if (actor && !actor.handsUp) {
+        actor.handsUp = true;
+        this.later(1.5, () => (actor.handsUp = false));
+      }
+    }
+    if (time >= this.nextLamp) {
+      this.nextLamp = time + rand(5, 11);
+      built.lighting.toggleReadingLight();
+    }
+  }
+
+  /** A little bubble over someone's head for a few seconds (a gesture, or a snore). */
+  private showBubble(id: string, icon: string, title: string, seconds: number): void {
+    let bubble = this.bubbleEls.get(id);
+    if (!bubble) {
+      bubble = { el: document.createElement('div'), until: 0 };
+      bubble.el.className = 'emote-bubble';
+      bubble.el.hidden = true;
+      this.bubbles.appendChild(bubble.el);
+      this.bubbleEls.set(id, bubble);
+    }
+    bubble.el.textContent = icon;
+    bubble.el.title = title;
+    bubble.until = this.time + seconds;
+  }
+
   /** Engine power, the takeoff roll and climb, and turbulence, from the phase clock. */
-  private flight(time: number, built: Built): void {
+  private flight(time: number, built: Built, dt = 1 / 60): void {
     const game = this.state?.game;
     const snap = this.snap;
     if (!game || !snap) return;
@@ -1182,6 +1262,24 @@ export class Cabin3D {
         this.nextBump = time + rand(3.5, 9);
       }
     }
+
+    // A storm: lightning every few seconds (a flicker, a flash, sometimes another), the thunder a moment behind.
+    if (this.viewMode === 'storm') {
+      if (time >= this.nextLightning) {
+        this.nextLightning = time + rand(4, 11);
+        const strength = rand(0.55, 1);
+        this.lightning = Math.max(this.lightning, strength * 0.5);
+        this.later(0.09, () => (this.lightning = Math.max(this.lightning, strength)));
+        if (Math.random() < 0.45) this.later(rand(0.25, 0.45), () => (this.lightning = Math.max(this.lightning, strength * 0.7)));
+        this.later(rand(0.8, 2.6), () => cabinAudio.rumble(0.35 + strength * 0.4));
+      }
+    } else this.lightning = 0;
+    this.lightning *= Math.exp(-dt * 7);
+    windows.flash = this.lightning;
+    built.lighting.lightning.intensity = this.lightning * 1.8;
+    this.forwardView.flash = this.lightning;
+    // (A faint white wash over the whole view, like the blast flash but softer.)
+    if (this.lightning > 0.05) this.flash = Math.max(this.flash, this.lightning * 0.1);
   }
 
   /** The flight deck: the windscreen view and the displays (only while you are up there), and its door. */
