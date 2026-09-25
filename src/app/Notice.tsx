@@ -68,11 +68,19 @@ export function Searching({ code, status, hosting }: { code: string; status: Cli
       {slow && !hosting && (
         <div class="net-help">
           <p>Still looking. Check that:</p>
-          <ul>
-            <li>the host still has the flight open, in front (a phone may pause it in the background);</li>
-            <li>the flight number is right and the plane has not taken off yet;</li>
-            <li>you are both on the latest version: reload the page if in doubt.</li>
-          </ul>
+          {network === 'relay' ? (
+            <ul>
+              <li>the flight number is right, and the captain has not ended the flight;</li>
+              <li>the plane has not taken off yet (unless you were already aboard);</li>
+              <li>you are on the latest version: reload the page if in doubt.</li>
+            </ul>
+          ) : (
+            <ul>
+              <li>the host still has the flight open, in front (a phone may pause it in the background);</li>
+              <li>the flight number is right and the plane has not taken off yet;</li>
+              <li>you are both on the latest version: reload the page if in doubt.</li>
+            </ul>
+          )}
           <NetworkNote kind={network} />
         </div>
       )}

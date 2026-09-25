@@ -194,7 +194,9 @@ function useUnread(game: PlayerView, reading: boolean): number {
 }
 
 export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: () => void }) {
+  // (A browser-hosted flight lives in the captain's tab; the server's carry on without anyone.)
   const hosting = flight.host !== null;
+  const captain = hosting || !!flight.client.snapshot.state?.isHost;
   return (
     <div class="tv-overlay" role="dialog" aria-modal="true">
       <div class="tv-card">
@@ -202,7 +204,9 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
         <p>
           {hosting
             ? 'You are the host. If you leave, the flight pauses for everyone until you come back to this page.'
-            : 'You can come back with the same link and take your seat again.'}
+            : captain
+              ? 'The flight carries on without you. Come back with the same link to take your seat again; if you stay away for a minute, someone else aboard becomes captain.'
+              : 'You can come back with the same link and take your seat again.'}
         </p>
         <div class="row">
           <button class="btn primary" onClick={onStay}>
@@ -211,7 +215,7 @@ export function LeaveDialog({ flight, onStay }: { flight: OpenFlight; onStay: ()
           <button class="btn ghost" onClick={() => navigate('/')}>
             Leave
           </button>
-          {hosting && (
+          {captain && (
             <button
               class="btn danger"
               onClick={() => {

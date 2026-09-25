@@ -22,6 +22,12 @@ export function relayUrl(): string | null {
   return built ? built : null;
 }
 
+/** The relay's address for plain HTTP requests (booking flights, the departures board, accounts): https, not wss. */
+export function relayHttpUrl(): string | null {
+  const base = relayUrl();
+  return base ? base.replace(/\/+$/, '').replace(/^ws(s?):/, 'http$1:') : null;
+}
+
 function randomId(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);

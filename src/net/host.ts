@@ -66,6 +66,8 @@ export interface HostSnapshot {
   hostRole?: RoleId | null;
   /** When the captain paused the flight (null or missing: running). */
   pausedAt?: number | null;
+  /** The pause is the server's own: everyone left, and the flight waits for someone to come back. */
+  idlePaused?: boolean;
 }
 
 export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
@@ -81,10 +83,17 @@ export function newHostSnapshot(code: string, hostToken: string, settings: Setti
 }
 
 export interface HostOptions {
-  /** Remote passengers (Trystero in the browser). */
+  /** Remote passengers (Trystero or the relay in the browser; the room's sockets on the server). */
   network: Transport;
-  /** The host's own client, connected in-page. Only it may send host commands. */
-  local: Transport;
+  /** The host's own client, connected in-page. Only it may send host commands. (None on the server.) */
+  local?: Transport;
+  /**
+   * The flight runs on the server: the captain is whoever joins with the booking token (from any device), a control
+   * tower flight's captain is its tower, the captaincy passes on if the captain stays away, and the captain may end it.
+   */
+  serverHosted?: boolean;
+  /** The captain ended the flight (server flights: forget it). */
+  onEnd?: () => void;
   snapshot: HostSnapshot;
   now?: () => number;
   random?: () => number;
@@ -96,6 +105,8 @@ export interface HostOptions {
 interface Peer {
   transport: Transport;
   trusted: boolean;
+  /** The token it joined with (server flights check it against the captain's). */
+  token?: string;
   playerId: string | null;
   tower: boolean;
   lastSent: string;
@@ -114,6 +125,8 @@ interface BotPlan {
 }
 
 const LOBBY_GRACE_MS = 20_000;
+/** How long a server flight waits for its captain before someone else aboard takes over. */
+export const CAPTAIN_GRACE_MS = 60_000;
 const LOBBY_CHAT_KEEP = 100;
 const LOBBY_CHAT_COOLDOWN_MS = 1000;
 const POSE_INTERVAL_MS = 120;
@@ -131,7 +144,11 @@ const fail = (error: string): IntentResult => ({ ok: false, error });
 export class HostSession {
   readonly snapshot: HostSnapshot;
   private readonly network: Transport;
-  private readonly local: Transport;
+  private readonly local: Transport | null;
+  private readonly serverHosted: boolean;
+  private readonly onEnd?: () => void;
+  /** When the captain was last aboard (server flights). */
+  private captainSeenAt: number;
   private readonly peers = new Map<string, Peer>();
   private readonly disconnectedAt = new Map<string, number>();
   private readonly botPlans = new Map<string, BotPlan>();
@@ -161,14 +178,17 @@ export class HostSession {
   constructor(opts: HostOptions) {
     this.snapshot = opts.snapshot;
     this.network = opts.network;
-    this.local = opts.local;
+    this.local = opts.local ?? null;
+    this.serverHosted = opts.serverHosted ?? false;
+    this.onEnd = opts.onEnd;
     this.now = opts.now ?? Date.now;
+    this.captainSeenAt = this.now();
     this.random = opts.random ?? Math.random;
     this.persist = opts.persist;
     this.defer = opts.defer ?? ((fn, ms) => void setTimeout(fn, ms));
     this.botRng.rng = Math.floor(this.random() * 2 ** 31);
     this.listen(opts.network, false);
-    this.listen(opts.local, true);
+    if (opts.local) this.listen(opts.local, true);
   }
 
   /** Drive timers, bots and lobby clean-up. Call every ~250 ms. */
@@ -199,8 +219,50 @@ export class HostSession {
         }
       }
     }
+    if (this.serverHosted) this.checkCaptain(now);
     if (dirty) this.changed();
     this.broadcastPoses(now);
+  }
+
+  /**
+   * Server flights: everyone has left (true), or someone is back (false). An empty flight waits for its passengers,
+   * paused, so nobody comes back to a flight that ran to the end without them.
+   */
+  idle(on: boolean): void {
+    const s = this.snapshot;
+    const now = this.now();
+    if (on) {
+      if (s.game && s.game.phase.kind !== 'ended' && !s.pausedAt) {
+        s.pausedAt = now;
+        s.idlePaused = true;
+        this.changed();
+      }
+    } else if (s.idlePaused) {
+      if (s.game && s.pausedAt) this.resume(s.game, now);
+      s.idlePaused = false;
+      // (Whoever comes back gives the captain the usual time to return too.)
+      this.captainSeenAt = Math.max(this.captainSeenAt, now);
+      this.changed();
+    }
+  }
+
+  /** Server flights: the captain has been away too long, so the passenger aboard longest takes over. */
+  private checkCaptain(now: number): void {
+    const s = this.snapshot;
+    for (const peer of this.peers.values()) {
+      if (peer.trusted) {
+        this.captainSeenAt = now;
+        return;
+      }
+    }
+    if (s.controlTower || now - this.captainSeenAt < CAPTAIN_GRACE_MS) return;
+    const next = s.players.find((p) => !p.bot && p.token && this.isConnected(p.id));
+    if (!next) return;
+    s.hostToken = next.token;
+    s.hostRole = null;
+    for (const peer of this.peers.values()) peer.trusted = !!peer.token && peer.token === s.hostToken;
+    this.captainSeenAt = now;
+    this.changed();
   }
 
   /** Tell everyone the flight is over, then shut down. */
@@ -214,7 +276,7 @@ export class HostSession {
     this.closed = true;
     for (const off of this.offs) off();
     this.network.close();
-    this.local.close();
+    this.local?.close();
   }
 
   /** Send every joined peer its own state, if it changed. */
@@ -361,7 +423,12 @@ export class HostSession {
       this.refuse(peerId, 'This flight is running a different version of Flight 13. Reload the page.');
       return;
     }
-    if (msg.tower) {
+    if (this.serverHosted) {
+      // On the server nobody is trusted by where they connect from: the captain is who holds the booking token.
+      peer.token = msg.token;
+      peer.trusted = msg.token === s.hostToken;
+    }
+    if (msg.tower || (this.serverHosted && s.controlTower && peer.trusted)) {
       if (!peer.trusted) {
         this.refuse(peerId, 'Only the host can run the control tower.');
         return;
@@ -506,6 +573,12 @@ export class HostSession {
         game.phase.earlyEndAt = null;
         if (tick(game, now)) this.phaseStarted(now);
         break;
+      }
+      case 'end': {
+        if (!this.serverHosted) return fail('Only the host can end this flight, from their own screen.');
+        this.endFlight();
+        this.onEnd?.();
+        return OK;
       }
       case 'boardAgain': {
         if (!s.game || s.game.phase.kind !== 'ended') return fail('The flight has not landed yet.');

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { relayTransport } from './relay';
+import { relayHttpUrl, relayTransport } from './relay';
 
 /** A stand-in for the browser's WebSocket, driven by the test as if it were the relay server. */
 class FakeSocket {
@@ -95,5 +95,16 @@ describe('the relay transport', () => {
     vi.advanceTimersByTime(9_000);
     expect(events.at(-1)).toBe('leave host');
     t.close();
+  });
+});
+
+describe('relay address', () => {
+  afterEach(() => void vi.unstubAllEnvs());
+
+  it('is written wss:// for sockets and asked over https:// for everything else', () => {
+    vi.stubEnv('VITE_RELAY_URL', 'wss://flight13-relay.example.workers.dev/');
+    expect(relayHttpUrl()).toBe('https://flight13-relay.example.workers.dev');
+    vi.stubEnv('VITE_RELAY_URL', 'ws://127.0.0.1:8790');
+    expect(relayHttpUrl()).toBe('http://127.0.0.1:8790');
   });
 });

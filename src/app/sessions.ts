@@ -4,7 +4,7 @@ import { newFlightCode } from '../net/code';
 import { HostSession, newHostSnapshot } from '../net/host';
 import { startTicker } from '../net/ticker';
 import { MemoryHub, type MediaChannel } from '../net/transport';
-import { relayTransport, relayUrl } from '../net/relay';
+import { relayHttpUrl, relayTransport, relayUrl } from '../net/relay';
 import type { Transport } from '../net/transport';
 import { trysteroTransport } from '../net/trystero';
 
@@ -35,13 +35,30 @@ let active: { flight: ActiveFlight; stop: () => void } | null = null;
 // Live sessions hold WebRTC connections that hot updates cannot migrate: reload the page instead.
 import.meta.hot?.accept(() => location.reload());
 
-/** Create a new flight hosted by this browser and return its flight number. */
-export function bookFlight(settings: Settings, controlTower: boolean): string {
+/**
+ * Create a new flight and return its flight number: run by the server when this build has one (so it carries on
+ * whoever leaves), otherwise hosted by this browser.
+ */
+export async function bookFlight(settings: Settings, controlTower: boolean): Promise<{ code: string } | { error: string }> {
   const profile = loadProfile();
+  const relay = relayHttpUrl();
+  if (relay) {
+    try {
+      const res = await fetch(`${relay}/flights`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ settings, controlTower, token: profile.token }),
+      });
+      const body = (await res.json()) as { code?: string; error?: string };
+      return body.code ? { code: body.code } : { error: body.error ?? 'The server could not book that flight. Try again.' };
+    } catch {
+      return { error: 'Could not reach the Flight 13 server. Check your connection and try again.' };
+    }
+  }
   let code = newFlightCode();
   while (loadHostSnapshot(code)) code = newFlightCode();
   saveHostSnapshot(newHostSnapshot(code, profile.token, settings, controlTower), true);
-  return code;
+  return { code };
 }
 
 /** Book the tutorial flight (you and five scripted bots) and return its flight number. */
@@ -68,7 +85,8 @@ export function openFlight(code: string): ActiveFlight {
       return active.flight;
     }
     const hub = new MemoryHub();
-    const network = openNetwork(code);
+    // (The tutorial is you and its scripted bots: nobody else to reach.)
+    const network: Transport = saved.tutorial ? new MemoryHub().join('tutorial') : openNetwork(code);
     const host = new HostSession({
       network,
       local: hub.join('host'),
@@ -130,7 +148,7 @@ export function closeFlight(code: string): void {
   stop();
 }
 
-/** Host only: send everyone home and forget the flight. */
+/** Captain only: send everyone home and forget the flight. */
 export function endFlight(code: string): void {
   const flight = active?.flight;
   if (flight?.kind === 'ok' && flight.code === code && flight.host) {
@@ -142,5 +160,11 @@ export function endFlight(code: string): void {
     setTimeout(() => current?.stop(), 400);
     return;
   }
+  // A flight the server runs: ask it to end the flight, then leave.
+  if (flight?.kind === 'ok' && flight.code === code && flight.client.snapshot.state?.isHost) {
+    void flight.client.command({ kind: 'end' }).finally(() => closeFlight(code));
+    return;
+  }
   closeFlight(code);
 }
+

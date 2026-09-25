@@ -18,23 +18,33 @@ Everyone hears him at the same volume through the cabin speakers, after a ding.
 **M** mutes you. Use headphones so others don't hear themselves echo. Voice uses the same connections
 as the game, so a network that needs a TURN relay (below) needs it for voice too.
 
-## The relay server (recommended)
+## The game server (recommended)
 
-By default browsers connect to each other directly, which some networks block. The relay server in `server/` (a free
-Cloudflare Worker) carries every message instead, so any network works; the host's browser still runs the game. Voice chat
-goes through it too: each browser encodes its microphone as Opus (WebCodecs) and the relay passes the packets on
-(silence is not sent), so browsers without WebCodecs audio get no voice button.
+By default browsers connect to each other directly, which some networks block, and the host's browser runs the game. The
+server in `server/` (a free Cloudflare Worker) does both jobs instead, so any network works.
+
+- **It runs every flight booked through it.** Each flight is a room (a Durable Object) that runs the same host code as the
+  browser (`src/net/host.ts`), so a flight carries on whoever leaves.
+- **The captain.** The captain is whoever holds the booking browser's token. If they stay away for a minute, the
+  passenger aboard longest takes over.
+- **Empty flights.** A flight with nobody aboard pauses until someone comes back, and is forgotten after three hours.
+- **Voice** goes through it too. Each browser encodes its microphone as Opus (WebCodecs) and the server passes the
+  packets on (silence is not sent), so browsers without WebCodecs audio get no voice button.
+- **The tutorial** still runs in your own browser.
 
 It is deployed at `wss://flight13-relay.flight-13-relay.workers.dev` (the repo's `RELAY_URL` variable). To deploy your own:
 
 1. Make a free Cloudflare account, then in `server/` run `npx wrangler login` and `npx wrangler deploy`.
 2. Copy the address it prints (`https://flight13-relay.YOURNAME.workers.dev`) and set it as the repository variable
    `RELAY_URL`, written with `wss://` (Settings → Secrets and variables → Actions → Variables).
-3. Re-run the deploy (or push): everyone now connects through the relay.
+3. Re-run the deploy (or push): flights are now booked on and run by the server.
+
+For development, run `npm run dev` in `server/` too, and point the game at it in the browser console:
+`localStorage.setItem('flight13.relay', 'http://127.0.0.1:8787')` (`'off'` for direct connections).
 
 ## Players can't join?
 
-Flight 13 has no game server: the host's browser runs the flight and everyone connects to it directly
+Without the game server (above), the host's browser runs the flight and everyone connects to it directly
 (WebRTC). Most home networks allow that, but some networks (many university, office and mobile
 networks, VPNs) use a strict NAT that blocks direct connections. The game checks this for you: the gate
 and the "Looking for FT-…" screen say whether your network allows direct connections.
