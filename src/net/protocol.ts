@@ -104,7 +104,9 @@ export type HostCommand =
   /** Mid-flight: pause (or resume) the clock, add time to this phase, or end it now. */
   | { kind: 'pause'; on: boolean }
   | { kind: 'addTime'; seconds: number }
-  | { kind: 'skipPhase' };
+  | { kind: 'skipPhase' }
+  /** End the flight for everyone (server flights; a browser host ends theirs from their own screen). */
+  | { kind: 'end' };
 
 export type ClientMessage =
   | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean }

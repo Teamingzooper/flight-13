@@ -15,8 +15,10 @@ export function Book() {
       </Notice>
     );
   }
-  const submit = (settings: Settings) => {
-    navigate(`/f/${bookFlight(settings, controlTower)}`);
+  const submit = async (settings: Settings) => {
+    const booked = await bookFlight(settings, controlTower);
+    if ('error' in booked) return booked.error;
+    navigate(`/f/${booked.code}`);
     return null;
   };
   return (
