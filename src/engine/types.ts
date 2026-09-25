@@ -18,6 +18,10 @@ export type Cards = Record<SpecialCard, number>;
 
 export type DestinationId = 'LAS' | 'LHR' | 'HNL' | 'HND' | 'BDA';
 export type Twist = 'none' | 'turbulence' | 'redeye' | 'triangle';
+/** How much the bots talk. */
+export type BotChatter = 'quiet' | 'normal' | 'lively';
+/** How well the bots reason (and lie). */
+export type BotSkill = 'easy' | 'normal' | 'hard';
 export type Anomaly = 'turbulence' | 'runaway_cart' | 'blackout';
 
 export type TimerPreset = 'quick' | 'standard' | 'relaxed';
@@ -38,6 +42,8 @@ export interface Settings {
   whispers: boolean;
   /** Restraining the Pilot (with no other Pilot free) hands the saboteurs the win. */
   pilotMustFly: boolean;
+  botChatter: BotChatter;
+  botSkill: BotSkill;
 }
 
 export type PhaseKind =

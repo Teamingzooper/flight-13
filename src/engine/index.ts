@@ -38,6 +38,8 @@ export {
   CHAT_MAX_LENGTH,
   PA_MAX_LENGTH,
   PA_COOLDOWN_MS,
+  BOT_CHATTERS,
+  BOT_SKILLS,
 } from './settings';
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';

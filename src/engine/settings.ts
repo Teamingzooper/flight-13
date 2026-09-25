@@ -1,6 +1,6 @@
 import { DESTINATIONS } from './destinations';
 import { emptyCards } from './roles';
-import type { PhaseKind, Settings, TimerPreset } from './types';
+import type { BotChatter, BotSkill, PhaseKind, Settings, TimerPreset } from './types';
 
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 16;
@@ -32,6 +32,9 @@ export const TIMERS: Record<TimerPreset, TimerSet> = {
 /** Seconds for packing and the cutscene phases (packing ends early once everyone is packed). */
 export const FIXED_TIMERS = { packing: 50, boarding: 22, takeoff: 12, dawn: 10, verdict: 8 } as const;
 
+export const BOT_CHATTERS: readonly BotChatter[] = ['quiet', 'normal', 'lively'];
+export const BOT_SKILLS: readonly BotSkill[] = ['easy', 'normal', 'hard'];
+
 export function defaultSettings(): Settings {
   return {
     destination: 'LHR',
@@ -46,6 +49,8 @@ export function defaultSettings(): Settings {
     anonymousVotes: false,
     whispers: true,
     pilotMustFly: false,
+    botChatter: 'normal',
+    botSkill: 'normal',
   };
 }
 
@@ -84,5 +89,7 @@ export function validateSettings(s: Settings): string | null {
   if (!TIMERS[s.timers]) return 'Unknown timer preset.';
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';
+  if (!BOT_CHATTERS.includes(s.botChatter)) return 'Unknown bot chatter.';
+  if (!BOT_SKILLS.includes(s.botSkill)) return 'Unknown bot skill.';
   return null;
 }

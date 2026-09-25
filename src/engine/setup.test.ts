@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyCards } from './roles';
-import { defaultSettings } from './settings';
+import { defaultSettings, validateSettings } from './settings';
 import { checkTakeoff, createGame, dealRoles, type NewPlayer } from './setup';
 import type { Look } from './types';
 
@@ -34,6 +34,10 @@ describe('createGame', () => {
 
   it('refuses to take off with too few passengers or a bad custom deck', () => {
     expect(checkTakeoff(defaultSettings(), passengers(3))).toMatch(/at least 4/);
+    expect(defaultSettings()).toMatchObject({ botChatter: 'normal', botSkill: 'normal' });
+    expect(validateSettings({ ...defaultSettings(), botSkill: 'godlike' as never })).toBe('Unknown bot skill.');
+    expect(validateSettings({ ...defaultSettings(), botChatter: 'loud' as never })).toBe('Unknown bot chatter.');
+    expect(validateSettings({ ...defaultSettings(), botChatter: 'lively', botSkill: 'hard' })).toBeNull();
     const custom = { ...defaultSettings(), rolesMode: 'custom' as const, cards: { ...emptyCards(), bomber: 3 } };
     expect(checkTakeoff(custom, passengers(6))).toMatch(/minority/);
     expect(() => createGame({ settings: custom, players: passengers(6), seed: 1, now: 0 })).toThrow();
