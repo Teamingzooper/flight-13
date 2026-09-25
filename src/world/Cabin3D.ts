@@ -12,7 +12,7 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
+import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type Dish, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
@@ -44,6 +44,8 @@ import { proximityGain } from '../net/voiceRules';
 import { planBabble } from './babble';
 import { atTheControls, deckLook, type ControlId } from './cockpit';
 import { buildStaircase } from './scene/staircase';
+import { Trays } from './scene/trays';
+import { DISH_ICON } from '../tv/format';
 import { clipAt, type Clip, type Tape } from './tape';
 import type { Actor } from './scene/people';
 
@@ -151,6 +153,10 @@ export class Cabin3D {
   private readonly liveScreen = new LiveScreen();
   private readonly liveMesh: THREE.Mesh;
   private readonly people = new People();
+  /** Lunch trays, on the day it is served. */
+  private readonly trays = new Trays();
+  /** Lunch orders already shown over heads. */
+  private ordersSeen: Record<string, Dish> = {};
   private poseSource: Map<string, Pose> | null = null;
   private faceSource: ReadonlyMap<string, string> | null = null;
   /** Everyone's latest gesture (the client's live map), and the last one played for each. */
@@ -289,7 +295,7 @@ export class Cabin3D {
     this.liveMesh = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), this.liveScreen.material);
     this.liveMesh.matrixAutoUpdate = false;
     this.liveMesh.visible = false;
-    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision);
+    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision, this.trays.group);
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -408,6 +414,7 @@ export class Cabin3D {
 
     this.youId = game.you?.id ?? null;
     this.syncPeople(game);
+    this.serveLunch(game);
     this.aimVotes(game);
     // Known bombs show as devices (planters, investigators, and anyone who found one under their seat).
     effects.devices.set(
@@ -619,6 +626,7 @@ export class Cabin3D {
     this.flashEl.remove();
     this.fadeEl.remove();
     this.bubbles.remove();
+    this.trays.dispose();
     this.hotel?.dispose();
     this.gate?.dispose();
     this.ending?.dispose();
@@ -1736,6 +1744,26 @@ export class Cabin3D {
     if (this.built && game.washroom) away.push({ id: game.washroom, door: this.built.lavatory.door });
     if (this.built && game.jumpseat) away.push({ id: game.jumpseat, door: this.built.flightDeck.door, sit: this.built.flightDeck.jumpSeat });
     this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, away);
+  }
+
+  /** Lunch: trays in front of everyone in a seat who ordered, and each order said out loud (a bubble over the head). */
+  private serveLunch(game: PlayerView): void {
+    const meal = game.meal;
+    const orders = meal?.orders ?? {};
+    this.trays.set(
+      meal
+        ? game.players.flatMap((p) => {
+            const dish = orders[p.id];
+            return dish && p.status === 'alive' && p.seat && grid.parseSeat(p.seat) ? [{ seat: p.seat, dish }] : [];
+          })
+        : [],
+    );
+    if (meal?.open) {
+      for (const [id, dish] of Object.entries(orders)) {
+        if (this.ordersSeen[id] !== dish) this.showBubble(id, DISH_ICON[dish], dish === 'chicken' ? 'Chicken, please' : 'Pasta, please', 2.5);
+      }
+    }
+    this.ordersSeen = { ...orders };
   }
 
   private later(seconds: number, fn: () => void): void {

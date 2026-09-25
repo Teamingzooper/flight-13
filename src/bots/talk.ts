@@ -88,6 +88,8 @@ export function reasonText(r: Reason, name: (id: string) => string): string {
       return `${name(r.by)} found a bomb under ${r.seat}`;
     case 'seen':
       return r.what === 'drink' ? `the cameras saw them hand ${r.target ? name(r.target) : 'someone'} a drink` : 'the cameras caught them up to something';
+    case 'lunch':
+      return `they sat by row ${r.row} when the ${r.dish} got drugged`;
     case 'votes':
       return 'they keep voting out passengers';
     case 'defended':
@@ -263,6 +265,14 @@ export function wants(ctx: TalkContext): Say[] {
       out.push({ ...result, channel: 'cabin', priority: bomb ? 80 : k.me.role === 'passenger' ? 25 : 45, key: `result:${day}`, at: soon(4, 9), reply: false });
     } else if (result && saboteur && chance(ctx, `fake:${day}`, 0.4)) {
       out.push({ ...result, channel: 'cabin', priority: 30, key: `result:${day}`, at: soon(6, 14), reply: false });
+    }
+
+    // Lunch: say what it did to me (a saboteur who ate its own drug says it too: good cover), and what the trays showed.
+    if (k.drugged && k.drugged.night === day) {
+      out.push({ kind: 'lunch_drugged', channel: 'cabin', fill: { dish: k.drugged.dish, seat: k.me.seat ?? undefined }, priority: 75, key: `lunch:${day}`, at: soon(3, 8), reply: false });
+    }
+    if (k.trays && !saboteur && day === k.trays.day + 1) {
+      out.push({ kind: 'lunch_trays', channel: 'cabin', fill: { dish: k.trays.dish, row: String(k.trays.row) }, priority: 78, key: 'trays', at: soon(2, 6), reply: false });
     }
 
     // Accuse my top suspect (a saboteur frames whoever the cabin already blames).

@@ -352,6 +352,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     !!you &&
     you.status === 'alive' &&
     !you.buckled &&
+    !you.drowsy &&
     ((kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
@@ -360,14 +361,16 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   // What the vignette means, said once in the hint line.
   const fxHint =
     fx === 'asleep'
-      ? 'Someone slipped you a sleeping pill. You are drifting off…'
+      ? you?.drowsy
+        ? 'Something in your lunch… you can barely keep your eyes open.'
+        : 'Someone slipped you a sleeping pill. You are drifting off…'
       : fx === 'knockedout'
         ? 'You are out cold until morning.'
         : fx === 'dead' && !scene
           ? 'You are a ghost: watch on, and talk with the other ghosts.'
           : null;
   // The captain's own reminders: which control wants him now.
-  const captain = atTheControls(game) && !scene && !you?.buckled && !you?.knockedOut;
+  const captain = atTheControls(game) && !scene && !you?.buckled && !you?.knockedOut && !you?.drowsy;
   const deckHint = !captain
     ? null
     : kind === 'night_move' && game.mine?.seatbelt === null
@@ -383,6 +386,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       ? 'Aim at your screen and click to use it · Esc frees the mouse'
       : 'Click to look around · click your screen (or press E) to use it';
   const crewRow = grid.aisleRow(you?.seat);
+  // Lunch is out and you have not ordered yet.
+  const lunchOrder = !!game.meal?.open && !!you && you.status === 'alive' && !game.meal.orders[you.id];
   const hint =
     scene === 'walk'
       ? crewRow !== null
@@ -400,7 +405,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             ? deckHint
             : needsInput
             ? `Your move: ${useIt}`
-            : idleHint;
+            : lunchOrder
+              ? `Lunch is served: chicken or pasta? ${TOUCH ? 'Use your screen' : 'Click your screen or press E'}`
+              : idleHint;
   const hasScreen = !!you?.seat && !scene;
 
   return (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { TOP } from '../app/Avatar';
 import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerView } from '../engine';
 import type { TVContext } from './context';
+import { LunchBar } from './Lunch';
 import { captainName, nameOf, nameWithSeat, playerById } from './format';
 
 type Channel = 'cabin' | 'saboteurs' | 'ghosts' | 'whisper';
@@ -62,6 +63,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
   const ready = game.mine?.ready ?? false;
   return (
     <div class="tab chat-tab">
+      <LunchBar ctx={ctx} />
       <div class="chips">
         {channels.map((c) => (
           <button key={c} class={`chip${channel === c ? ' on' : ''}`} onClick={() => setPicked(c)}>

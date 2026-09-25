@@ -31,6 +31,7 @@ export type Reason =
   | { kind: 'lied'; seat: SeatId }
   | { kind: 'reported'; seat: SeatId; by: string }
   | { kind: 'seen'; what: string; target?: string }
+  | { kind: 'lunch'; dish: string; row: number }
   | { kind: 'votes' }
   | { kind: 'defended'; saboteur: string }
   | { kind: 'accused' }
@@ -147,6 +148,24 @@ export function believe(k: Knowledge, lines: HeardLine[], history: SeatHistory, 
     if (s.kind === 'drink') add(s.actor, 0.9, { kind: 'seen', what: 'drink', target: s.target });
     else if (s.kind === 'pills') add(s.actor, 0.1, { kind: 'seen', what: 'pills', target: s.target });
     else if (s.kind === 'lean' || s.kind === 'check' || s.kind === 'look_around') add(s.actor, -0.05, { kind: 'hunch' });
+  }
+
+  // Lunch. Clearing the trays, a loyal Stewardess saw which row someone drugged a dish around: saboteurs drug their
+  // own row, so whoever sat there then looks bad. Drugged myself, whoever sat within a row of me looks a little bad.
+  if (k.trays && !saboteur) {
+    const sitters = [...seatsOn(k.trays.day)].filter(([, seat]) => grid.parseSeat(seat)?.row === k.trays!.row).map(([id]) => id);
+    const w = sitters.length <= 1 ? 0.6 : sitters.length === 2 ? 0.4 : 0.3;
+    for (const id of sitters) add(id, w, { kind: 'lunch', dish: k.trays.dish, row: k.trays.row });
+  }
+  if (k.drugged && !saboteur) {
+    const day = k.drugged.night - 1;
+    const mine = grid.parseSeat(seatOf(me, day) ?? '')?.row;
+    if (mine !== undefined) {
+      for (const [id, seat] of seatsOn(day)) {
+        const row = grid.parseSeat(seat)?.row;
+        if (id !== me && row !== undefined && Math.abs(row - mine) <= 1) add(id, 0.12, { kind: 'lunch', dish: k.drugged.dish, row: mine });
+      }
+    }
   }
 
   // Votes: voting out passengers looks bad; voting out saboteurs looks good.

@@ -53,6 +53,8 @@ export interface Settings {
   whispers: boolean;
   /** Restraining the Pilot (with no other Pilot free) hands the saboteurs the win. */
   pilotMustFly: boolean;
+  /** Lunch is served once, halfway through the flight: chicken or pasta (and the saboteurs may drug one of them). */
+  mealService: boolean;
   botChatter: BotChatter;
   botSkill: BotSkill;
 }
@@ -227,6 +229,8 @@ export interface NightChoices {
   searched: Record<string, true>;
   /** Sleeping pills: player → who slipped them one. They do nothing tonight. */
   asleep: Record<string, string>;
+  /** Drugged at lunch: player → who drugged the dish. They sleep all night: no seat change, nothing done. */
+  drowsy: Record<string, string>;
   /** Players watching their compact mirror tonight. */
   mirrors: Record<string, true>;
   /** Pocket flashlights: player → the seat they looked under. */
@@ -312,6 +316,7 @@ export type LogTag =
   | 'course'
   | 'knockout'
   | 'watch'
+  | 'meal'
   | 'gameover';
 
 export interface LogEntry {
@@ -377,6 +382,24 @@ export interface GameState {
   awards: Record<string, Award> | null;
   /** The flight recorder: each night as it happened, shown to everyone once the flight is over. */
   recorder: NightRecord[];
+  /** Lunch (null on flights without meal service). */
+  meal: MealState | null;
+}
+
+export type Dish = 'chicken' | 'pasta';
+
+/** Lunch, served once during the day's discussion halfway through the flight. */
+export interface MealState {
+  /** Served on the day after this night. */
+  day: number;
+  /** Who ordered what: everyone hears the orders. */
+  orders: Record<string, Dish>;
+  /** The saboteurs' one go at the food: who, which dish, and the row they did it around. Secret. */
+  tamper: { by: string; dish: Dish; row: number } | null;
+  /** Lunch is over: the trays are cleared, and whoever ate the drugged dish sleeps through the night. */
+  served: boolean;
+  /** Who ate the drugged dish (set when lunch is over). */
+  drugged: string[];
 }
 
 /** One night on the flight recorder. */
@@ -409,6 +432,10 @@ export type Intent =
   | { kind: 'course'; change: 'hold' | 'shortcut' | null }
   | { kind: 'act'; action: NightAction | null }
   | { kind: 'ready' }
+  /** Lunch: chicken or pasta. */
+  | { kind: 'order'; dish: Dish }
+  /** Saboteurs at lunch: drug a dish around your row (a rogue Stewardess picks the row), or null to leave the food alone. */
+  | { kind: 'tamper'; dish: Dish | null; row?: number }
   | { kind: 'vote'; target: string }
   | { kind: 'note'; text: string }
   | { kind: 'chat'; channel: ChatChannel; text: string }

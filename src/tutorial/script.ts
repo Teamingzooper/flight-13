@@ -47,6 +47,8 @@ export function tutorialSettings(): Settings {
     revealRoles: true,
     voteMode: 'daily',
     whispers: true,
+    // (No lunch: the tutorial keeps to its script.)
+    mealService: false,
     botChatter: 'quiet',
   };
 }

@@ -1,5 +1,6 @@
 import { ITEM_ORDER, MAX_PACKED, possibleItemUses } from './items';
-import { isPilot } from './roles';
+import { DISHES, inReach, lunchOpen, tamperReach } from './meal';
+import { isPilot, isSaboteur } from './roles';
 import { nextFloat, pick, type RngHolder } from './rng';
 import { checkCourse, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
 import { activePlayers, getPlayer, isActive, isGuest } from './state';
@@ -27,6 +28,30 @@ function pilotCalls(s: GameState, p: PlayerState, h: RngHolder): Intent[] {
   return [...intents, ...maybeUse(s, p, h, 'mirror', 0.3)];
 }
 
+/**
+ * Lunch: order something, and now and then (a saboteur, while the team has not yet) drug the other dish around
+ * your row, when someone who is not on your team has ordered it there.
+ */
+function lunch(s: GameState, p: PlayerState, h: RngHolder): Intent[] {
+  if (!lunchOpen(s)) return [];
+  const m = s.meal!;
+  const mine = m.orders[p.id] ?? pick(h, DISHES);
+  const intents: Intent[] = m.orders[p.id] ? [] : [{ kind: 'order', dish: mine }];
+  const reach = tamperReach(p);
+  if (reach === null || m.tamper || nextFloat(h) >= 0.5) return intents;
+  const dish = mine === 'chicken' ? 'pasta' : 'chicken';
+  const rows = reach === 'any' ? Array.from({ length: s.cabin.rows }, (_, i) => i + 1) : [reach];
+  // Where it would put the most of the other side to sleep, and the fewest of its own team (by the orders so far).
+  let best: { row: number; hits: number } | null = null;
+  for (const row of rows) {
+    const eaters = activePlayers(s).filter((o) => o.id !== p.id && m.orders[o.id] === dish && inReach(s, { by: p.id, row }, o));
+    const hits = eaters.reduce((n, o) => n + (isSaboteur(o.role) ? -1 : 1), 0);
+    if (hits > 0 && (!best || hits > best.hits)) best = { row, hits };
+  }
+  if (!best) return intents;
+  return [...intents, { kind: 'tamper', dish, ...(reach === 'any' ? { row: best.row } : {}) }];
+}
+
 /** Random legal choices for one player in the current phase (simulation and dev bots). */
 export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent[] {
   const p = getPlayer(s, playerId);
@@ -38,6 +63,8 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
       return [{ kind: 'pack', items: Array.from({ length: count }, () => pick(h, ITEM_ORDER)), ready: true }];
     }
     case 'night_move': {
+      // Drugged at lunch: fast asleep all night.
+      if (s.night.drowsy[p.id]) return [];
       if (isPilot(p.role)) return pilotCalls(s, p, h);
       const intents: Intent[] = s.night.buckled[p.id] ? maybeUse(s, p, h, 'extender', 0.9) : [];
       if (s.night.buckled[p.id] && intents.length === 0) return [];
@@ -48,6 +75,7 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
       return [...intents, ...maybeUse(s, p, h, 'mirror', 0.3)];
     }
     case 'night_act': {
+      if (s.night.drowsy[p.id]) return [];
       if (isGuest(s, p.id)) {
         // Up in the jump seat: now and then a saboteur knocks the Pilot out; a Nurse treats him if he is poisoned.
         const actions = possibleActions(s, p);
@@ -70,7 +98,7 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
       return intents;
     }
     case 'day_discuss':
-      return [{ kind: 'ready' }];
+      return [...lunch(s, p, h), { kind: 'ready' }];
     case 'day_vote': {
       const targets = activePlayers(s).filter((t) => t.id !== p.id);
       return [...maybeUse(s, p, h, 'ffcard', 0.3), { kind: 'vote', target: targets.length > 0 && nextFloat(h) < 0.6 ? pick(h, targets).id : 'skip' }];

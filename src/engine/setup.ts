@@ -3,6 +3,7 @@ import { COCKPIT, aisleSpot, allSeats } from './grid';
 import { PLANES, rowsFor } from './planes';
 import { nextFloat, shuffle, type RngHolder } from './rng';
 import { ROLES, giveRole, isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
+import { newMeal } from './meal';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
 import type { Cards, DayChoices, GameState, Look, NightChoices, RoleId, Settings } from './types';
@@ -31,6 +32,7 @@ export function emptyNight(): NightChoices {
     anomaly: null,
     searched: {},
     asleep: {},
+    drowsy: {},
     mirrors: {},
     flashlights: {},
     freed: {},
@@ -116,6 +118,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     stats: {},
     awards: null,
     recorder: [],
+    meal: settings.mealService ? newMeal(destination.nights) : null,
   };
   let roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
   // The host may have picked their own role: they get it, out of the same deck (see giveRole).

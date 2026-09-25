@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { NOTE_MAX_LENGTH, ROLES, bombsFor, describeLocation, destinationOf, grid, isPilot, type NightAction, type PlayerView } from '../engine';
 import { CarryOn } from './CarryOn';
+import { LunchPanel } from './Lunch';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, placeLabel, roleName, shortName, teamName, whenLabel } from './format';
 import { CameraPanel, ControlsCard, FlightDeckPanel, JumpSeatPanel, PaPanel } from './PilotPanels';
@@ -36,11 +37,15 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
     <div class="tab action-tab">
       <RoleStrip game={game} />
       <BlackBoxNote ctx={ctx} />
-      {deck && (day || kind === 'night_move' || kind === 'night_act') && <ControlsCard ctx={ctx} />}
+      {deck && (day || ((kind === 'night_move' || kind === 'night_act') && !you.drowsy)) && <ControlsCard ctx={ctx} />}
       {pilot && day && !deck && <PaPanel ctx={ctx} />}
+      {day && game.meal && <LunchPanel ctx={ctx} />}
+      {(kind === 'night_move' || kind === 'night_act') && you.drowsy && <FastAsleep />}
       {kind === 'night_move' &&
+        !you.drowsy &&
         (deck ? null : pilot ? <FlightDeckPanel ctx={ctx} /> : you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
       {kind === 'night_act' &&
+        !you.drowsy &&
         (deck ? null : pilot ? (
           <CameraPanel ctx={ctx} />
         ) : you.inJumpSeat ? (
@@ -95,6 +100,16 @@ function RoleStrip({ game }: { game: PlayerView }) {
 function crewRow(game: PlayerView): number | null {
   const you = game.you;
   return you && (you.role === 'stewardess_loyal' || you.role === 'stewardess_rogue') ? grid.aisleRow(you.seat) : null;
+}
+
+/** Drugged at lunch: nothing to do but sleep. */
+function FastAsleep() {
+  return (
+    <div class="callout amber">
+      <b>Zzz.</b> Something in your lunch knocked you out. You sleep straight through tonight: no seat change, no ability. Whoever sat near you
+      at lunch had the chance to drug it.
+    </div>
+  );
 }
 
 function Buckled({ game }: { game: PlayerView }) {

@@ -53,6 +53,7 @@ export function defaultSettings(): Settings {
     anonymousVotes: false,
     whispers: true,
     pilotMustFly: false,
+    mealService: true,
     botChatter: 'normal',
     botSkill: 'normal',
   };
@@ -113,6 +114,7 @@ export function validateSettings(s: Settings): string | null {
   if (!TIMERS[s.timers]) return 'Unknown timer preset.';
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';
+  if (typeof s.mealService !== 'boolean') return 'Meal service is on or off.';
   if (!BOT_CHATTERS.includes(s.botChatter)) return 'Unknown bot chatter.';
   if (!BOT_SKILLS.includes(s.botSkill)) return 'Unknown bot skill.';
   return null;

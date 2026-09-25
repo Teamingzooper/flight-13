@@ -24,6 +24,16 @@ const kinds = (cues: Cue[]) => cues.map((c) => c.kind);
 const captain = (cues: Cue[]) => cues.flatMap((c) => (c.kind === 'pa' ? [c.text] : [])).join(' ');
 
 describe('director', () => {
+  it('calls lunch once, when the trays come round', () => {
+    const s = flight();
+    advanceTo(s, 'dawn', 2);
+    const before = view(s);
+    advanceTo(s, 'day_discuss', 2);
+    const cues = directorCues(before, view(s));
+    expect(captain(cues)).toContain('lunch is served');
+    expect(captain(directorCues(view(s), view(s)))).toBe('');
+  });
+
   it('says nothing when nothing changed', () => {
     const s = flight();
     advanceTo(s, 'day_discuss', 1);

@@ -47,6 +47,10 @@ export interface Knowledge {
   /** Bombs I know of (live, defused or gone off), from the view. */
   bombs: BombView[];
   poisoned: boolean;
+  /** Lunch drugged me: the night I slept through, and what I had eaten. */
+  drugged: { night: number; dish: string } | null;
+  /** A loyal Stewardess clearing the lunch trays: which dish someone had been at, and around which row. */
+  trays: { day: number; dish: string; row: number } | null;
 }
 
 const mine = (e: LogEntry, me: string) => Array.isArray(e.to) && e.to.includes(me);
@@ -74,6 +78,8 @@ export function know(view: PlayerView): Knowledge {
     jumpseat: [],
     bombs: view.bombs,
     poisoned: me.poisoned,
+    drugged: null,
+    trays: null,
   };
   for (const e of view.log) {
     const d = e.data ?? {};
@@ -124,6 +130,11 @@ export function know(view: PlayerView): Knowledge {
         break;
       case 'jumpseat':
         if (e.to === 'all' && str(d.player)) k.jumpseat.push({ night: e.night, id: str(d.player)! });
+        break;
+      case 'meal':
+        if (!mine(e, me.id) || !str(d.dish)) break;
+        if (typeof d.row === 'number') k.trays = { day: e.night, dish: str(d.dish)!, row: d.row };
+        else k.drugged = { night: e.night, dish: str(d.dish)! };
         break;
     }
   }

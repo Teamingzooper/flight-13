@@ -11,7 +11,9 @@ export {
   type OptionsView,
   type VotesView,
   type PhaseView,
+  type MealView,
 } from './view';
+export { DISHES, isDish, mealDay, inReach } from './meal';
 export {
   ROLES,
   SPECIAL_CARDS,

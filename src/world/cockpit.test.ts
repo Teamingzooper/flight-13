@@ -17,6 +17,15 @@ function flight(): GameState {
 }
 
 describe('the Pilot’s controls', () => {
+  it('do nothing for a Pilot who slept off a drugged lunch', () => {
+    const s = flight();
+    advanceTo(s, 'night_move', 1);
+    s.night.drowsy.pilot = 'bomber';
+    const view = viewFor(s, 'pilot', 0);
+    expect(view.you?.drowsy).toBe(true);
+    expect(controlAction(view, 'seatbelt', false)).toEqual({ kind: 'no', why: 'You nodded off after lunch: the autopilot has the plane tonight.' });
+  });
+
   it('work while seats change at night: seatbelt, intercom, rough air and course', () => {
     const s = flight();
     advanceTo(s, 'night_move', 1);

@@ -77,7 +77,7 @@ export function planReel(game: PlayerView, record: NightRecord, before?: NightRe
 
   for (const e of game.log) {
     if (e.night !== n) continue;
-    const text = e.text.replace(/^Night \d+: /, '');
+    const text = e.text.replace(/^(Night|Day) \d+: /, '');
     if (e.to === 'end' && e.tag !== 'move' && e.tag !== 'gameover') drafts.push(fromBlackBox(e, text));
     else if (e.to === 'all' && (e.tag === 'explosion' || e.tag === 'death' || e.tag === 'verdict')) drafts.push(fromPublic(e, text));
   }
@@ -108,6 +108,11 @@ export function planReel(game: PlayerView, record: NightRecord, before?: NightRe
           ...(item.target ? { target: item.target } : {}),
         };
       }
+    }
+    // Lunch, by day: a caption over the row the food was drugged around.
+    if (e.tag === 'meal') {
+      const row = typeof e.data?.row === 'number' ? e.data.row : undefined;
+      return { when: 'day', actor: '', kind: 'caption', text, ...(row ? { row } : {}) };
     }
     // A call from the flight deck, a night in the lavatory, a defused bomb: a caption, looking at whoever it names.
     const who = whoIn(text, everyone, name);
