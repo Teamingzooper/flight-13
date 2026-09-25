@@ -37,6 +37,8 @@ export interface Tape {
   cast: { id: string; seat: SeatId }[];
   /** Where everyone sat that night (targets outside the cast too). */
   seats: ReadonlyMap<string, SeatId>;
+  /** The flight recorder: where the cast sat the night before (they walk to this night's seats as the reel opens). */
+  from?: ReadonlyMap<string, SeatId>;
   /** Seconds. */
   length: number;
 }

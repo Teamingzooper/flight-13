@@ -65,7 +65,9 @@ describe('the flight recorder', () => {
     expect(blast.victims).toEqual(expect.arrayContaining(['nurse', 'kim', 'lee']));
     expect(blast.cells).toEqual([{ row: 4, col: 1 }]);
     expect(blast.row).toBe(4);
-    // The bomber moved away before it went off.
+    // The bomber moved away before it went off, and the reel opens with them walking there.
     expect(second.cast.find((c) => c.id === 'bomber')?.seat).toBe('1A');
+    expect(second.clips[0]).toMatchObject({ kind: 'caption', clock: 'LIGHTS OUT', text: 'Seats change: bomber to 1A.', row: 1 });
+    expect(second.from?.get('bomber')).toBe('4B');
   });
 });
