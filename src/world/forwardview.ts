@@ -42,6 +42,7 @@ export class ForwardView {
   /** Metres of runway gone by, and how far the clouds have come. */
   private travel = 0;
   private drift = 0;
+  private drawnAt = -Infinity;
 
   constructor() {
     this.canvas.width = W;
@@ -61,6 +62,9 @@ export class ForwardView {
   update(dt: number, mode: ViewMode, speed: number, pitch: number, time: number, roll = 0): void {
     this.travel += dt * speed * 70;
     this.drift += dt * (0.015 + speed * 0.04);
+    // Thirty pictures a second is plenty (each one is a texture upload).
+    if (time - this.drawnAt < 1 / 30) return;
+    this.drawnAt = time;
     const g = this.g;
     const horizon = H * 0.5 + Math.max(-0.4, Math.min(0.5, pitch)) * H * 1.6;
     g.save();
