@@ -9,6 +9,7 @@ import { NetworkNote, useNetwork } from '../Notice';
 import { loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
 import { MoveDevice } from '../MoveDevice';
+import { SettingsPanel } from '../SettingsPanel';
 import { flightLink, navigate } from '../router';
 import { endFlight, type OpenFlight } from '../sessions';
 import { SettingsForm, describeRules } from '../SettingsForm';
@@ -23,6 +24,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
   const { client } = flight;
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, showToast] = useToast();
   const network = useNetwork();
   const run = async (request: Promise<IntentResult>) => {
@@ -191,6 +193,9 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
                 Move to another device
               </button>
             )}
+            <button class="btn ghost small" onClick={() => setSettingsOpen(true)}>
+              Settings
+            </button>
             <span class="muted grow">{takeoffError ?? 'Everyone aboard? Close the doors to take off.'}</span>
             <button class="btn primary big" disabled={takeoffError !== null} onClick={() => run(client.command({ kind: 'takeoff' }))}>
               Close doors & take off
@@ -204,11 +209,25 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
             <button class="btn ghost small" onClick={() => setMoving(true)}>
               Move to another device
             </button>
+            <button class="btn ghost small" onClick={() => setSettingsOpen(true)}>
+              Settings
+            </button>
             <span class="muted grow">Waiting for the captain to close the doors…</span>
           </>
         )}
       </footer>
       {moving && <MoveDevice flight={flight} onClose={() => setMoving(false)} fixed />}
+      {settingsOpen && (
+        <div class="tv-overlay fixed" role="dialog" aria-modal="true" aria-label="Settings">
+          <div class="tv-card wide">
+            <h2>Settings</h2>
+            <SettingsPanel state={state} />
+            <button class="btn primary" onClick={() => setSettingsOpen(false)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
       {toast && (
         <div class="toast" role="alert">
           {toast}

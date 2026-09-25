@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getPrefs } from '../app/prefs';
 
 const YAW_LIMIT = 2.4;
 const PITCH_MIN = -1.05;
@@ -660,6 +661,7 @@ export class SeatControls {
 
   /** Jolt the camera (turbulence, explosions). */
   shake(amount: number): void {
+    if (getPrefs().reduceMotion) return;
     this.shakeAmount = Math.max(this.shakeAmount, amount);
   }
 
@@ -765,7 +767,8 @@ export class SeatControls {
       this.lastFootfall = footfall;
       if (this.gaitAmount > 0.3) this.events.onStep?.();
     }
-    const g = this.gaitAmount;
+    // (Reduced motion: you still walk, but the head does not bob or sway.)
+    const g = getPrefs().reduceMotion ? 0 : this.gaitAmount;
     const bob = -Math.abs(Math.sin(this.gaitPhase)) * 0.034 * g + 0.017 * g;
     const sway = Math.sin(this.gaitPhase * 0.5 + 0.3) * 0.022 * g;
     const swayRoll = Math.sin(this.gaitPhase * 0.5) * 0.014 * g;

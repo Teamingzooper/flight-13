@@ -17,13 +17,14 @@ import { Header } from './Header';
 import { TutorialCoach } from '../tutorial/Coach';
 import { CaptainMenu, PausedBanner } from './CaptainMenu';
 import { VoiceButton } from './VoiceButton';
-import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
+import { IconBolt, IconChat, IconGear, IconMap, IconPlane, IconVote } from './icons';
+import { SettingsPanel } from '../app/SettingsPanel';
 import { MapTab } from './MapTab';
 import { PhaseOverlay } from './Overlays';
 import { usePacking } from './packing';
 import { VoteTab } from './VoteTab';
 
-export type TabId = 'map' | 'action' | 'chat' | 'vote' | 'flight';
+export type TabId = 'map' | 'action' | 'chat' | 'vote' | 'flight' | 'settings';
 
 /** The captain's latest announcement, for a few seconds after it comes in. */
 function PaBanner({ game }: { game: PlayerView }) {
@@ -53,6 +54,7 @@ const TABS: { id: TabId; label: string; Icon: () => VNode }[] = [
   { id: 'chat', label: 'Chat', Icon: IconChat },
   { id: 'vote', label: 'Vote', Icon: IconVote },
   { id: 'flight', label: 'Flight', Icon: IconPlane },
+  { id: 'settings', label: 'Settings', Icon: IconGear },
 ];
 
 const AUTO_TAB: Partial<Record<PhaseKind, TabId>> = { night_move: 'action', night_act: 'action', day_discuss: 'chat', day_vote: 'vote' };
@@ -151,6 +153,11 @@ export function TV({
                 {tab === 'chat' && <ChatTab ctx={ctx} />}
                 {tab === 'vote' && <VoteTab ctx={ctx} />}
                 {tab === 'flight' && <FlightTab ctx={ctx} />}
+                {tab === 'settings' && (
+                  <div class="tv-settings">
+                    <SettingsPanel state={state} />
+                  </div>
+                )}
               </>
             )}
           </main>

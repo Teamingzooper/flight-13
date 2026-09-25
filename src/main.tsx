@@ -11,6 +11,8 @@ import './styles/tv.css';
 import './styles/world.css';
 import { startAccountSync } from './app/account';
 import { App } from './app/App';
+import { applyPage } from './app/prefs';
 
+applyPage();
 startAccountSync();
 render(<App />, document.getElementById('app')!);

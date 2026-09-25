@@ -4,6 +4,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'book' }
   | { name: 'dutyFree' }
+  | { name: 'settings' }
   /** Back from a sign-in provider: a ticket to swap for a session, or what went wrong. */
   | { name: 'account'; ticket?: string; error?: string }
   /** `move`: a ticket to take over your seat from another device. */
@@ -15,6 +16,7 @@ export function parseRoute(hash: string): Route {
   if (flight) return flight[2] ? { name: 'flight', code: flight[1].toUpperCase(), move: flight[2] } : { name: 'flight', code: flight[1].toUpperCase() };
   if (path === '/book') return { name: 'book' };
   if (path === '/duty-free') return { name: 'dutyFree' };
+  if (path === '/settings') return { name: 'settings' };
   const account = /^\/account(?:\?(.*))?$/.exec(path);
   if (account) {
     const q = new URLSearchParams(account[1] ?? '');

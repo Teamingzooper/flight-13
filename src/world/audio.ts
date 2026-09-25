@@ -1,3 +1,5 @@
+import { getPrefs, subscribePrefs } from '../app/prefs';
+
 /** Synthesized cabin sound: nothing is downloaded, every sound is built from noise and oscillators. */
 
 const MUTE_KEY = 'f13-muted';
@@ -47,7 +49,7 @@ class CabinAudio {
       compressor.threshold.value = -14;
       compressor.ratio.value = 6;
       this.out = ctx.createGain();
-      this.out.gain.value = this.muted ? 0 : 0.9;
+      this.out.gain.value = this.level();
       this.muffle.connect(compressor).connect(this.out).connect(ctx.destination);
       this.white = this.noiseBuffer(2, false);
       this.brown = this.noiseBuffer(4, true);
@@ -90,8 +92,17 @@ class CabinAudio {
     } catch {
       // Private mode: the choice lasts for this visit only.
     }
-    if (this.ctx && this.out) this.out.gain.setTargetAtTime(muted ? 0 : 0.9, this.ctx.currentTime, 0.05);
+    this.applyLevel();
     for (const fn of [...this.listeners]) fn();
+  }
+
+  /** How loud everything plays: the sound volume in your settings, unless muted. */
+  private level(): number {
+    return this.muted ? 0 : getPrefs().sound;
+  }
+
+  applyLevel(): void {
+    if (this.ctx && this.out) this.out.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.05);
   }
 
   subscribe(fn: () => void): () => void {
@@ -497,3 +508,4 @@ class CabinAudio {
 }
 
 export const cabinAudio = new CabinAudio();
+subscribePrefs(() => cabinAudio.applyLevel());
