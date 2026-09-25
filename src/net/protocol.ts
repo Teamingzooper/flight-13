@@ -225,6 +225,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
   const pilotMustFly = raw.pilotMustFly ?? false;
   const mealService = raw.mealService ?? true;
+  const listed = raw.listed ?? true;
   const customRoles = cleanCustomRoles(raw.customRoles ?? []);
   if (!customRoles) return null;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
@@ -240,7 +241,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (typeof timers !== 'string' || !(timers in TIMERS)) return null;
   if (voteMode !== 'daily' && voteMode !== 'afterIncident') return null;
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
-  if (typeof pilotMustFly !== 'boolean' || typeof mealService !== 'boolean') return null;
+  if (typeof pilotMustFly !== 'boolean' || typeof mealService !== 'boolean' || typeof listed !== 'boolean') return null;
   if (typeof pilotRogueChance !== 'number') return null;
   if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
@@ -260,6 +261,7 @@ export function cleanSettings(raw: unknown): Settings | null {
     pilotMustFly,
     customRoles,
     mealService,
+    listed,
     botChatter: botChatter as BotChatter,
     botSkill: botSkill as BotSkill,
   };

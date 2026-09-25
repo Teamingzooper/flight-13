@@ -50,6 +50,7 @@ export function tutorialSettings(): Settings {
     // (No lunch: the tutorial keeps to its script.)
     mealService: false,
     botChatter: 'quiet',
+    listed: false,
   };
 }
 

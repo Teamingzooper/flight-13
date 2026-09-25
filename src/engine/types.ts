@@ -81,6 +81,8 @@ export interface Settings {
   mealService: boolean;
   botChatter: BotChatter;
   botSkill: BotSkill;
+  /** Shown on the public departures board while boarding (flights the server runs). */
+  listed: boolean;
 }
 
 export type PhaseKind =

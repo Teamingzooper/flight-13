@@ -41,6 +41,7 @@ import {
   type SpecialCard,
   type TimerPreset,
 } from '../engine';
+import { relayUrl } from '../net/relay';
 
 const CARD_NAME: Record<SpecialCard, [string, string]> = {
   bomber: ['Bomber', 'Bombers'],
@@ -400,6 +401,17 @@ export function SettingsForm({
           </div>
         </div>
         <div>
+          {relayUrl() && (
+            <>
+              <h2>Boarding</h2>
+              <Toggle
+                checked={s.listed}
+                onChange={(v) => set({ listed: v })}
+                title="List on the departures board"
+                hint="Anyone can find this flight on the home page and board it until the doors close. Off: only people you give the flight number to."
+              />
+            </>
+          )}
           <h2>Rules</h2>
           <Toggle checked={s.revealRoles} onChange={(v) => set({ revealRoles: v })} title="Reveal roles when someone is out" />
           <Toggle
