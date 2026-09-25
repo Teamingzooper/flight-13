@@ -52,6 +52,9 @@ interface PartSpec {
   outfit?: number;
   /** Only drawn while the actor holds a pistol. */
   armed?: boolean;
+  /** An accessory (Look slot and index) this part belongs to, drawn in its own colour. */
+  accessory?: { slot: 'hat' | 'eyes' | 'neck'; index: number };
+  color?: string;
 }
 
 const m = (x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) =>
@@ -134,6 +137,170 @@ export function hairGeometries(): (THREE.BufferGeometry | null)[] {
   ];
 }
 
+/**
+ * Accessories (meta/accessories.ts), as parts in their own colours: hats and eyewear on the head joint (the face
+ * looks down -z, the crown is at y ≈ 0.21 and hair reaches y ≈ 0.24), neck things on the chest joint (the collar is
+ * at y ≈ 0.15, the chest front at z ≈ -0.09 to -0.11).
+ */
+function accessoryParts(material: THREE.MeshStandardMaterial): PartSpec[] {
+  const out: PartSpec[] = [];
+  const add = (slot: 'hat' | 'eyes' | 'neck', index: number, color: string, ...geometries: THREE.BufferGeometry[]) =>
+    out.push({
+      geometry: merge(...geometries),
+      material,
+      joints: [slot === 'neck' ? 'chest' : 'head'],
+      local: [m()],
+      paint: 'skin',
+      head: true,
+      accessory: { slot, index },
+      color,
+    });
+  /** Geometry, moved: rotations (x, then z) about its own centre, then a translation. */
+  const at = (g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, rz = 0, ry = 0) => {
+    if (rx) g.rotateX(rx);
+    if (rz) g.rotateZ(rz);
+    if (ry) g.rotateY(ry);
+    g.translate(x, y, z);
+    return g;
+  };
+  const flat = (g: THREE.BufferGeometry) => g.rotateX(HALF_PI);
+  // Hats sit tilted back a little about the middle of the head, like the hair, so the front edge clears the eyes.
+  const tilt = (g: THREE.BufferGeometry) => g.translate(0, -0.12, 0).rotateX(0.18).translate(0, 0.12, 0);
+
+  // 1 Beanie: a knitted dome with a turned-up cuff and a bobble.
+  const dome = new THREE.SphereGeometry(0.126, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  dome.scale(0.98, 1.08, 1.05);
+  add('hat', 1, '#27406b', tilt(at(dome, 0, 0.12, 0.004)));
+  add('hat', 1, '#3a5a8c', tilt(at(flat(new THREE.TorusGeometry(0.118, 0.02, 8, 24)), 0, 0.128, 0.004)));
+  add('hat', 1, '#e9eef5', tilt(at(new THREE.SphereGeometry(0.034, 10, 8), 0, 0.262, 0.01)));
+
+  // 2 Captain's hat: a white crown, black band and peak, and a gold badge.
+  add('hat', 2, '#f4f4f0', tilt(at(new THREE.CylinderGeometry(0.13, 0.112, 0.075, 24), 0, 0.232, 0)));
+  add(
+    'hat',
+    2,
+    '#1d1f24',
+    tilt(at(new THREE.CylinderGeometry(0.114, 0.113, 0.03, 24), 0, 0.2, 0)),
+    tilt(at(new THREE.CylinderGeometry(0.1, 0.1, 0.008, 20, 1, false, Math.PI / 2, Math.PI), 0, 0.19, -0.035, -0.28)),
+  );
+  add('hat', 2, '#e0b33a', tilt(at(new THREE.BoxGeometry(0.03, 0.022, 0.01), 0, 0.225, -0.118)));
+
+  // 3 Fedora: a pinched crown, a band and a brim.
+  const crown = new THREE.CylinderGeometry(0.1, 0.11, 0.1, 20);
+  crown.scale(0.94, 1, 1.05);
+  add('hat', 3, '#6b4a2f', tilt(at(crown, 0, 0.235, 0.004)), tilt(at(new THREE.CylinderGeometry(0.175, 0.175, 0.01, 28), 0, 0.186, 0.004)));
+  add('hat', 3, '#2a1d14', tilt(at(new THREE.CylinderGeometry(0.106, 0.112, 0.024, 20), 0, 0.2, 0.004)));
+
+  // 4 Party hat: a striped cone with a bobble on top, worn at a jaunty angle.
+  add('hat', 4, '#e5534b', at(new THREE.ConeGeometry(0.064, 0.17, 16), 0.012, 0.29, 0.01, 0, -0.14));
+  add('hat', 4, '#f2b134', at(flat(new THREE.TorusGeometry(0.05, 0.006, 6, 16)), 0.006, 0.255, 0.01, 0, -0.14));
+  add('hat', 4, '#3fb27f', at(new THREE.SphereGeometry(0.022, 10, 8), 0.024, 0.375, 0.01));
+
+  // 5 Cowboy hat: a dented crown and a wide brim curling up at the sides.
+  const cowCrown = new THREE.CylinderGeometry(0.095, 0.108, 0.105, 20);
+  cowCrown.scale(0.92, 1, 1.08);
+  const brimCurl = flat(new THREE.TorusGeometry(0.19, 0.018, 8, 32));
+  brimCurl.scale(1, 0.84, 1);
+  add(
+    'hat',
+    5,
+    '#c89b62',
+    tilt(at(cowCrown, 0, 0.24, 0.004)),
+    tilt(at(new THREE.CylinderGeometry(0.2, 0.2, 0.01, 32), 0, 0.186, 0.004)),
+    tilt(at(brimCurl, 0, 0.2, 0.004)),
+  );
+  add('hat', 5, '#6b4a2f', tilt(at(new THREE.CylinderGeometry(0.1, 0.108, 0.022, 20), 0, 0.2, 0.004)));
+
+  // 6 Beret: a soft flat disc, pulled to one side, with its little stalk.
+  const beret = new THREE.SphereGeometry(0.13, 20, 12);
+  beret.scale(1.05, 0.34, 1.05);
+  add('hat', 6, '#c0392b', at(beret, -0.015, 0.215, 0.01, 0.12, 0.16), at(new THREE.CylinderGeometry(0.006, 0.006, 0.02, 6), -0.02, 0.262, 0.01, 0, 0.16));
+
+  // Eyewear at eye level (the eyes are at (±0.036, 0.115, -0.094)), a little in front of the face.
+  const EYE_Z = -0.109;
+  const temples = () => [-1, 1].map((side) => at(new THREE.BoxGeometry(0.004, 0.005, 0.1), side * 0.086, 0.12, -0.056, 0, 0, side * -0.12));
+  const bridge = () => at(new THREE.CylinderGeometry(0.003, 0.003, 0.026, 6), 0, 0.12, EYE_Z, 0, HALF_PI);
+  const rims = (r: number, sy = 1) =>
+    [-1, 1].map((side) => {
+      const g = new THREE.TorusGeometry(r, 0.0042, 6, 20);
+      g.scale(1, sy, 1);
+      return at(g, side * 0.036, 0.115, EYE_Z);
+    });
+  const lenses = (r: number, sy = 1, y = 0.115) =>
+    [-1, 1].map((side) => {
+      const g = new THREE.CylinderGeometry(r, r, 0.003, 20);
+      g.rotateX(HALF_PI);
+      g.scale(1, sy, 1);
+      return at(g, side * 0.036, y, EYE_Z);
+    });
+
+  // 1 Round glasses.
+  add('eyes', 1, '#15171c', ...rims(0.024), bridge(), ...temples());
+  // 2 Sunglasses.
+  add('eyes', 2, '#111318', ...lenses(0.026, 0.72), bridge(), ...temples());
+  // 3 Aviators: gold wire round dark teardrops.
+  add('eyes', 3, '#3b3c46', ...lenses(0.026, 0.9, 0.112));
+  add('eyes', 3, '#d9b34a', ...rims(0.027, 0.92), bridge(), ...temples());
+  // 4 Sleep mask, pushed up onto the forehead: a band round the head and the mask in front.
+  const band = flat(new THREE.TorusGeometry(0.09, 0.008, 6, 28));
+  band.scale(0.97, 1.05, 1);
+  add('eyes', 4, '#d97aae', at(band, 0, 0.168, 0.004, 0.2));
+  add('eyes', 4, '#e58fc0', at(new RoundedBoxGeometry(0.11, 0.04, 0.014, 2, 0.006), 0, 0.172, -0.092, -0.45));
+  // 5 Heart glasses.
+  const heart = new THREE.Shape();
+  heart.moveTo(0, -0.022);
+  heart.bezierCurveTo(-0.034, 0.002, -0.022, 0.03, 0, 0.012);
+  heart.bezierCurveTo(0.022, 0.03, 0.034, 0.002, 0, -0.022);
+  const hearts = [-1, 1].map((side) => at(new THREE.ExtrudeGeometry(heart, { depth: 0.004, bevelEnabled: false, curveSegments: 8 }), side * 0.036, 0.115, EYE_Z - 0.002));
+  add('eyes', 5, '#e5534b', ...hearts);
+  add('eyes', 5, '#15171c', bridge(), ...temples());
+
+  // Round the neck, on the chest joint.
+  // 1 Scarf: wound round the neck, one end hanging down the front.
+  add(
+    'neck',
+    1,
+    '#c0392b',
+    at(flat(new THREE.TorusGeometry(0.074, 0.03, 10, 24)), 0, 0.15, 0),
+    at(new RoundedBoxGeometry(0.052, 0.15, 0.02, 2, 0.008), 0.035, 0.07, -0.09, 0.2),
+  );
+  // 2 Tie: a knot at the collar and the blade down the shirt.
+  // (The chest's front is at z ≈ -0.085 by the collar and -0.112 lower down: the blade leans out to follow it.)
+  add(
+    'neck',
+    2,
+    '#1f3a8a',
+    at(new RoundedBoxGeometry(0.032, 0.026, 0.02, 2, 0.006), 0, 0.132, -0.088),
+    at(new RoundedBoxGeometry(0.044, 0.19, 0.012, 2, 0.005), 0, 0.03, -0.12, 0.17),
+  );
+  // 3 Bow tie.
+  const wing = (side: number) => at(new THREE.ConeGeometry(0.022, 0.042, 4), side * 0.024, 0.135, -0.09, 0, side * HALF_PI);
+  add('neck', 3, '#c0392b', wing(-1), wing(1), at(new THREE.SphereGeometry(0.011, 8, 6), 0, 0.135, -0.095));
+  // 4 Headphones, resting round the neck: the band behind, the cups on the collarbones.
+  add('neck', 4, '#26282e', at(flat(new THREE.TorusGeometry(0.088, 0.008, 6, 20, Math.PI)), 0, 0.165, 0.004, 0, 0, Math.PI));
+  add(
+    'neck',
+    4,
+    '#34373f',
+    ...[-1, 1].map((side) => at(new THREE.CylinderGeometry(0.036, 0.036, 0.026, 16), side * 0.09, 0.15, -0.02, 0, HALF_PI)),
+  );
+  // 5 Lei: flowers round the neck, dipping lower in front.
+  const flowers: THREE.BufferGeometry[][] = [[], [], []];
+  for (let i = 0; i < 15; i++) {
+    const a = (i / 15) * Math.PI * 2;
+    const front = Math.max(0, -Math.cos(a));
+    flowers[i % 3].push(at(new THREE.SphereGeometry(0.02, 8, 6), Math.sin(a) * 0.112, 0.14 - front * 0.05, Math.cos(a) * 0.088 - front * 0.035));
+  }
+  add('neck', 5, '#e05d8c', ...flowers[0]);
+  add('neck', 5, '#f2b134', ...flowers[1]);
+  add('neck', 5, '#f4f1ea', ...flowers[2]);
+  // 6 Gold chain with a little pendant.
+  const chain = flat(new THREE.TorusGeometry(0.084, 0.004, 6, 32));
+  chain.scale(1.12, 1, 1.05);
+  add('neck', 6, '#e0b33a', at(chain, 0, 0.13, -0.03, -0.32), at(new THREE.SphereGeometry(0.012, 10, 8), 0, 0.09, -0.118));
+  return out;
+}
+
 /** A hood lying on the upper back, with its collar round the back of the neck (on the chest joint). */
 function hoodGeometry(): THREE.BufferGeometry {
   const collar = new THREE.TorusGeometry(0.085, 0.03, 8, 20, Math.PI);
@@ -180,7 +347,16 @@ function faceGeometry(): THREE.BufferGeometry {
 }
 
 const sameLook = (a: Look, b: Look) =>
-  a.body === b.body && a.skin === b.skin && a.hair === b.hair && a.hairColor === b.hairColor && a.top === b.top && a.topStyle === b.topStyle && a.bottom === b.bottom;
+  a.body === b.body &&
+  a.skin === b.skin &&
+  a.hair === b.hair &&
+  a.hairColor === b.hairColor &&
+  a.top === b.top &&
+  a.topStyle === b.topStyle &&
+  a.bottom === b.bottom &&
+  (a.hat ?? 0) === (b.hat ?? 0) &&
+  (a.eyes ?? 0) === (b.eyes ?? 0) &&
+  (a.neck ?? 0) === (b.neck ?? 0);
 
 function buildParts(): PartSpec[] {
   const cloth = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
@@ -219,6 +395,7 @@ function buildParts(): PartSpec[] {
   hairGeometries().forEach((geometry, index) => {
     if (geometry) parts.push({ geometry, material: hair, joints: ['head'], local: [m()], paint: 'hair', head: true, hair: index });
   });
+  parts.push(...accessoryParts(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 })));
   return parts;
 }
 
@@ -899,6 +1076,7 @@ export class People {
           (part.hair !== undefined && part.hair !== look.hair % HAIR_STYLES.length) ||
           (part.outfit !== undefined && part.outfit !== look.topStyle) ||
           (part.armed && !actor.armed) ||
+          (part.accessory !== undefined && (look[part.accessory.slot] ?? 0) !== part.accessory.index) ||
           // A painted face brings its own eyes.
           (part.paint === 'eye' && actor.face !== '');
         if (hidden) {
@@ -979,7 +1157,7 @@ export class People {
     };
     this.parts.forEach((part, index) => {
       const mesh = this.meshes[index];
-      this.color.set(palette[part.paint]);
+      this.color.set(part.color ?? palette[part.paint]);
       // Blast victims are blackened with soot; other deaths just lose their colour.
       // (Colours are linear, so these factors read about twice as strong as they look.)
       if (actor.dead && actor.cause === 'explosion') this.color.lerp(SOOT, 0.9);

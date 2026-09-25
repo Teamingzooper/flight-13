@@ -19,6 +19,9 @@ describe('protocol sanitising', () => {
       top: 3,
       topStyle: 0,
       bottom: 0,
+      hat: 0,
+      eyes: 0,
+      neck: 0,
     });
     // Looks saved before top styles existed keep their sleeves.
     expect(cleanLook({ body: 0, skin: 0, hair: 0, hairColor: 0, top: 5, bottom: 0 }).topStyle).toBe(1);
@@ -64,7 +67,7 @@ describe('protocol sanitising', () => {
       v: 1,
       token: 'abcdefgh12',
       name: 'Ann',
-      look: { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 },
+      look: { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0, hat: 0, eyes: 0, neck: 0 },
       face: '',
       tower: false,
     });

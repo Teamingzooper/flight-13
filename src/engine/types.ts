@@ -106,6 +106,10 @@ export interface Look {
   /** Long sleeves, T-shirt, hoodie or tank top. */
   topStyle: number;
   bottom: number;
+  /** Accessories from Duty Free (0 or missing: none). Purely cosmetic. */
+  hat?: number;
+  eyes?: number;
+  neck?: number;
 }
 
 export interface PlayerState {

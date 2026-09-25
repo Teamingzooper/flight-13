@@ -435,7 +435,7 @@ export class HostSession {
         const names = free.length > 0 ? free : BOT_NAMES;
         const base = names[Math.floor(this.random() * names.length)];
         const face = FACE_TEMPLATES[Math.floor(this.random() * FACE_TEMPLATES.length)].face;
-        s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random), face, bot: true });
+        s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random, true), face, bot: true });
         break;
       }
       case 'boardAgain': {

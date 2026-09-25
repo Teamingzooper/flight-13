@@ -1,4 +1,5 @@
 import { ITEM_ORDER, isItemId, planeLands, type ItemId, type PlayerView } from '../engine';
+import { accessoryById } from './accessories';
 import { ACHIEVEMENTS } from './achievements';
 import { PRICES } from './shop';
 
@@ -30,6 +31,8 @@ export interface Bag {
   settled: Settlement[];
   /** Items already taken out of the bag, by game id (they are used up as they are used). */
   spent: Record<string, ItemId[]>;
+  /** Accessories you own (ids from meta/accessories.ts); worn as often as you like. */
+  wardrobe: string[];
 }
 
 const KEEP_GAMES = 20;
@@ -45,6 +48,7 @@ export function newBag(): Bag {
     stats: { flights: 0, wins: 0, landed: [] },
     settled: [],
     spent: {},
+    wardrobe: [],
   };
 }
 
@@ -72,6 +76,7 @@ export function cleanBag(raw: unknown): Bag {
     stats: { flights: count(stats.flights), wins: count(stats.wins), landed: strings(stats.landed) },
     settled: Array.isArray(r.settled) ? r.settled.filter((x) => x && typeof x.gameId === 'string').slice(-KEEP_GAMES) : [],
     spent: Object.fromEntries(Object.entries(r.spent ?? {}).map(([id, items]) => [id, (Array.isArray(items) ? items : []).filter(isItemId)])),
+    wardrobe: [...new Set(strings(r.wardrobe).filter((id) => accessoryById(id)))],
   };
 }
 
@@ -90,6 +95,17 @@ export function buy(bag: Bag, item: ItemId): Bag | null {
   const price = PRICES[item];
   if (bag.credits < price) return null;
   return addItems({ ...bag, credits: bag.credits - price }, { [item]: 1 });
+}
+
+export function ownsAccessory(bag: Bag, id: string): boolean {
+  return bag.wardrobe.includes(id);
+}
+
+/** Buy an accessory at Duty Free; null if you have it already or the credits do not cover it. */
+export function buyAccessory(bag: Bag, id: string): Bag | null {
+  const accessory = accessoryById(id);
+  if (!accessory || ownsAccessory(bag, id) || bag.credits < accessory.price) return null;
+  return { ...bag, credits: bag.credits - accessory.price, wardrobe: [...bag.wardrobe, id] };
 }
 
 /** Only items you have can go in the carry-on (duplicates need as many copies). */
