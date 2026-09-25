@@ -11,13 +11,6 @@ export const CUFF_RADIUS = 2;
 const LETTER_BY_COL: Record<number, string> = { 0: 'A', 1: 'B', 2: 'C', 4: 'D', 5: 'E', 6: 'F' };
 const COL_BY_LETTER: Record<string, number> = { A: 0, B: 1, C: 2, D: 4, E: 5, F: 6 };
 
-/** Cabin length for a flight booked for `maxPassengers`. */
-export function rowsFor(maxPassengers: number): number {
-  if (maxPassengers <= 8) return 8;
-  if (maxPassengers <= 12) return 10;
-  return 12;
-}
-
 export function seatId(cell: Cell): SeatId {
   const letter = LETTER_BY_COL[cell.col];
   if (!letter) throw new Error(`Column ${cell.col} has no seats`);
@@ -61,15 +54,16 @@ export function parsePlace(id: SeatId): Cell | null {
   return row === null ? parseSeat(id) : { row, col: AISLE_COL };
 }
 
-export function isSeatInCabin(id: SeatId, rows: number): boolean {
+/** A seat this cabin has (`cols`: the plane's seat columns, the airliner's six unless said). */
+export function isSeatInCabin(id: SeatId, rows: number, cols: readonly number[] = SEAT_COLS): boolean {
   const cell = parseSeat(id);
-  return cell !== null && cell.row <= rows;
+  return cell !== null && cell.row <= rows && cols.includes(cell.col);
 }
 
-export function allSeats(rows: number): SeatId[] {
+export function allSeats(rows: number, cols: readonly number[] = SEAT_COLS): SeatId[] {
   const seats: SeatId[] = [];
   for (let row = 1; row <= rows; row++) {
-    for (const col of SEAT_COLS) seats.push(seatId({ row, col }));
+    for (const col of SEAT_COLS) if (cols.includes(col)) seats.push(seatId({ row, col }));
   }
   return seats;
 }
@@ -101,25 +95,29 @@ export function lavatoryCells(rows: number): Cell[] {
 }
 
 /** Seats whose cell is within `radius` of any of `centers`. */
-export function seatsWithin(centers: readonly Cell[], radius: number, rows: number): SeatId[] {
-  return allSeats(rows).filter((id) => distanceToAny(parseSeat(id)!, centers) <= radius);
+export function seatsWithin(centers: readonly Cell[], radius: number, rows: number, cols: readonly number[] = SEAT_COLS): SeatId[] {
+  return allSeats(rows, cols).filter((id) => distanceToAny(parseSeat(id)!, centers) <= radius);
 }
 
 /** Seats and aisle spots within `radius` of any of `centers` (who a blast would reach, crew included). */
-export function placesWithin(centers: readonly Cell[], radius: number, rows: number): SeatId[] {
+export function placesWithin(centers: readonly Cell[], radius: number, rows: number, cols: readonly number[] = SEAT_COLS): SeatId[] {
   const aisle = Array.from({ length: rows }, (_, i) => aisleSpot(i + 1)).filter((id) => distanceToAny(parsePlace(id)!, centers) <= radius);
-  return [...seatsWithin(centers, radius, rows), ...aisle];
+  return [...seatsWithin(centers, radius, rows, cols), ...aisle];
 }
 
-export function isAisleSeat(id: SeatId): boolean {
+/** A seat right by the aisle (C or D on the airliner; B or E on the private jet, across its wide aisle). */
+export function isAisleSeat(id: SeatId, cols: readonly number[] = SEAT_COLS): boolean {
   const cell = parseSeat(id);
-  return cell !== null && (cell.col === 2 || cell.col === 4);
+  if (!cell) return false;
+  const left = Math.max(...cols.filter((c) => c < AISLE_COL));
+  const right = Math.min(...cols.filter((c) => c > AISLE_COL));
+  return cell.col === left || cell.col === right;
 }
 
-/** The seats either side of a row's aisle: left is A-C, right is D-F. */
-export function rowSeats(row: number, side?: 'left' | 'right'): SeatId[] {
-  const cols = side === 'left' ? [0, 1, 2] : side === 'right' ? [4, 5, 6] : SEAT_COLS;
-  return cols.map((col) => seatId({ row, col }));
+/** The seats either side of a row's aisle: left is A-C, right is D-F (as far as the plane has them). */
+export function rowSeats(row: number, side?: 'left' | 'right', cols: readonly number[] = SEAT_COLS): SeatId[] {
+  const sideCols = side === 'left' ? [0, 1, 2] : side === 'right' ? [4, 5, 6] : SEAT_COLS;
+  return sideCols.filter((col) => cols.includes(col)).map((col) => seatId({ row, col }));
 }
 
 /** The drink cart fills the aisle: nobody walks past its row (squeezing into or out of that row is fine). */

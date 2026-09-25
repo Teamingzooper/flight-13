@@ -28,7 +28,7 @@ function nightView(game: PlayerView, record: NightRecord, reel: Tape, step: numb
 
 /** The seats a clip is about: who did it and to whom, or everywhere a blast reached. */
 function highlight(game: PlayerView, reel: Tape, clip: Clip): Set<SeatId> {
-  if (clip.kind === 'blast' && clip.cells?.length) return new Set(grid.placesWithin(clip.cells, grid.BLAST_RADIUS, game.cabin.rows));
+  if (clip.kind === 'blast' && clip.cells?.length) return new Set(grid.placesWithin(clip.cells, grid.BLAST_RADIUS, game.cabin.rows, game.cabin.cols));
   const out = new Set<SeatId>();
   for (const id of [clip.actor, clip.target, ...(clip.victims ?? [])]) {
     const seat = id ? reel.seats.get(id) : undefined;

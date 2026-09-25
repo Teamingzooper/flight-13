@@ -317,7 +317,7 @@ function RowCheckPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction
   const chosen = current?.kind === 'check' ? current.side : null;
   if (row === null) return <p class="muted">Walk the cart to a row first.</p>;
   const sides = (['left', 'right'] as const).map((side) => {
-    const seats = grid.rowSeats(row, side);
+    const seats = grid.rowSeats(row, side, game.cabin.cols);
     const sitters = seats.flatMap((seat) => {
       const p = game.players.find((q) => q.seat === seat && q.status === 'alive');
       return p ? [p.id === game.you?.id ? 'you' : shortName(p.name)] : [];
@@ -352,7 +352,7 @@ function RowCheckPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction
           </button>
         ))}
       </div>
-      <SeatMap game={game} preview={new Set(grid.rowSeats(row, shown))} tone="check" />
+      <SeatMap game={game} preview={new Set(grid.rowSeats(row, shown, game.cabin.cols))} tone="check" />
     </div>
   );
 }
@@ -407,9 +407,9 @@ function InvestigatorPicker({ ctx, actions }: { ctx: TVContext; actions: NightAc
   const chosen: Check | null = current?.kind === 'sweep' ? 'sweep' : current?.kind === 'inspect' ? current.what : null;
   const find = (key: Check) => actions.find((a) => (key === 'sweep' ? a.kind === 'sweep' : a.kind === 'inspect' && a.what === key));
   const areas: Record<Check, Set<string>> = {
-    sweep: new Set(grid.seatsWithin([grid.parseSeat(you.seat!)!], grid.SWEEP_RADIUS, rows)),
-    cart: new Set(grid.seatsWithin([grid.cartCell(cartRow)], 1, rows)),
-    lavatory: new Set(grid.seatsWithin(grid.lavatoryCells(rows), 1, rows)),
+    sweep: new Set(grid.seatsWithin([grid.parseSeat(you.seat!)!], grid.SWEEP_RADIUS, rows, game.cabin.cols)),
+    cart: new Set(grid.seatsWithin([grid.cartCell(cartRow)], 1, rows, game.cabin.cols)),
+    lavatory: new Set(grid.seatsWithin(grid.lavatoryCells(rows), 1, rows, game.cabin.cols)),
   };
   const choices: { key: Check; title: string; ok: string; no: string }[] = [
     { key: 'sweep', title: `The seats around ${you.seat}`, ok: 'Your seat and every seat touching it.', no: '' },
@@ -506,7 +506,7 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   const when = (f: 1 | 2) => `the end of night ${night + f}`;
   const blastOf = (spot: BombSpot) => {
     const centers = spot === 'seat' ? [grid.parseSeat(you.seat!)!] : spot === 'cart' ? [grid.cartCell(cartRow)] : grid.lavatoryCells(rows);
-    return new Set(grid.placesWithin(centers, grid.BLAST_RADIUS, rows));
+    return new Set(grid.placesWithin(centers, grid.BLAST_RADIUS, rows, game.cabin.cols));
   };
 
   if (planned && !editing) {

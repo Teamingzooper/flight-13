@@ -12,12 +12,12 @@ import {
   parsePlace,
   parseSeat,
   rowSeats,
-  rowsFor,
   seatDistance,
   seatId,
   seatOrder,
   seatsWithin,
 } from './grid';
+import { rowsFor } from './planes';
 
 describe('grid', () => {
   it('sizes the cabin by max passengers', () => {

@@ -6,6 +6,7 @@ import {
   SPECIAL_CARDS,
   TIMERS,
   TWISTS,
+  isPlaneId,
   validateCustomDestination,
   type BotChatter,
   type BotSkill,
@@ -187,11 +188,13 @@ export function cleanSettings(raw: unknown): Settings | null {
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
   const pilotMustFly = raw.pilotMustFly ?? false;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
+  const plane = raw.plane ?? 'airliner';
   const botChatter = raw.botChatter ?? 'normal';
   const botSkill = raw.botSkill ?? 'normal';
   const customDestination = raw.customDestination == null ? null : cleanCustomDestination(raw.customDestination);
   if (destination === 'custom' ? !customDestination : typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
   if (!isInt(maxPassengers)) return null;
+  if (!isPlaneId(plane)) return null;
   if (rolesMode !== 'auto' && rolesMode !== 'custom') return null;
   if (typeof stewardessRogueChance !== 'number') return null;
   if (typeof timers !== 'string' || !(timers in TIMERS)) return null;
@@ -201,6 +204,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (typeof pilotRogueChance !== 'number') return null;
   if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
+    plane,
     destination: destination as Settings['destination'],
     customDestination,
     maxPassengers,

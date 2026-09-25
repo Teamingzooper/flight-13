@@ -110,7 +110,7 @@ function withinReach(s: GameState, p: PlayerState, b: Bomb): boolean {
   if (inWashroom(s, p.id)) return b.location.kind === 'lavatory';
   if (b.location.kind !== 'seat') return false;
   const row = isStewardess(p.role) ? aisleRow(p.seat) : null;
-  return row === null ? b.location.seat === p.seat : rowSeats(row).includes(b.location.seat);
+  return row === null ? b.location.seat === p.seat : rowSeats(row, undefined, s.cabin.cols).includes(b.location.seat);
 }
 
 /** A live bomb you know about and can reach. */
@@ -142,7 +142,7 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
       if (inWashroom(s, p.id)) return 'You are locked in the lavatory tonight.';
       if (s.night.flashlights[p.id]) return 'You already used a flashlight tonight.';
       const seat = use.seat;
-      if (typeof seat !== 'string' || !isSeatInCabin(seat, s.cabin.rows)) return 'Pick a seat to look under.';
+      if (typeof seat !== 'string' || !isSeatInCabin(seat, s.cabin.rows, s.cabin.cols)) return 'Pick a seat to look under.';
       if (seat === p.seat) return 'Look under your own seat without the flashlight.';
       if (distance(parseSeat(seat)!, cellOf(p)) > 1) return 'Pick a seat right next to yours.';
       return null;
@@ -175,7 +175,7 @@ export function possibleItemUses(s: GameState, p: PlayerState): ItemUse[] {
   for (const item of new Set(p.items)) {
     switch (item) {
       case 'flashlight':
-        for (const seat of seatsWithin([cellOf(p)], 1, s.cabin.rows)) uses.push({ item, seat });
+        for (const seat of seatsWithin([cellOf(p)], 1, s.cabin.rows, s.cabin.cols)) uses.push({ item, seat });
         break;
       case 'pills':
         for (const t of activePlayers(s)) uses.push({ item, target: t.id });

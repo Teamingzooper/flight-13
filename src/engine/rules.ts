@@ -1,4 +1,4 @@
-import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
+import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSeat, isAisleSpot, isCockpit, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
 import { canCuff, canPlantBombs, isPilot, isSaboteur, isStewardess } from './roles';
 import { activePlayers, bombsLeft, cellOf, emptySeats, getPlayer, inWashroom, isActive, isGuest, liveBombAt, occupantOf, onFlightDeck } from './state';
 import type { GameState, MoveTarget, NightAction, PlayerState, SeatId } from './types';
@@ -30,7 +30,7 @@ export function checkMove(s: GameState, p: PlayerState, to: MoveTarget): string 
     if (activePlayers(s).some((o) => o.seat === to)) return 'Another stewardess is working that row.';
     return null;
   }
-  if (!isSeatInCabin(to, s.cabin.rows)) return 'That seat does not exist.';
+  if (!isSeatInCabin(to, s.cabin.rows, s.cabin.cols)) return 'That seat does not exist.';
   if (p.seat === to) return 'You are already sitting there.';
   if (occupantOf(s, to)) return 'That seat is taken.';
   return cartInTheWay(s, p, parseSeat(to)!.row);
@@ -89,8 +89,11 @@ export function checkSeatbelt(s: GameState, pilot: PlayerState, target: string):
   return null;
 }
 
+/** Beside the drink cart: a step from it, or in an aisle seat of its row or the next (the private jet's aisle is wide). */
 function nextToCart(s: GameState, p: PlayerState): boolean {
-  return distance(cellOf(p), cartCell(s.cabin.cartRow)) <= 1;
+  const here = cellOf(p);
+  if (distance(here, cartCell(s.cabin.cartRow)) <= 1) return true;
+  return !!p.seat && Math.abs(here.row - s.cabin.cartRow) <= 1 && isAisleSeat(p.seat, s.cabin.cols);
 }
 
 function nextToLavatory(s: GameState, p: PlayerState): boolean {

@@ -9,7 +9,7 @@ import { SeatMap } from './SeatMap';
 function sectionPlaces(game: PlayerView, start: number): Set<string> {
   const out = new Set<string>();
   for (let row = start; row < start + 3 && row <= game.cabin.rows; row++) {
-    for (const seat of grid.rowSeats(row)) out.add(seat);
+    for (const seat of grid.rowSeats(row, undefined, game.cabin.cols)) out.add(seat);
     out.add(grid.aisleSpot(row));
   }
   return out;

@@ -38,13 +38,19 @@ function onBack(x: number, z0: number, local: THREE.Vector3): THREE.Vector3 {
   return local.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), RECLINE).add(pivot);
 }
 
-export function buildSeats(rows: number): SeatParts {
+/** Every seat in the cabin (`cols`: the plane's seat columns; `leather`: the private jet's cream leather). */
+export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COLS, leather = false): SeatParts {
   const group = new THREE.Group();
   group.name = 'seats';
-  const seats = grid.allSeats(rows);
+  const seats = grid.allSeats(rows, cols);
+  // The last seat of each block (by the aisle on the left, by the wall on the right) has an armrest on both sides.
+  const leftEnd = Math.max(...cols.filter((c) => c < grid.AISLE_COL));
+  const rightEnd = Math.max(...cols);
 
-  const fabric = new THREE.MeshStandardMaterial({ map: fabricTexture(), roughness: 0.92 });
-  const headrest = new THREE.MeshStandardMaterial({ color: '#c9ced8', roughness: 0.9 });
+  const fabric = leather
+    ? new THREE.MeshStandardMaterial({ color: '#e6d8bd', roughness: 0.48 })
+    : new THREE.MeshStandardMaterial({ map: fabricTexture(), roughness: 0.92 });
+  const headrest = new THREE.MeshStandardMaterial({ color: leather ? '#d6c3a0' : '#c9ced8', roughness: leather ? 0.5 : 0.9 });
   const shell = new THREE.MeshStandardMaterial({ color: '#2b303a', roughness: 0.45 });
   const armMat = new THREE.MeshStandardMaterial({ color: '#3a404b', roughness: 0.5 });
   const metal = new THREE.MeshStandardMaterial({ color: '#8b939e', roughness: 0.35, metalness: 0.6 });
@@ -75,7 +81,7 @@ export function buildSeats(rows: number): SeatParts {
     legs.push(matrix(new THREE.Vector3(x - 0.15, 0.2, z - 0.08)), matrix(new THREE.Vector3(x + 0.15, 0.2, z - 0.08)));
     // Armrests: one to the left of every seat, plus the aisle/wall side of each block's last seat.
     arms.push(matrix(new THREE.Vector3(x - 0.225, 0.64, z)));
-    if (cell.col === 2 || cell.col === 6) arms.push(matrix(new THREE.Vector3(x + 0.225, 0.64, z)));
+    if (cell.col === leftEnd || cell.col === rightEnd) arms.push(matrix(new THREE.Vector3(x + 0.225, 0.64, z)));
 
     // The screen this passenger looks at: on the back of the seat ahead, or on the bulkhead for row 1.
     let screen: THREE.Matrix4;

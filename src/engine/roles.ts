@@ -128,7 +128,10 @@ export function presetCards(players: number): Cards {
   if (players <= 6) return { ...emptyCards(), bomber: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 1 };
   if (players <= 9) return { ...emptyCards(), bomber: 2, stewardess: 1, pilot: 1, nurse: 1, investigator: 1 };
   if (players <= 12) return { ...emptyCards(), bomber: 2, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 1, marshal: 1 };
-  return { ...emptyCards(), bomber: 3, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 2, marshal: 1 };
+  if (players <= 16) return { ...emptyCards(), bomber: 3, mastermind: 1, stewardess: 1, pilot: 1, nurse: 1, investigator: 2, marshal: 1 };
+  // The jumbo: more of everyone.
+  if (players <= 20) return { ...emptyCards(), bomber: 3, mastermind: 1, stewardess: 1, pilot: 1, nurse: 2, investigator: 2, marshal: 1 };
+  return { ...emptyCards(), bomber: 4, mastermind: 1, stewardess: 1, pilot: 1, nurse: 2, investigator: 2, marshal: 2 };
 }
 
 export function countSpecials(cards: Cards): number {

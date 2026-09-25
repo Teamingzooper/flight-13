@@ -8,8 +8,11 @@ import { decodeFace } from '../../net/face';
 import type { Pose } from '../../net/protocol';
 import { seatPose } from '../layout';
 
-/** Sixteen passengers, and a few more for the police in an ending. */
-const MAX_ACTORS = 22;
+/**
+ * A jumbo's 24 passengers, as many flight recorder stand-ins, and the police in an ending. Each frame only draws
+ * (and uploads) as far as the highest slot in use.
+ */
+const MAX_ACTORS = 56;
 const SOOT = new THREE.Color('#120f0d');
 const HALF_PI = Math.PI / 2;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -1046,7 +1049,21 @@ export class People {
       actor.update(dt, time);
       this.write(id, actor);
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    this.flush();
+  }
+
+  /** Upload the instance matrices, and draw only as many actors as are in use. */
+  private flush(): void {
+    let used = 0;
+    for (const slot of this.slots.values()) used = Math.max(used, slot + 1);
+    this.parts.forEach((part, index) => {
+      const mesh = this.meshes[index];
+      const count = used * part.joints.length;
+      mesh.count = count;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, Math.max(1, count) * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+    });
   }
 
   dispose(): void {

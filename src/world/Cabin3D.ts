@@ -12,7 +12,7 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
+import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
@@ -42,6 +42,7 @@ import { personality } from '../bots/personality';
 import { proximityGain } from '../net/voiceRules';
 import { planBabble } from './babble';
 import { atTheControls, deckLook, type ControlId } from './cockpit';
+import { buildStaircase } from './scene/staircase';
 import { clipAt, type Clip, type Tape } from './tape';
 import type { Actor } from './scene/people';
 
@@ -97,6 +98,7 @@ type Away = 'wc' | 'deck' | null;
 
 interface Built {
   rows: number;
+  plane: PlaneId;
   cabin: CabinParts;
   seats: SeatParts;
   lavatory: LavatoryInterior;
@@ -338,8 +340,9 @@ export class Cabin3D {
     const game = state.game;
     if (!game) return;
     this.hearChat(game, state);
-    const fresh = !this.built || this.built.rows !== game.cabin.rows;
-    if (fresh) this.build(game.cabin.rows);
+    const plane = game.settings.plane ?? 'airliner';
+    const fresh = !this.built || this.built.rows !== game.cabin.rows || this.built.plane !== plane;
+    if (fresh) this.build(game.cabin.rows, game.cabin.cols ?? grid.SEAT_COLS, plane);
     const { cabin, lighting, windows, effects, skies } = this.built!;
     const kind = game.phase.kind;
     const night = isNightPhase(kind);
@@ -632,18 +635,18 @@ export class Cabin3D {
     this.renderer.domElement.remove();
   }
 
-  private build(rows: number): void {
+  private build(rows: number, cols: readonly number[], plane: PlaneId): void {
     if (this.built) {
       this.scene.remove(this.built.group);
       this.built.lighting.dispose();
     }
     const group = new THREE.Group();
     const cabin = buildCabin(rows);
-    const seats = buildSeats(rows);
+    const seats = buildSeats(rows, cols, plane === 'jet');
     const skies = { day: cabin.skyDay, night: cabin.skyNight, dawn: dawnSkyTexture(), aurora: auroraSkyTexture(), runway: runwayTexture() };
     const windows = new WindowView(cabin.windowGlass, skies.day);
     const lav = cabin.lavatoryDoor.position;
-    const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7));
+    const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7), cols);
     const lavatory = buildLavatory(cabin.lavatory);
     const flightDeck = buildFlightDeck();
     flightDeck.setView(this.forwardView.texture);
@@ -652,9 +655,11 @@ export class Cabin3D {
     monitor.map = this.cctv.target.texture;
     monitor.color.set('#cfe9dc');
     group.add(cabin.group, seats.group, effects.group, lavatory.group, flightDeck.group);
+    // The jumbo's spiral staircase up to the upper deck, in the front galley.
+    if (plane === 'jumbo') group.add(buildStaircase());
     this.scene.add(group);
     const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
-    this.built = { rows, cabin, seats, lavatory, flightDeck, lighting, windows, effects, skies, group };
+    this.built = { rows, plane, cabin, seats, lavatory, flightDeck, lighting, windows, effects, skies, group };
     this.seatKey = null;
   }
 

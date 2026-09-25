@@ -1,9 +1,11 @@
 import { CUSTOM_LIMITS, DESTINATIONS, destinationOf, hasTwist } from './destinations';
+import { PLANES, isPlaneId } from './planes';
 import { emptyCards } from './roles';
 import type { BotChatter, BotSkill, CustomDestination, PhaseKind, Settings, TimerPreset, Twist } from './types';
 
 export const MIN_PLAYERS = 4;
-export const MAX_PLAYERS = 16;
+/** The most any plane carries (the jumbo); each plane has its own range (engine/planes.ts). */
+export const MAX_PLAYERS = 24;
 export const EARLY_END_GRACE_MS = 3000;
 /** After the last night action, long enough to finish looking under your seat before the lights come on. */
 export const NIGHT_ACT_GRACE_MS = 7000;
@@ -37,6 +39,7 @@ export const BOT_SKILLS: readonly BotSkill[] = ['easy', 'normal', 'hard'];
 
 export function defaultSettings(): Settings {
   return {
+    plane: 'airliner',
     destination: 'LHR',
     customDestination: null,
     maxPassengers: 10,
@@ -100,8 +103,10 @@ export function validateSettings(s: Settings): string | null {
     const bad = validateCustomDestination(s.customDestination);
     if (bad) return bad;
   } else if (!DESTINATIONS[s.destination]) return 'Unknown destination.';
-  if (!Number.isInteger(s.maxPassengers) || s.maxPassengers < MIN_PLAYERS || s.maxPassengers > MAX_PLAYERS) {
-    return `Max passengers must be between ${MIN_PLAYERS} and ${MAX_PLAYERS}.`;
+  if (!isPlaneId(s.plane)) return 'Unknown plane.';
+  const plane = PLANES[s.plane];
+  if (!Number.isInteger(s.maxPassengers) || s.maxPassengers < plane.minPlayers || s.maxPassengers > plane.maxPlayers) {
+    return `The ${plane.name.toLowerCase()} takes ${plane.minPlayers} to ${plane.maxPlayers} passengers.`;
   }
   if (!(s.stewardessRogueChance >= 0 && s.stewardessRogueChance <= 1)) return 'Stewardess odds must be between 0 and 1.';
   if (!(s.pilotRogueChance >= 0 && s.pilotRogueChance <= 1)) return 'Pilot odds must be between 0 and 1.';
