@@ -19,6 +19,7 @@ import { RecorderScreen } from './RecorderScreen';
 import { CONTROLS, atTheControls, controlAction, controlStatus, tapeReady, type ConsoleMode, type ControlId } from './cockpit';
 import { PackingHud } from './PackingHud';
 import { TutorialCoach, tutorialWaits } from '../tutorial/Coach';
+import { CaptainMenu, PausedBanner } from '../tv/CaptainMenu';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const CAPTION_MS = 5200;
@@ -427,6 +428,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
                 <IconSound muted={muted} />
               </button>
               <VoiceButton flight={flight} className="hud-chip hud-button" />
+              <CaptainMenu flight={flight} state={state} buttonClass="hud-chip hud-button" />
               <button class="hud-chip hud-button" onClick={onUse2D}>
                 2D screen
               </button>
@@ -437,6 +439,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           </div>
           {!TOUCH && !preflight && !ending && <div class={`crosshair${aim ? ' on' : ''}`} />}
           {!ending && !cardOpen && <TutorialCoach state={state} className="hud-coach" />}
+          <PausedBanner state={state} className="hud-paused" />
           {aimControl && !deckOpen && !ending && (
             <div class="hud-aim-label" aria-hidden="true">
               <b>{CONTROLS[aimControl].name}</b>

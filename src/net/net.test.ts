@@ -185,6 +185,42 @@ describe('the host picking their own role', () => {
   });
 });
 
+describe('the captain’s mid-flight controls', () => {
+  it('pauses the clock for everyone, gives the time back on resume, adds time and skips phases', async () => {
+    const { host, captain, board, advance } = flight();
+    const ann = board('Ann');
+    await settle();
+    for (let i = 0; i < 3; i++) await captain.command({ kind: 'addBot' });
+    await captain.command({ kind: 'takeoff' });
+    await settle();
+    expect(await ann.command({ kind: 'pause', on: true })).toEqual({ ok: false, error: 'Only the host can do that.' });
+    const left = () => ann.snapshot.state!.game!.phase.endsInMs;
+    const before = left();
+    expect(await captain.command({ kind: 'pause', on: true })).toEqual({ ok: true });
+    await settle();
+    expect(ann.snapshot.state!.paused).toBe(true);
+    // A long pause: nothing moves.
+    for (let i = 0; i < 40; i++) {
+      advance(5_000);
+      host.tickNow();
+    }
+    await settle();
+    expect(ann.snapshot.state!.game!.phase.kind).toBe('packing');
+    expect(left()).toBe(before);
+    expect(await captain.command({ kind: 'pause', on: false })).toEqual({ ok: true });
+    await settle();
+    expect(ann.snapshot.state!.paused).toBeUndefined();
+    expect(left()).toBe(before);
+    expect(await captain.command({ kind: 'addTime', seconds: 30 })).toEqual({ ok: true });
+    await settle();
+    expect(left()).toBe(before + 30_000);
+    expect(await captain.command({ kind: 'addTime', seconds: 0 })).toEqual({ ok: false, error: 'Add between 1 and 600 seconds.' });
+    expect(await captain.command({ kind: 'skipPhase' })).toEqual({ ok: true });
+    await settle();
+    expect(ann.snapshot.state!.game!.phase.kind).toBe('boarding');
+  });
+});
+
 describe('in flight', () => {
   it('plays a whole flight over the network with bots, then boards again', async () => {
     const { host, captain, board, advance } = flight();

@@ -529,3 +529,60 @@ input[type='range'] {
 .end-coach {
   margin: 4px 0 10px;
 }
+
+/* The captain's mid-flight menu, and the pause notice everyone sees. */
+.captain-menu {
+  position: relative;
+  pointer-events: auto;
+}
+
+.captain-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 190px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+}
+
+.captain-pop button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 14px;
+}
+
+.captain-pop button:hover {
+  background: var(--panel-2);
+}
+
+.paused-banner {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 181, 71, 0.6);
+  background: rgba(20, 14, 2, 0.85);
+  color: var(--amber);
+  font: 700 15px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.hud-paused {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.tv-paused {
+  margin: 8px 12px 0;
+}
