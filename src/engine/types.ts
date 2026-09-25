@@ -420,7 +420,7 @@ export type Dish = 'chicken' | 'pasta';
 export interface MealState {
   /** Served on the day after this night. */
   day: number;
-  /** Who ordered what: everyone hears the orders. */
+  /** Who was handed what, when the cart came round (everyone can see). */
   orders: Record<string, Dish>;
   /** The saboteurs' one go at the food: who, which dish, and the row they did it around. Secret. */
   tamper: { by: string; dish: Dish; row: number } | null;
@@ -460,8 +460,6 @@ export type Intent =
   | { kind: 'course'; change: 'hold' | 'shortcut' | null }
   | { kind: 'act'; action: NightAction | null }
   | { kind: 'ready' }
-  /** Lunch: chicken or pasta. */
-  | { kind: 'order'; dish: Dish }
   /** Saboteurs at lunch: drug a dish around your row (a rogue Stewardess picks the row), or null to leave the food alone. */
   | { kind: 'tamper'; dish: Dish | null; row?: number }
   | { kind: 'vote'; target: string }

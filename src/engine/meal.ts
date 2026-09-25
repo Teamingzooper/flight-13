@@ -5,11 +5,12 @@ import { activePlayers, addLog, getPlayer, isActive } from './state';
 import type { Dish, GameState, MealState, PlayerState } from './types';
 
 /**
- * Lunch: served once, during the day's discussion halfway through the flight. Everyone orders chicken or pasta, out
- * loud. The saboteurs get one go at the food: drug one dish around a row (the row they sit in, or for a rogue
- * Stewardess, any row she serves), and whoever eats that dish there sleeps through the next night: no seat change,
- * no ability. Crew eat in the galley, out of reach, except that the flight deck's tray goes up through the
- * Stewardess at row 1. The loyal Stewardess, clearing the trays, notices which dish was touched and where.
+ * Lunch: served once, during the day's discussion halfway through the flight. The cart comes round and everyone is
+ * handed chicken or pasta (nobody has to do a thing, and everyone can see who got what). The saboteurs get one go at
+ * the food: drug one dish around a row (the row they sit in, or for a rogue Stewardess, any row she serves), and
+ * whoever has that dish there sleeps through the next night: no seat change, no ability. Their own tray too, if it is
+ * that dish. Crew eat in the galley, out of reach, except that the flight deck's tray goes up through the Stewardess at
+ * row 1. The loyal Stewardess, clearing the trays, notices which dish was touched and where.
  */
 
 export const DISHES: readonly Dish[] = ['chicken', 'pasta'];
@@ -60,12 +61,6 @@ export function tamperReach(p: PlayerState): number | 'any' | null {
   return row !== null && row >= 1 ? row : null;
 }
 
-export function checkOrder(s: GameState, dish: unknown): string | null {
-  if (!lunchOpen(s)) return 'Lunch is not being served right now.';
-  if (!isDish(dish)) return 'Chicken or pasta?';
-  return null;
-}
-
 export function checkTamper(s: GameState, p: PlayerState, dish: unknown, row: unknown): string | null {
   if (!lunchOpen(s)) return 'Lunch is not being served right now.';
   const reach = tamperReach(p);
@@ -76,11 +71,6 @@ export function checkTamper(s: GameState, p: PlayerState, dish: unknown, row: un
   if (!isDish(dish)) return 'Chicken or pasta?';
   if (reach === 'any' && (typeof row !== 'number' || !Number.isInteger(row) || row < 1 || row > s.cabin.rows)) return 'Pick a row to serve it to.';
   return null;
-}
-
-/** Order lunch (or change your mind while it is still being served). */
-export function orderLunch(s: GameState, p: PlayerState, dish: Dish): void {
-  s.meal!.orders[p.id] = dish;
 }
 
 /** Drug a dish (checked with `checkTamper`), or leave the food alone again (null). */
@@ -96,19 +86,19 @@ export function tamperLunch(s: GameState, p: PlayerState, dish: Dish | null, row
   addLog(s, now, [p.id], 'meal', `You slipped a sleeping draught into the ${dish} around row ${at}. Whoever eats it there will sleep through tonight.`);
 }
 
-/** Lunch opens with the day's discussion: the trays come round. */
+/** Lunch opens with the day's discussion: the cart comes round and everyone is handed chicken or pasta. */
 export function serveLunch(s: GameState, now: number): void {
   const m = s.meal;
   if (!m || m.served || s.phase.night !== m.day) return;
-  addLog(s, now, 'all', 'meal', 'Lunch is served: chicken or pasta? Order before the vote.');
+  for (const p of activePlayers(s)) m.orders[p.id] ??= pick(s, DISHES);
+  addLog(s, now, 'all', 'meal', 'Lunch is served: everyone gets chicken or pasta.');
 }
 
-/** The end of the discussion: anyone who did not choose gets what they are handed, and the trays are cleared. */
+/** The end of the discussion: the trays are cleared. */
 export function closeLunch(s: GameState, now: number): void {
   const m = s.meal;
   if (!m || m.served || s.phase.night !== m.day) return;
   m.served = true;
-  for (const p of activePlayers(s)) m.orders[p.id] ??= pick(s, DISHES);
   const t = m.tamper;
   if (t) {
     m.drugged = activePlayers(s)

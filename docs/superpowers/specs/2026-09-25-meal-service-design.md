@@ -68,3 +68,14 @@
 - `bots/lunch.test.ts`: knowledge, the lines, and the Stewardess's suspicion.
 - A director cue, a recorder caption, and the cockpit refusing a drugged Pilot.
 - Browser-checked in 3D (trays from the seat, bubbles, night vignette and hint) and 2D (the lunch bar, the Lunch card with the drug box, the "Zzz" card).
+
+## Refined (later the same day)
+
+The user asked to remove meals or refine them. Picking chicken or pasta was busywork: passengers can't know which dish will be drugged, so the choice was a coin flip. So now:
+
+- **Dishes are handed out.** When lunch opens, the cart hands everyone chicken or pasta at random, and everyone can see who got what. Nobody has to do anything; the `order` intent is gone.
+- **The saboteurs' decision stays, and gets sharper.** They choose which dish to drug knowing everyone's tray, including their own. Drugging your own dish puts you to sleep too, which costs you a night but makes good cover.
+- **Less on screen.**
+  - The Chat tab's lunch line says what you got.
+  - The Action card lists who got what, plus the drug box for saboteurs.
+  - The 3D order bubbles and the "order now" HUD hint are gone. Every tray appears at once.

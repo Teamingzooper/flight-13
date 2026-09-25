@@ -3,7 +3,7 @@ import { resolveVote, startDay } from './day';
 import { destinationOf } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
 import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
-import { checkOrder, checkTamper, closeLunch, orderLunch, tamperLunch } from './meal';
+import { checkTamper, closeLunch, tamperLunch } from './meal';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isPilot, isSaboteur } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
@@ -123,12 +123,6 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
       if (s.phase.kind !== 'day_discuss') return fail('Nothing to be ready for right now.');
       s.day.ready[p.id] = true;
       break;
-    }
-    case 'order': {
-      const error = checkOrder(s, intent.dish);
-      if (error) return fail(error);
-      orderLunch(s, p, intent.dish);
-      return OK;
     }
     case 'tamper': {
       const error = checkTamper(s, p, intent.dish, intent.row);

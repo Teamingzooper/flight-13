@@ -6,7 +6,10 @@ import { advanceTo, endPhase, logTexts, makeGame, player } from './testkit';
 import type { Dish, GameState, Intent } from './types';
 import { viewFor } from './view';
 
-const order = (s: GameState, id: string, dish: Dish) => applyIntent(s, id, { kind: 'order', dish }, 0);
+/** Hand someone a particular dish (the cart hands them out at random). */
+const hand = (s: GameState, id: string, dish: Dish) => {
+  s.meal!.orders[id] = dish;
+};
 const tamper = (s: GameState, id: string, dish: Dish | null, row?: number) => applyIntent(s, id, { kind: 'tamper', dish, ...(row ? { row } : {}) }, 0);
 
 /**
@@ -37,18 +40,18 @@ describe('lunch', () => {
     expect(flight({ mealService: false }).meal).toBeNull();
   });
 
-  it('is served during the discussion on its day, and everyone hears the orders', () => {
+  it('is handed out as the discussion starts on its day, and everyone can see who got what', () => {
     const s = flight();
     advanceTo(s, 'day_discuss', 1);
-    expect(order(s, 'four', 'pasta')).toEqual({ ok: false, error: 'Lunch is not being served right now.' });
+    expect(s.meal!.orders).toEqual({});
     expect(viewFor(s, 'four', 0).meal).toBeNull();
     advanceTo(s, 'day_discuss', 2);
-    expect(logTexts(s, 'all')).toContain('Lunch is served: chicken or pasta? Order before the vote.');
-    expect(order(s, 'four', 'pasta')).toEqual({ ok: true });
-    expect(order(s, 'four', 'chicken')).toEqual({ ok: true });
-    expect(order(s, 'three', 'soup' as Dish)).toEqual({ ok: false, error: 'Chicken or pasta?' });
+    expect(logTexts(s, 'all')).toContain('Lunch is served: everyone gets chicken or pasta.');
+    expect(Object.keys(s.meal!.orders).sort()).toEqual(['bomb', 'five', 'four', 'mind', 'nurse', 'pilot', 'seven', 'stew', 'three']);
+    expect(Object.values(s.meal!.orders).every((d) => d === 'chicken' || d === 'pasta')).toBe(true);
     const seen = viewFor(s, 'seven', 0).meal!;
-    expect(seen).toMatchObject({ day: 2, open: true, orders: { four: 'chicken' }, tamper: null, reach: null });
+    expect(seen).toMatchObject({ day: 2, open: true, tamper: null, reach: null });
+    expect(seen.orders).toEqual(s.meal!.orders);
   });
 
   it('lets one saboteur drug one dish around their row, in secret', () => {
@@ -82,14 +85,12 @@ describe('lunch', () => {
       ['bomb', 'chicken'],
       ['pilot', 'pasta'],
     ] as const) {
-      expect(order(s, id, dish).ok).toBe(true);
+      hand(s, id, dish);
     }
     tamper(s, 'bomb', 'pasta');
     endPhase(s);
-    // Lunch is over: the stragglers got something, the trays are gone, and the loyal Stewardess noticed.
+    // Lunch is over: the trays are gone, and the loyal Stewardess noticed.
     expect(s.meal!.served).toBe(true);
-    expect(Object.keys(s.meal!.orders).sort()).toEqual(['bomb', 'five', 'four', 'mind', 'nurse', 'pilot', 'seven', 'stew', 'three']);
-    expect(order(s, 'five', 'pasta').ok).toBe(false);
     // Rows 3-5 only: not the pasta in row 7, not the chicken in row 5, and never the Pilot's tray (only crew carry it).
     expect([...s.meal!.drugged].sort()).toEqual(['four', 'nurse', 'three']);
     expect(logTexts(s, 'stew')).toContain('Clearing the trays, you noticed someone had been at the pasta around row 4.');
@@ -116,7 +117,7 @@ describe('lunch', () => {
   it('does not wait for the sleepers before the night can end early', () => {
     const s = flight();
     advanceTo(s, 'day_discuss', 2);
-    order(s, 'four', 'pasta');
+    hand(s, 'four', 'pasta');
     tamper(s, 'bomb', 'pasta');
     advanceTo(s, 'night_move', 3);
     expect(s.night.drowsy.four).toBe('bomb');
@@ -132,7 +133,7 @@ describe('lunch', () => {
   it('lets the drugger eat their own dish to look innocent', () => {
     const s = flight();
     advanceTo(s, 'day_discuss', 2);
-    order(s, 'bomb', 'pasta');
+    hand(s, 'bomb', 'pasta');
     tamper(s, 'bomb', 'pasta');
     endPhase(s);
     expect(s.meal!.drugged).toContain('bomb');
@@ -144,8 +145,11 @@ describe('lunch', () => {
     expect(viewFor(s, 'stew', 0).meal!.reach).toBe('any');
     expect(tamper(s, 'stew', 'pasta')).toEqual({ ok: false, error: 'Pick a row to serve it to.' });
     expect(tamper(s, 'stew', 'pasta', 1)).toEqual({ ok: true });
-    order(s, 'pilot', 'pasta');
-    order(s, 'three', 'pasta');
+    hand(s, 'pilot', 'pasta');
+    hand(s, 'three', 'chicken');
+    hand(s, 'four', 'chicken');
+    hand(s, 'nurse', 'chicken');
+    hand(s, 'bomb', 'chicken');
     endPhase(s);
     expect(s.meal!.drugged).toEqual(['pilot']);
     advanceTo(s, 'night_move', 3);
@@ -166,16 +170,15 @@ describe('lunch', () => {
   it('has nothing to serve on flights without meal service', () => {
     const s = flight({ mealService: false });
     advanceTo(s, 'day_discuss', 2);
-    expect(order(s, 'four', 'pasta')).toEqual({ ok: false, error: 'Lunch is not being served right now.' });
+    expect(s.meal).toBeNull();
     expect(viewFor(s, 'four', 0).meal).toBeNull();
     expect(logTexts(s, 'all').some((t) => t.startsWith('Lunch'))).toBe(false);
   });
 
-  it('gets bots to order legal lunches', () => {
+  it('has bots play lunch legally', () => {
     const s = flight();
     advanceTo(s, 'day_discuss', 2);
     const h = { rng: 7 };
     for (const p of s.players) for (const intent of botIntents(s, p.id, h)) expect(applyIntent(s, p.id, intent, 0)).toEqual({ ok: true });
-    expect(Object.keys(s.meal!.orders)).toHaveLength(s.players.length);
   });
 });

@@ -12,7 +12,7 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type Dish, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
+import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
@@ -45,7 +45,6 @@ import { planBabble } from './babble';
 import { atTheControls, deckLook, type ControlId } from './cockpit';
 import { buildStaircase } from './scene/staircase';
 import { Trays } from './scene/trays';
-import { DISH_ICON } from '../tv/format';
 import { clipAt, type Clip, type Tape } from './tape';
 import type { Actor } from './scene/people';
 
@@ -155,8 +154,6 @@ export class Cabin3D {
   private readonly people = new People();
   /** Lunch trays, on the day it is served. */
   private readonly trays = new Trays();
-  /** Lunch orders already shown over heads. */
-  private ordersSeen: Record<string, Dish> = {};
   private poseSource: Map<string, Pose> | null = null;
   private faceSource: ReadonlyMap<string, string> | null = null;
   /** Everyone's latest gesture (the client's live map), and the last one played for each. */
@@ -1746,7 +1743,7 @@ export class Cabin3D {
     this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, away);
   }
 
-  /** Lunch: trays in front of everyone in a seat who ordered, and each order said out loud (a bubble over the head). */
+  /** Lunch: trays in front of everyone in a seat, with what they were handed. */
   private serveLunch(game: PlayerView): void {
     const meal = game.meal;
     const orders = meal?.orders ?? {};
@@ -1758,12 +1755,6 @@ export class Cabin3D {
           })
         : [],
     );
-    if (meal?.open) {
-      for (const [id, dish] of Object.entries(orders)) {
-        if (this.ordersSeen[id] !== dish) this.showBubble(id, DISH_ICON[dish], dish === 'chicken' ? 'Chicken, please' : 'Pasta, please', 2.5);
-      }
-    }
-    this.ordersSeen = { ...orders };
   }
 
   private later(seconds: number, fn: () => void): void {

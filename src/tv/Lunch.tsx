@@ -11,29 +11,29 @@ function reachLabel(game: PlayerView, row: number): string {
   return from === to ? `row ${from}` : `rows ${from}–${to}`;
 }
 
-/** The chat tab's lunch bar: order in one tap while you talk. */
+/** The chat tab's lunch line: what you were handed (and, for a saboteur, where to drug the food). */
 export function LunchBar({ ctx }: { ctx: TVContext }) {
-  const { game, send } = ctx;
+  const { game } = ctx;
   const meal = game.meal;
   const you = game.you;
   if (!meal?.open || !you || you.status !== 'alive') return null;
   const mine = meal.orders[you.id];
   return (
-    <div class="lunch-bar" role="group" aria-label="Lunch">
+    <div class="lunch-bar" role="status">
       <span class="lunch-title">🍽 Lunch is served</span>
-      {DISHES.map((d) => (
-        <button key={d} class={`chip${mine === d ? ' on' : ''}`} aria-pressed={mine === d} onClick={() => void send({ kind: 'order', dish: d })}>
-          {DISH_ICON[d]} {DISH_NAME[d]}
-        </button>
-      ))}
-      <span class="muted small">{Object.keys(meal.orders).length} ordered</span>
+      {mine && (
+        <span>
+          You got the {DISH_ICON[mine]} {mine}.
+        </span>
+      )}
+      {meal.reach !== null && !meal.tamper && <span class="muted small">Drug a dish from the Action tab.</span>}
     </div>
   );
 }
 
-/** The action tab's lunch card: your order, everyone's (they are said out loud), and for saboteurs, the food. */
+/** The action tab's lunch card: who was handed what (everyone can see), and for saboteurs, the food. */
 export function LunchPanel({ ctx }: { ctx: TVContext }) {
-  const { game, send } = ctx;
+  const { game } = ctx;
   const meal = game.meal;
   const you = game.you;
   if (!meal || !you || you.status !== 'alive') return null;
@@ -42,20 +42,10 @@ export function LunchPanel({ ctx }: { ctx: TVContext }) {
   return (
     <section class="ability-card lunch-panel">
       <div class="ability-title">🍽 {meal.open ? 'Lunch is served' : 'Lunch'}</div>
-      {meal.open ? (
-        <>
-          <p class="muted">Chicken or pasta? Everyone hears what you order. If you do not choose, the crew hands you whatever is on the cart.</p>
-          <div class="lunch-choice">
-            {DISHES.map((d) => (
-              <button key={d} class={`btn${mine === d ? ' primary' : ''}`} aria-pressed={mine === d} onClick={() => void send({ kind: 'order', dish: d })}>
-                <span class="dish-icon">{DISH_ICON[d]}</span> {DISH_NAME[d]}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <p class="muted">The trays are cleared away.{mine ? ` You had the ${mine}.` : ''}</p>
-      )}
+      <p class="muted">
+        {meal.open ? 'The cart came round: everyone got chicken or pasta.' : 'The trays are cleared away.'}
+        {mine ? ` You ${meal.open ? 'got' : 'had'} the ${DISH_ICON[mine]} ${mine}.` : ''}
+      </p>
       <div class="lunch-orders">
         {DISHES.map((d) => {
           const eaters = byDish(d);
@@ -95,9 +85,9 @@ function Tamper({ ctx }: { ctx: TVContext }) {
         </>
       ) : (
         <>
-          Slip a sleeping draught into one dish around {reach === 'any' ? 'any row you serve' : reachLabel(game, reach)}. Whoever eats it there
-          sleeps through tonight: no seat change, no ability. Your team gets one go, and the orders are out loud, so pick the dish your targets
-          chose (and maybe not your own).
+          Slip a sleeping draught into one dish around {reach === 'any' ? 'any row you serve' : reachLabel(game, reach)}. Whoever has it there
+          sleeps through tonight: no seat change, no ability. Your team gets one go. Pick the dish your targets got, and remember you eat yours
+          too{meal.orders[you.id] ? ` (the ${meal.orders[you.id]})` : ''}.
         </>
       )}
       {reach === 'any' && !done && (

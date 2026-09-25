@@ -66,7 +66,7 @@ describe('the flight recorder', () => {
       { id: 'nurse', role: 'nurse', seat: '6A' },
     ]);
     advanceTo(s, 'day_discuss', 2);
-    send(s, 'kim', { kind: 'order', dish: 'pasta' });
+    s.meal!.orders.kim = 'pasta';
     send(s, 'bomber', { kind: 'tamper', dish: 'pasta' });
     advanceTo(s, 'ended');
     const reel = planReels(viewFor(s, 'kim', 0)).find((r) => r.night === 2)!;

@@ -386,8 +386,6 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       ? 'Aim at your screen and click to use it · Esc frees the mouse'
       : 'Click to look around · click your screen (or press E) to use it';
   const crewRow = grid.aisleRow(you?.seat);
-  // Lunch is out and you have not ordered yet.
-  const lunchOrder = !!game.meal?.open && !!you && you.status === 'alive' && !game.meal.orders[you.id];
   const hint =
     scene === 'walk'
       ? crewRow !== null
@@ -405,9 +403,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             ? deckHint
             : needsInput
             ? `Your move: ${useIt}`
-            : lunchOrder
-              ? `Lunch is served: chicken or pasta? ${TOUCH ? 'Use your screen' : 'Click your screen or press E'}`
-              : idleHint;
+            : idleHint;
   const hasScreen = !!you?.seat && !scene;
 
   return (

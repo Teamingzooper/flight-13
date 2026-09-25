@@ -23,14 +23,9 @@ function lunch(): GameState {
     { id: 'p7', role: 'passenger', seat: '7B' },
   ]);
   advanceTo(s, 'day_discuss', 2);
-  for (const [id, dish] of [
-    ['bea', 'chicken'],
-    ['ivy', 'pasta'],
-    ['p3', 'pasta'],
-    ['p1', 'pasta'],
-  ] as const) {
-    applyIntent(s, id, { kind: 'order', dish }, 0);
-  }
+  // (The cart hands dishes out at random: these are the ones the test needs.)
+  for (const id of Object.keys(s.meal!.orders)) s.meal!.orders[id] = 'chicken';
+  for (const id of ['ivy', 'p3', 'p1']) s.meal!.orders[id] = 'pasta';
   applyIntent(s, 'bea', { kind: 'tamper', dish: 'pasta' }, 0);
   return s;
 }

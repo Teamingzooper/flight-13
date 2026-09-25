@@ -85,7 +85,7 @@ export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
   }
   // The crew call lunch.
   if (fresh.some((e) => e.tag === 'meal' && e.to === 'all' && e.text.startsWith('Lunch is served'))) {
-    cues.push(pa('Ladies and gentlemen, lunch is served. Chicken or pasta? Make your choice on your seatback screen.'));
+    cues.push(pa('Ladies and gentlemen, lunch is served: chicken or pasta, as it comes. Enjoy your meal.'));
   }
   // Black box notes are read out to the cabin.
   for (const e of fresh) if (e.tag === 'note' && e.to === 'all') cues.push(pa(clip(e.text)));

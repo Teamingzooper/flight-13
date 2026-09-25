@@ -1,5 +1,5 @@
 import { ITEM_ORDER, MAX_PACKED, possibleItemUses } from './items';
-import { DISHES, inReach, lunchOpen, tamperReach } from './meal';
+import { inReach, lunchOpen, tamperReach } from './meal';
 import { isPilot, isSaboteur } from './roles';
 import { nextFloat, pick, type RngHolder } from './rng';
 import { checkCourse, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
@@ -29,17 +29,16 @@ function pilotCalls(s: GameState, p: PlayerState, h: RngHolder): Intent[] {
 }
 
 /**
- * Lunch: order something, and now and then (a saboteur, while the team has not yet) drug the other dish around
- * your row, when someone who is not on your team has ordered it there.
+ * Lunch: now and then (a saboteur, while the team has not yet) drug the dish it was not handed, around the row where
+ * that puts the most of the other side to sleep.
  */
 function lunch(s: GameState, p: PlayerState, h: RngHolder): Intent[] {
   if (!lunchOpen(s)) return [];
   const m = s.meal!;
-  const mine = m.orders[p.id] ?? pick(h, DISHES);
-  const intents: Intent[] = m.orders[p.id] ? [] : [{ kind: 'order', dish: mine }];
+  const intents: Intent[] = [];
   const reach = tamperReach(p);
   if (reach === null || m.tamper || nextFloat(h) >= 0.5) return intents;
-  const dish = mine === 'chicken' ? 'pasta' : 'chicken';
+  const dish = m.orders[p.id] === 'chicken' ? 'pasta' : 'chicken';
   const rows = reach === 'any' ? Array.from({ length: s.cabin.rows }, (_, i) => i + 1) : [reach];
   // Where it would put the most of the other side to sleep, and the fewest of its own team (by the orders so far).
   let best: { row: number; hits: number } | null = null;

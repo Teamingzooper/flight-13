@@ -103,7 +103,7 @@ export function describeRules(s: Settings): string[] {
     s.whispers ? 'Whispers to nearby seats are allowed.' : 'No whispering.',
     ...(s.pilotMustFly ? ['Pilot must fly: restraining the Pilot hands the saboteurs the win.'] : []),
     s.mealService
-      ? `Lunch on day ${mealDay(d.nights)}: chicken or pasta? The saboteurs may drug one dish around a row, and whoever eats it there sleeps through the night.`
+      ? `Lunch on day ${mealDay(d.nights)}: everyone gets chicken or pasta. The saboteurs may drug one dish around a row, and whoever has it there sleeps through the night.`
       : 'No meal service.',
     `Bots: ${BOT_CHATTER_NAMES[s.botChatter].toLowerCase()} chatter, ${BOT_SKILL_NAMES[s.botSkill].toLowerCase()} skill.`,
   ];
@@ -420,7 +420,7 @@ export function SettingsForm({
             checked={s.mealService}
             onChange={(v) => set({ mealService: v })}
             title="Meal service"
-            hint="Lunch halfway through the flight: everyone orders chicken or pasta out loud, and the saboteurs may drug one dish around a row. Whoever eats it there sleeps through the next night."
+            hint="Lunch halfway through the flight: everyone is handed chicken or pasta, and the saboteurs may drug one dish around a row. Whoever has it there sleeps through the next night."
           />
           <h2>Bots</h2>
           <p class="hint">How much bots talk, and how well they reason and lie. Only matters when bots are aboard.</p>
