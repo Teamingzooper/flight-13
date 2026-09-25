@@ -3,6 +3,7 @@ import { resolveVote, startDay } from './day';
 import { destinationOf } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
 import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
+import { checkOrder, checkTamper, closeLunch, orderLunch, tamperLunch } from './meal';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isPilot, isSaboteur } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
@@ -60,6 +61,7 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
     case 'move': {
       if (s.phase.kind !== 'night_move') return fail('You can only change seats while the lights are out.');
       if (s.night.buckled[p.id]) return fail('Your seatbelt is locked tonight.');
+      if (s.night.drowsy[p.id]) return fail('You are fast asleep tonight.');
       const error = checkMove(s, p, intent.to);
       if (error) return fail(error);
       s.night.moves[p.id] = intent.to;
@@ -99,6 +101,7 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
     case 'act': {
       if (s.phase.kind !== 'night_act') return fail('Abilities are used at night, after seats change.');
       if (s.night.buckled[p.id]) return fail('You are buckled in tonight.');
+      if (s.night.drowsy[p.id]) return fail('You are fast asleep tonight.');
       if (s.night.searched[p.id]) return fail(inWashroom(s, p.id) ? 'You already searched the lavatory tonight.' : 'You already spent tonight looking under your seat.');
       if (intent.action) {
         const error = checkAction(s, p, intent.action);
@@ -120,6 +123,18 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
       if (s.phase.kind !== 'day_discuss') return fail('Nothing to be ready for right now.');
       s.day.ready[p.id] = true;
       break;
+    }
+    case 'order': {
+      const error = checkOrder(s, intent.dish);
+      if (error) return fail(error);
+      orderLunch(s, p, intent.dish);
+      return OK;
+    }
+    case 'tamper': {
+      const error = checkTamper(s, p, intent.dish, intent.row);
+      if (error) return fail(error);
+      tamperLunch(s, p, intent.dish, intent.row, now);
+      return OK;
     }
     case 'vote': {
       if (s.phase.kind !== 'day_vote') return fail('Voting has not started.');
@@ -148,11 +163,16 @@ function allSubmitted(s: GameState): boolean {
       return active.every(
         (p) =>
           s.night.buckled[p.id] !== undefined ||
+          s.night.drowsy[p.id] !== undefined ||
           (isPilot(p.role) ? p.id in s.night.seatbelts || flightDeckError(s, p) !== null : p.id in s.night.moves),
       );
     case 'night_act':
       return active.every(
-        (p) => s.night.buckled[p.id] !== undefined || p.id in s.night.actions || (isPilot(p.role) && flightDeckError(s, p) !== null),
+        (p) =>
+          s.night.buckled[p.id] !== undefined ||
+          s.night.drowsy[p.id] !== undefined ||
+          p.id in s.night.actions ||
+          (isPilot(p.role) && flightDeckError(s, p) !== null),
       );
     case 'day_discuss':
       return active.every((p) => s.day.ready[p.id] === true);
@@ -230,6 +250,7 @@ function advance(s: GameState, now: number): void {
       else startDay(s, now);
       break;
     case 'day_discuss':
+      closeLunch(s, now);
       if (s.settings.voteMode === 'afterIncident' && !s.incidentAtDawn) finishDay(s, now);
       else setPhase(s, 'day_vote', now);
       break;

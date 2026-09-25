@@ -1,6 +1,7 @@
 import { destinationOf, hasTwist } from './destinations';
 import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder, seatsWithin } from './grid';
 import { consumeItem } from './items';
+import { lunchDrowsiness } from './meal';
 import { nextInt, pick } from './rng';
 import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
@@ -30,6 +31,7 @@ export function startNight(s: GameState, night: number, now: number): void {
   s.incidentAtDawn = false;
   const destination = destinationOf(s.settings);
   if (hasTwist(destination, 'triangle')) s.night.anomaly = pick(s, ANOMALIES);
+  lunchDrowsiness(s, night, now);
   if (hasTwist(destination, 'turbulence') || s.night.anomaly === 'turbulence') {
     const candidates = activePlayers(s);
     if (candidates.length > 0) {
@@ -63,7 +65,7 @@ export function resolveMoves(s: GameState, now: number): void {
   for (const p of activePlayers(s)) {
     const to = s.night.moves[p.id];
     // (The jump seat guest spends the night on the flight deck instead.)
-    if (!to || to === 'stay' || s.night.buckled[p.id] || p.id === s.night.jumpseat) continue;
+    if (!to || to === 'stay' || s.night.buckled[p.id] || s.night.drowsy[p.id] || p.id === s.night.jumpseat) continue;
     if (checkMove(s, p, to) !== null) continue;
     claims.set(to, [...(claims.get(to) ?? []), p]);
   }
@@ -170,6 +172,10 @@ function callUp(s: GameState, pilot: PlayerState, now: number): void {
   const guest = getPlayer(s, target)!;
   if (s.night.buckled[guest.id]) {
     addLog(s, now, [pilot.id], 'fizzle', `You called ${guest.name} up to the flight deck, but they are buckled in tonight.`);
+    return;
+  }
+  if (s.night.drowsy[guest.id]) {
+    addLog(s, now, [pilot.id], 'fizzle', `You called ${guest.name} up to the flight deck, but they never came: fast asleep in their seat.`);
     return;
   }
   s.night.jumpseat = guest.id;

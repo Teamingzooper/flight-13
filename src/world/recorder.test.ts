@@ -56,6 +56,24 @@ describe('the flight recorder', () => {
     expect(first.cast.map((c) => `${c.id}:${c.seat}`).sort()).toEqual(['bomber:4B', 'kim:6B', 'lee:4C', 'max:2E', 'nurse:6A', 'zed:8F']);
   });
 
+  it('shows lunch being drugged by day, over the row it happened', () => {
+    const s = makeGame([
+      { id: 'bomber', role: 'bomber', seat: '4B' },
+      { id: 'kim', role: 'passenger', seat: '4C' },
+      { id: 'max', role: 'passenger', seat: '2E' },
+      { id: 'lee', role: 'passenger', seat: '6C' },
+      { id: 'zed', role: 'passenger', seat: '8F' },
+      { id: 'nurse', role: 'nurse', seat: '6A' },
+    ]);
+    advanceTo(s, 'day_discuss', 2);
+    send(s, 'kim', { kind: 'order', dish: 'pasta' });
+    send(s, 'bomber', { kind: 'tamper', dish: 'pasta' });
+    advanceTo(s, 'ended');
+    const reel = planReels(viewFor(s, 'kim', 0)).find((r) => r.night === 2)!;
+    const lunch = reel.clips.find((c) => c.text.includes('drugged'))!;
+    expect(lunch).toMatchObject({ kind: 'caption', text: 'bomber drugged the pasta around row 4.', row: 4, clock: 'DAY' });
+  });
+
   it('shows the blast at dawn, and who it took', () => {
     const s = flight();
     const second = planReels(viewFor(s, 'kim', 0))[1];

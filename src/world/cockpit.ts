@@ -40,6 +40,7 @@ export function controlAction(game: PlayerView, id: ControlId, tape: boolean): C
   const kind = game.phase.kind;
   const night = isNightPhase(kind);
   if (night && you.knockedOut) return { kind: 'no', why: 'You are out cold: the plane flies itself tonight.' };
+  if (night && you.drowsy) return { kind: 'no', why: 'You nodded off after lunch: the autopilot has the plane tonight.' };
   if (night && you.buckled) return { kind: 'no', why: 'Turbulence: you are fighting the controls all night.' };
   const moving = kind === 'night_move';
   switch (id) {

@@ -9,6 +9,8 @@ const FULL: Fill = {
   role: 'Investigator',
   target: 'Anastasia',
   why: 'a bomb turned up under 12F, right where they sat on the night it was planted',
+  dish: 'chicken',
+  row: '12',
 };
 const TONES: Tone[] = ['blunt', 'nervous', 'chatty', 'formal'];
 const seq = (seed: number) => {

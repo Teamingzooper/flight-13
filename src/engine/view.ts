@@ -2,6 +2,7 @@ import { voteWeight } from './day';
 import { isNightPhase, isWhisperPhase, phaseDue } from './engine';
 import { WHISPER_RADIUS, distance } from './grid';
 import { possibleItemUses, type ItemUse } from './items';
+import { lunchOpen, tamperReach } from './meal';
 import { isPilot, isSaboteur, teamOf } from './roles';
 import { checkCourse, checkJumpseat, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
 import { activePlayers, bombsLeft, cellOf, getPlayer, inWashroom, isActive, isGuest } from './state';
@@ -12,6 +13,7 @@ import type {
   Cell,
   ChatMessage,
   DeathCause,
+  Dish,
   GameResult,
   GameState,
   ItemId,
@@ -87,8 +89,10 @@ export interface YouView {
   courseUsed: boolean;
   /** Pilot: knocked out cold tonight (no calls, no cameras). */
   knockedOut: boolean;
-  /** Someone slipped you a sleeping pill: you sleep through tonight. */
+  /** Someone slipped you a sleeping pill, or drugged your lunch: you sleep through tonight. */
   asleep: boolean;
+  /** Drugged at lunch: asleep all night, from the moment the lights go out (no seat change either). */
+  drowsy: boolean;
   /** You are up in the Pilot's jump seat tonight. */
   inJumpSeat: boolean;
 }
@@ -129,6 +133,18 @@ export interface VotesView {
   byVoter: Record<string, string> | null;
 }
 
+/** Lunch, on the day it is served (orders are public; only saboteurs see their team's tampering). */
+export interface MealView {
+  day: number;
+  /** Orders (and tampering) are open: the discussion of the day lunch is served. */
+  open: boolean;
+  orders: Record<string, Dish>;
+  /** Saboteurs only: your team's go at the food. */
+  tamper: { by: string; dish: Dish; row: number } | null;
+  /** Where you could drug the food: your row, 'any' row (a rogue Stewardess), or null (you cannot). */
+  reach: number | 'any' | null;
+}
+
 export interface PhaseView {
   kind: PhaseKind;
   night: number;
@@ -165,6 +181,8 @@ export interface PlayerView {
   stats: Record<string, PlayerStats> | null;
   /** The flight recorder, once the flight is over (null until then: it holds everyone's secrets). */
   recorder: NightRecord[] | null;
+  /** Lunch, on the day it is served (null any other time). */
+  meal: MealView | null;
 }
 
 const CHAT_IN_VIEW = 150;
@@ -172,13 +190,16 @@ const BLACKOUT_PHASES: ReadonlySet<PhaseKind> = new Set(['dawn', 'day_discuss', 
 
 function optionsFor(s: GameState, me: PlayerState): OptionsView {
   const kind = s.phase.kind;
-  const buckled = s.night.buckled[me.id] !== undefined;
+  // (Asleep after a drugged lunch is as stuck as buckled in.)
+  const drowsy = isNightPhase(kind) && s.night.drowsy[me.id] !== undefined;
+  const buckled = s.night.buckled[me.id] !== undefined || drowsy;
   const others = activePlayers(s).filter((p) => p.id !== me.id);
   // The flight deck's calls, while the Pilot is fit to make them.
   const deck = kind === 'night_move' && isPilot(me.role) && flightDeckError(s, me) === null;
   return {
     seats: kind === 'night_move' && !buckled ? possibleMoves(s, me) : [],
-    washroom: kind !== 'night_move' ? 'The washroom is for the night.' : buckled ? 'You are buckled in tonight.' : checkWashroom(s, me),
+    washroom:
+      kind !== 'night_move' ? 'The washroom is for the night.' : drowsy ? 'You are fast asleep.' : buckled ? 'You are buckled in tonight.' : checkWashroom(s, me),
     seatbelt: deck ? others.filter((t) => checkSeatbelt(s, me, t.id) === null).map((t) => t.id) : [],
     jumpseat: deck ? others.filter((t) => checkJumpseat(s, me, t.id) === null).map((t) => t.id) : [],
     roughair: deck && !me.roughAirUsed ? Array.from({ length: s.cabin.rows - 2 }, (_, i) => i + 1) : [],
@@ -271,7 +292,9 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     roughAirUsed: me.roughAirUsed,
     courseUsed: me.courseUsed,
     knockedOut: isPilot(me.role) && isNightPhase(s.phase.kind) && me.knockedOutNight === s.phase.night,
-    asleep: s.phase.kind === 'night_act' && s.night.asleep[me.id] !== undefined,
+    asleep:
+      (s.phase.kind === 'night_act' && s.night.asleep[me.id] !== undefined) || (isNightPhase(s.phase.kind) && s.night.drowsy[me.id] !== undefined),
+    drowsy: isNightPhase(s.phase.kind) && s.night.drowsy[me.id] !== undefined,
     inJumpSeat: isGuest(s, me.id),
   };
 
@@ -322,5 +345,22 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     awards: ended ? s.awards : null,
     stats: ended ? s.stats : null,
     recorder: ended ? s.recorder : null,
+    meal: mealFor(s, me, saboteur),
+  };
+}
+
+const MEAL_PHASES: ReadonlySet<PhaseKind> = new Set(['day_discuss', 'day_vote', 'verdict']);
+
+/** Lunch as this player sees it: on the day it is served, from the trays coming round until the verdict. */
+function mealFor(s: GameState, me: PlayerState | null, saboteur: boolean): MealView | null {
+  const m = s.meal;
+  if (!m || s.phase.night !== m.day || !MEAL_PHASES.has(s.phase.kind)) return null;
+  const mayTamper = saboteur && me !== null && isActive(me);
+  return {
+    day: m.day,
+    open: lunchOpen(s),
+    orders: { ...m.orders },
+    tamper: saboteur && m.tamper ? { ...m.tamper } : null,
+    reach: mayTamper ? tamperReach(me) : null,
   };
 }

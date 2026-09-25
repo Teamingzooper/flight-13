@@ -48,6 +48,7 @@ export function flightDeckError(s: GameState, p: PlayerState): string | null {
   if (!isPilot(p.role)) return 'Only the Pilot flies the plane.';
   if (!isActive(p)) return 'You are out of play.';
   if (s.night.buckled[p.id]) return 'Turbulence has you fighting the controls tonight.';
+  if (s.night.drowsy[p.id]) return 'You nodded off at the controls after lunch. The autopilot has the plane tonight.';
   if (p.knockedOutNight === s.phase.night) return 'You are still out cold.';
   return null;
 }

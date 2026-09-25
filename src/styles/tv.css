@@ -1907,3 +1907,55 @@ button.sm-num.pick:hover {
   opacity: 0.45;
   pointer-events: none;
 }
+
+/* Lunch (the meal service). */
+.lunch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 190, 92, 0.35);
+  background: rgba(255, 190, 92, 0.08);
+}
+
+.lunch-title {
+  font: 700 15px var(--display);
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+
+.lunch-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lunch-choice .btn {
+  min-height: 52px;
+  font-size: 16px;
+}
+
+.dish-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.lunch-orders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.lunch-orders p {
+  margin: 4px 0 0;
+}
+
+.lunch-tamper .row {
+  margin-top: 8px;
+}
+
+.lunch-row {
+  margin-top: 8px;
+}

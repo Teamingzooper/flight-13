@@ -1,3 +1,4 @@
+import { serveLunch } from './meal';
 import { emptyDay } from './setup';
 import { activePlayers, addLog, getPlayer, label, readNote, removeFromPlay, setPhase } from './state';
 import type { GameState } from './types';
@@ -5,6 +6,7 @@ import type { GameState } from './types';
 export function startDay(s: GameState, now: number): void {
   setPhase(s, 'day_discuss', now);
   s.day = emptyDay();
+  serveLunch(s, now);
 }
 
 /** How much a vote weighs today (a frequent-flyer card doubles it). */

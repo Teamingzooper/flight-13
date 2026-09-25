@@ -1,4 +1,4 @@
-import { ROLES, describeLocation, grid, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
+import { ROLES, describeLocation, grid, type Dish, type LogEntry, type NightAction, type PlayerSummary, type PlayerView, type RoleId, type Team } from '../engine';
 
 export function clock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -6,6 +6,8 @@ export function clock(ms: number): string {
 }
 
 export const teamName = (team: Team): string => (team === 'saboteurs' ? 'Saboteurs' : 'Passengers');
+
+export const DISH_ICON: Record<Dish, string> = { chicken: '🍗', pasta: '🍝' };
 export const roleName = (role: RoleId): string => ROLES[role].name;
 
 export function playerById(game: PlayerView, id: string | null | undefined): PlayerSummary | undefined {

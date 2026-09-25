@@ -132,6 +132,7 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
   if (!isActive(p) || !p.seat) return 'You are out of play.';
   const kind = s.phase.kind;
   if (info.when === 'night' && !NIGHT.has(kind)) return `Your ${name} is for use at night.`;
+  if (NIGHT.has(kind) && s.night.drowsy[p.id]) return 'You are fast asleep tonight.';
   if (info.when === 'day' && !DAY.has(kind)) return `Your ${name} is for use during the day.`;
   switch (use.item) {
     case 'defuser':
