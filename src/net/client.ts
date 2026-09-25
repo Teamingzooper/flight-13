@@ -2,6 +2,7 @@ import type { Intent, IntentResult, Look } from '../engine';
 import { isEmoteId, type EmoteId } from './emotes';
 import { PROTOCOL_VERSION, type ClientMessage, type ClientState, type HostCommand, type HostMessage, type Pose } from './protocol';
 import type { Transport } from './transport';
+import type { VoiceChannel } from './voiceRules';
 
 /** The host's answer to a request. */
 interface Ack {
@@ -50,6 +51,8 @@ export class ClientSession {
   private seq = 0;
   private readonly pending = new Map<number, (ack: Ack) => void>();
   private move: string | null;
+  /** The chat channel whose screen you have open (sent again whenever you rejoin). */
+  private tuned: VoiceChannel | null = null;
   private readonly listeners = new Set<(snapshot: ClientSnapshot) => void>();
   private readonly offs: (() => void)[] = [];
   private profile: { name: string; look: Look; face: string };
@@ -111,6 +114,13 @@ export class ClientSession {
   /** Tell the host you turned voice chat on or off (so others know to send you their voices). */
   sendVoice(on: boolean): void {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'voice', on } satisfies ClientMessage);
+  }
+
+  /** Your seatback chat is open on a channel (or not): your voice goes to that channel instead of the cabin. */
+  sendTune(channel: VoiceChannel | null): void {
+    if (this.tuned === channel) return;
+    this.tuned = channel;
+    if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'tune', channel } satisfies ClientMessage);
   }
 
   /** Gesture (the host passes it on if you may). */
@@ -192,6 +202,8 @@ export class ClientSession {
       ...(this.move ? { move: this.move } : {}),
     };
     this.opts.transport.send(this.hostPeer, join);
+    // (A fresh join is a fresh start for the host: tell it again which screen you have open.)
+    if (this.tuned) this.opts.transport.send(this.hostPeer, { t: 'tune', channel: this.tuned } satisfies ClientMessage);
   }
 
   private request(build: (seq: number) => ClientMessage): Promise<IntentResult> {

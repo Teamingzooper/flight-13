@@ -10,6 +10,7 @@ import {
   TWISTS,
   VOICE_MODES,
   VOICE_RANGE,
+  NIGHT_VOICE_RANGE,
   isPlaneId,
   validateCustomDestination,
   type BotChatter,
@@ -26,6 +27,7 @@ import {
   type VoiceMode,
 } from '../engine';
 import { isEmoteId, type EmoteId } from './emotes';
+import { isVoiceChannel, type VoiceChannel } from './voiceRules';
 import { cleanFace } from './face';
 
 export const PROTOCOL_VERSION = 1;
@@ -96,6 +98,11 @@ export interface ClientState {
   hostPicksRole?: boolean;
   /** The captain paused the flight: the clock stands still (and the bots wait) until they resume it. */
   paused?: boolean;
+  /**
+   * Who is talking on a chat channel's screen (player id → channel), among the channels you may know about: their
+   * voices go to that channel, not the cabin.
+   */
+  tuned?: Record<string, VoiceChannel>;
 }
 
 export type HostCommand =
@@ -127,7 +134,9 @@ export type ClientMessage =
   /** The Pilot pressed (or let go of) the PA button. */
   | { t: 'pa'; on: boolean }
   /** Ask for a ticket to move your seat to another device (the ack carries it). */
-  | { t: 'move'; seq: number };
+  | { t: 'move'; seq: number }
+  /** Your seatback chat is open on a channel (null: it is not): your voice goes there instead of the cabin. */
+  | { t: 'tune'; channel: VoiceChannel | null };
 
 export type HostMessage =
   | { t: 'hello'; v: number; code: string }
@@ -236,6 +245,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   const listed = raw.listed ?? true;
   const voiceMode = raw.voiceMode ?? 'proximity';
   const voiceRange = raw.voiceRange ?? VOICE_RANGE.default;
+  const nightVoiceRange = raw.nightVoiceRange ?? NIGHT_VOICE_RANGE.default;
   const customRoles = cleanCustomRoles(raw.customRoles ?? []);
   if (!customRoles) return null;
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
@@ -252,7 +262,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (voteMode !== 'daily' && voteMode !== 'afterIncident') return null;
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
   if (typeof pilotMustFly !== 'boolean' || typeof mealService !== 'boolean' || typeof listed !== 'boolean') return null;
-  if (!VOICE_MODES.includes(voiceMode as VoiceMode) || !isInt(voiceRange)) return null;
+  if (!VOICE_MODES.includes(voiceMode as VoiceMode) || !isInt(voiceRange) || !isInt(nightVoiceRange)) return null;
   if (typeof pilotRogueChance !== 'number') return null;
   if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
@@ -275,6 +285,7 @@ export function cleanSettings(raw: unknown): Settings | null {
     listed,
     voiceMode: voiceMode as VoiceMode,
     voiceRange,
+    nightVoiceRange,
     botChatter: botChatter as BotChatter,
     botSkill: botSkill as BotSkill,
   };
@@ -323,6 +334,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return typeof raw.on === 'boolean' ? { t: 'pa', on: raw.on } : null;
     case 'move':
       return isInt(raw.seq) ? { t: 'move', seq: raw.seq } : null;
+    case 'tune':
+      return raw.channel === null || isVoiceChannel(raw.channel) ? { t: 'tune', channel: raw.channel } : null;
     default:
       return null;
   }

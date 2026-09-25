@@ -178,4 +178,35 @@ describe('server flights', () => {
     expect(late.client.snapshot.reason).toMatch(/expired/);
     expect(ann.client.snapshot.status).toBe('joined');
   });
+
+  it("tells only people who may know that someone is talking on a channel's screen", async () => {
+    const { host, board } = serverFlight();
+    const cap = board('Cap', CAPTAIN);
+    const sab = board('Sab');
+    const pax = board('Pax');
+    await settle();
+    for (let i = 0; i < 3; i++) await cap.client.command({ kind: 'addBot' });
+    await cap.client.command({ kind: 'takeoff' });
+    await settle();
+    const game = host.snapshot.game!;
+    const sabId = sab.client.snapshot.state!.you!;
+    const paxId = pax.client.snapshot.state!.you!;
+    for (const p of game.players) p.role = p.id === sabId ? 'bomber' : 'passenger';
+    // By day, the cabin channel: everyone may know.
+    game.phase.kind = 'day_discuss';
+    pax.client.sendTune('cabin');
+    await settle();
+    host.flush();
+    await settle();
+    expect(cap.client.snapshot.state!.tuned).toEqual({ [paxId]: 'cabin' });
+    // At night the cabin channel is closed; the saboteur channel opens, for saboteurs' eyes only.
+    game.phase.kind = 'night_act';
+    sab.client.sendTune('saboteurs');
+    await settle();
+    host.flush();
+    await settle();
+    expect(sab.client.snapshot.state!.tuned).toEqual({ [sabId]: 'saboteurs' });
+    expect(pax.client.snapshot.state!.tuned).toBeUndefined();
+    expect(cap.client.snapshot.state!.tuned).toBeUndefined();
+  });
 });

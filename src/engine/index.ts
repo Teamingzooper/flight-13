@@ -77,6 +77,7 @@ export {
   BOT_SKILLS,
   VOICE_MODES,
   VOICE_RANGE,
+  NIGHT_VOICE_RANGE,
 } from './settings';
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';
