@@ -1033,6 +1033,8 @@ export class Cabin3D {
         roll: sway(0.21, 0.02 * rough) + sway(1.7, 0.004 * rough),
       };
     }
+    // A hijack banks the plane away.
+    if (this.ending) this.attitude.roll += this.ending.bank;
 
     // Turbulent nights: a bump every few seconds.
     if (isNightPhase(kind) && this.turbulentNight === game.phase.night) {
@@ -1050,7 +1052,7 @@ export class Cabin3D {
     const you = this.lastView?.you;
     const onDeck = /^(Cockpit|deck:)/.test(this.seatKey ?? '') || (!!this.ending && !!you && grid.isCockpit(you.seat));
     if (onDeck) {
-      this.forwardView.update(dt, this.landingView ? 'runway' : this.viewMode, this.viewSpeed, this.attitude.pitch, time);
+      this.forwardView.update(dt, this.landingView ? 'runway' : this.viewMode, this.viewSpeed, this.attitude.pitch, time, this.attitude.roll);
       this.display.draw(this.attitude, time);
     }
     // The Pilot's camera monitor, about eight times a second.

@@ -54,14 +54,23 @@ export class ForwardView {
     for (let i = 0; i < 26; i++) this.clouds.push({ x: r(), z: r(), w: 0.4 + r() * 0.8 });
   }
 
-  /** `speed` 0..1 (how fast the ground or the clouds go by), `pitch` in radians (nose up is positive). */
-  update(dt: number, mode: ViewMode, speed: number, pitch: number, time: number): void {
+  /**
+   * `speed` 0..1 (how fast the ground or the clouds go by), `pitch` in radians (nose up is positive), `roll` in
+   * radians (right wing down is positive: the horizon tilts the other way).
+   */
+  update(dt: number, mode: ViewMode, speed: number, pitch: number, time: number, roll = 0): void {
     this.travel += dt * speed * 70;
     this.drift += dt * (0.015 + speed * 0.04);
     const g = this.g;
     const horizon = H * 0.5 + Math.max(-0.4, Math.min(0.5, pitch)) * H * 1.6;
+    g.save();
+    // The panes are wide and short: tilt the world a little less than the true bank so it stays readable.
+    g.translate(W / 2, H / 2);
+    g.rotate(-roll * 0.8);
+    g.translate(-W / 2, -H / 2);
     if (mode === 'runway') this.drawRunway(g, horizon);
     else this.drawAir(g, mode, horizon, time);
+    g.restore();
     this.texture.needsUpdate = true;
   }
 
@@ -70,12 +79,12 @@ export class ForwardView {
     sky.addColorStop(0, '#5d8fc9');
     sky.addColorStop(1, '#d6e6f2');
     g.fillStyle = sky;
-    g.fillRect(0, 0, W, H);
+    g.fillRect(-W, -H * 2, W * 3, H * 5);
     const ground = g.createLinearGradient(0, horizon, 0, H);
     ground.addColorStop(0, '#8a9677');
     ground.addColorStop(1, '#4f5c3f');
     g.fillStyle = ground;
-    g.fillRect(0, horizon, W, H - horizon);
+    g.fillRect(-W, horizon, W * 3, H * 3);
     if (horizon >= H) return;
     // Perspective: `depth` metres ahead sits this far down from the horizon (1 at your feet).
     const k = 14;
@@ -126,7 +135,7 @@ export class ForwardView {
     top.addColorStop(0, sky.top);
     top.addColorStop(1, sky.horizon);
     g.fillStyle = top;
-    g.fillRect(0, 0, W, H);
+    g.fillRect(-W, -H * 2, W * 3, H * 5);
     if (mode === 'night' || mode === 'aurora') {
       g.fillStyle = '#ffffff';
       for (const s of this.stars) {
@@ -155,7 +164,7 @@ export class ForwardView {
     sea.addColorStop(0, sky.sea[0]);
     sea.addColorStop(1, sky.sea[1]);
     g.fillStyle = sea;
-    g.fillRect(0, horizon, W, H - horizon);
+    g.fillRect(-W, horizon, W * 3, H * 3);
     const light = mode === 'day' ? 'rgba(255, 255, 255, 0.55)' : mode === 'dawn' ? 'rgba(255, 220, 190, 0.45)' : 'rgba(120, 140, 180, 0.12)';
     g.fillStyle = light;
     for (const c of this.clouds) {
