@@ -429,6 +429,14 @@ export class Cabin3D {
     this.hotel?.start();
   }
 
+  /**
+   * The flight has just ended in front of you and its cutscene is about to play. This is true from the very
+   * first render of the end, before `update` has started it, so no end card shows ahead of it.
+   */
+  endingAhead(game: PlayerView): boolean {
+    return game.phase.kind === 'ended' && !!game.result && !this.ending && !this.endingSettled && this.lastView !== null && this.lastView !== game;
+  }
+
   /** Skip the rest of the ending and go to the end screen. */
   skipEnding(): void {
     if (!this.ending) return;

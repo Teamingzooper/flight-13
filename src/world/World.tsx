@@ -69,10 +69,13 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const blastAtDawn = kind === 'dawn' && game.bombs.some((b) => b.exploded && b.detonateNight === game.phase.night);
   const holdReport = useHold(`${kind}:${game.phase.night}`, kind === 'dawn' ? (blastAtDawn ? 5200 : 1500) : 0);
   // (The morning report also waits while you are still under your seat.)
-  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !ending && scene !== 'search';
+  // The flight just ended here: its cutscene plays before any end card, from the very first render of the end
+  // (the cabin only starts it after this render, and the card must not show ahead of it).
+  const cutscene = ending || (kind === 'ended' && !!cabin.current?.endingAhead(game));
+  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !cutscene && scene !== 'search';
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen;
-  const mouseFree = windowOpen || preflight || ending;
+  const mouseFree = windowOpen || preflight || cutscene;
 
   useEffect(() => {
     try {
@@ -113,6 +116,10 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   useEffect(() => {
     cabin.current?.setLeaning(leaning);
   }, [leaning]);
+  // Put the screen away for the ending (it would hide the cutscene behind its own end card).
+  useEffect(() => {
+    if (cutscene) setLeaning(false);
+  }, [cutscene]);
 
   // The hotel room shows what you own and what is in the bag; you pick things up once your pass is read.
   useEffect(() => {
@@ -392,7 +399,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           ) : (
             <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
           )}
-          {!holdReport && !ending && scene !== 'search' && (
+          {!holdReport && !cutscene && scene !== 'search' && (
             <div class="hud-overlay">
               <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} />
             </div>
@@ -409,7 +416,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           )}
         </div>
       )}
-      {leaning && (
+      {leaning && !cutscene && (
         <div class="world-tv">
           <TV flight={flight} snap={snap} state={state} embedded onClose={() => setLeaning(false)} />
         </div>
