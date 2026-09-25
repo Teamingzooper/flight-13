@@ -89,6 +89,20 @@ function seatNextTo(view: PlayerView, seat: SeatId | null): SeatId | null {
   return near[0] ?? null;
 }
 
+/** A seat out of the blast, if my own seat bomb goes off tonight and I am sitting too close to it. */
+function clearOfMyBomb(view: PlayerView, k: Knowledge, rng: Rng): SeatId | null {
+  const mine = k.bombs.find((bomb) => bomb.planterId === k.me.id && !bomb.exploded && !bomb.defused && bomb.detonateNight === view.phase.night);
+  if (!mine || mine.location.kind !== 'seat') return null;
+  const at = grid.parseSeat(mine.location.seat);
+  const here = k.me.seat ? grid.parseSeat(k.me.seat) : null;
+  if (!at || !here || grid.distance(here, at) > grid.BLAST_RADIUS) return null;
+  const away = (view.options?.seats ?? []).filter((s) => {
+    const c = grid.parseSeat(s);
+    return c && grid.distance(c, at) > grid.BLAST_RADIUS;
+  });
+  return away.length ? away[Math.floor(rng() * away.length)] : null;
+}
+
 /** An aisle spot I may walk the cart to at `seat`'s row (crew). */
 function aisleAt(view: PlayerView, seat: SeatId | null): SeatId | null {
   const cell = seat ? grid.parseSeat(seat) : null;
@@ -98,8 +112,14 @@ function aisleAt(view: PlayerView, seat: SeatId | null): SeatId | null {
 }
 
 export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: BotSkill, rng: Rng): NightChoice {
-  if (skill === 'easy' || (skill === 'normal' && rng() < 0.5)) return {};
+  if (skill === 'easy') return {};
   const kind = view.phase.kind;
+  if (kind === 'night_move') {
+    // My own bomb goes off tonight: get clear of it (every time, on Normal and Hard).
+    const flee = clearOfMyBomb(view, k, rng);
+    if (flee) return { move: flee };
+  }
+  if (skill === 'normal' && rng() < 0.5) return {};
   const role = k.me.role;
   const saboteur = k.me.team === 'saboteurs';
   const top = suspects(b).find(([id]) => !k.team.includes(id));

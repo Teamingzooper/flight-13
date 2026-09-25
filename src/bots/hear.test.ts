@@ -54,6 +54,11 @@ describe('hearing', () => {
     const h = cabin('I trust Jo but Cal is sus');
     expect(h.defend).toEqual(['jo']);
     expect(h.accuse).toEqual([{ id: 'cal', role: null }]);
+    // A reason is not an accusation of whoever it mentions, and a relayed find is not the speaker's.
+    const relay = cabin("I think it's Jo: Ann found a bomb under 5C");
+    expect(relay.accuse).toEqual([{ id: 'jo', role: null }]);
+    expect(relay.results).toEqual([]);
+    expect(cabin('Voting Cal: a bomb turned up under 5C, their seat').accuse).toEqual([{ id: 'cal', role: null }]);
   });
 
   it('hears who a question is for, and what it asks', () => {

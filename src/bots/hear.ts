@@ -185,7 +185,9 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
 
   // Results the speaker claims.
   const results: ResultClaim[] = [];
-  if (RESULT_VERBS.test(masked)) {
+  const verbAt = masked.search(RESULT_VERBS);
+  const someoneElses = verbAt >= 0 && /@\d+\s*$/.test(masked.slice(0, verbAt));
+  if (verbAt >= 0 && !someoneElses) {
     const bomb = BOMB_WORDS.test(masked) && !/\bno bombs?\b/.test(masked);
     const clear = !bomb && CLEAR_WORDS.test(masked);
     if (bomb || clear) {
@@ -213,19 +215,23 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
   const accuse: { id: string; role: RoleId | null }[] = [];
   const defend: string[] = [];
   const resultLine = RESULT_VERBS.test(masked);
-  for (const clause of masked.split(/[.!;?\n]+|\bbut\b|\bwhile\b|\bwhereas\b/)) {
+  for (const clause of masked.split(/[.!;?:\n]+|\bbut\b|\bwhile\b|\bwhereas\b|\bbecause\b|\bsince\b|\bcuz\b/)) {
     const { ids: cIds, seats: cSeats } = mentions(clause, roster);
     const people = [...new Set([...cIds, ...cSeats.map((x) => bySeat.get(x)).filter((id): id is string => !!id)])].filter((id) => id !== speaker);
     if (people.length === 0) continue;
     const accuseAt = clause.search(ACCUSE_WORDS);
-    const itsX = /\b(?:it'?s|it is|it was|gotta be|has to be|must be)\s+@/.test(clause) || /@\d+\s+did it\b/.test(clause);
+    const named = /\b(?:it'?s|it is|it was|gotta be|has to be|must be)\s+@(\d+)/.exec(clause) ?? /@(\d+)\s+did it\b/.exec(clause);
+    const itsX = !!named;
     // (A clean search result names a seat, but it is a result, not a defense.)
     const defendAt = resultLine ? -1 : clause.search(DEFEND_WORDS);
     const accused = (accuseAt >= 0 && !negatedBefore(clause, accuseAt)) || itsX || (defendAt >= 0 && negatedBefore(clause, defendAt));
     const cleared = (accuseAt >= 0 && negatedBefore(clause, accuseAt)) || (defendAt >= 0 && !negatedBefore(clause, defendAt));
     let role = roleIn(clause);
     if (role && !SABOTEUR_ROLES.includes(role)) role = null;
-    if (accused) {
+    if (named) {
+      const id = roster[Number(named[1])]?.id;
+      if (id && id !== speaker) accuse.push({ id, role });
+    } else if (accused) {
       for (const id of people) accuse.push({ id, role });
     } else if (cleared) {
       for (const id of people) defend.push(id);

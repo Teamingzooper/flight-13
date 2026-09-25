@@ -53,3 +53,15 @@ describe('the phrasebook', () => {
     expect(hash01('a')).toBeLessThan(1);
   });
 });
+
+describe('tones', () => {
+  it('never lower-cases a name, "I" or a shout after a lead-in', () => {
+    for (let seed = 1; seed < 80; seed++) {
+      const r = () => seq(seed);
+      expect(say('accuse', { name: 'Bea', why: 'just a feeling' }, 'nervous', r())).not.toMatch(/\bbea\b/);
+      expect(say('react_blast', { seat: '4A' }, 'nervous', r())).not.toMatch(/\bbOOM\b/);
+      expect(say('result_clear', { seats: '7C' }, 'chatty', r())).not.toMatch(/\bi searched\b/);
+      expect(say('dunno', {}, 'nervous', r())).not.toMatch(/I think no idea/);
+    }
+  });
+});

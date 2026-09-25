@@ -2,7 +2,7 @@ import { ROLES, grid, isNightPhase, type BotChatter, type BotSkill, type ChatCha
 import type { Knowledge, Seen } from './knowledge';
 import type { TalkLimiter } from './limiter';
 import { suspects, SABOTEUR_ROLES, type Beliefs, type HeardLine, type Reason } from './mind';
-import type { Personality } from './personality';
+import { hash01, type Personality } from './personality';
 import type { Fill, LineKind } from './phrasebook';
 
 /**
@@ -126,6 +126,11 @@ function sightingText(s: Seen, name: (id: string) => string): string {
   }
 }
 
+/** Odds that hold for the whole occasion (the same answer every think), per bot. */
+function chance(ctx: TalkContext, key: string, p: number): boolean {
+  return hash01(`${ctx.k.me.id}:${key}`) < p;
+}
+
 const list = (items: string[]) => (items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 
 /** How long a bot takes to type a reply to a line said at `t`. */
@@ -159,7 +164,17 @@ function myResult(ctx: TalkContext): { kind: LineKind; fill: Fill } | null {
     .map((l) => l.seat);
   if (bombSeats.length) return { kind: 'result_bomb', fill: { seats: list(bombSeats) } };
   if (last.where !== 'seat') return { kind: 'result_clear', fill: { seats: `the ${last.where}` } };
-  return last.seats.length ? { kind: 'result_clear', fill: { seats: list(last.seats.slice(0, 3)) + (last.seats.length > 3 ? ' and around' : '') } } : null;
+  if (last.kind === 'sweep') {
+    // A sweep covers the seats around the one I sat in: the seat with the most of the others next to it.
+    const cells = last.seats.map((s) => grid.parseSeat(s)!).filter(Boolean);
+    const center = last.seats.reduce((best, s) => {
+      const c = grid.parseSeat(s)!;
+      const near = cells.filter((o) => grid.distance(o, c) <= 1).length;
+      return near > best.near ? { seat: s, near } : best;
+    }, { seat: last.seats[0], near: -1 }).seat;
+    return center ? { kind: 'result_clear', fill: { seats: `the seats around ${center}` } } : null;
+  }
+  return last.seats.length ? { kind: 'result_clear', fill: { seats: list(last.seats) } } : null;
 }
 
 export function wants(ctx: TalkContext): Say[] {
@@ -184,7 +199,8 @@ export function wants(ctx: TalkContext): Say[] {
       out.push({ kind: 'defend_self', channel: 'cabin', fill: { why }, priority: 100, key: `defend:${l.id}`, at: typed(ctx, l.t), reply: true, line: l.id });
       continue;
     }
-    const toMe = h.to.includes(k.me.id) || (h.to.includes('*') && rng() < 0.3);
+    // A question to everyone gets a few answers (not every bot, and never to "everyone still here?").
+    const toMe = h.to.includes(k.me.id) || (h.to.includes('*') && h.ask !== 'general' && h.ask !== null && rng() < 0.3);
     if (toMe && h.ask) {
       if (h.ask === 'role') {
         out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(myClaim(ctx)) }, priority: 95, key: `ask:${l.id}`, at: typed(ctx, l.t, 20), reply: true, line: l.id });
@@ -223,7 +239,7 @@ export function wants(ctx: TalkContext): Say[] {
     const blast = k.bombs.find((bomb) => bomb.exploded && bomb.detonateNight === day && bomb.location.kind === 'seat');
     const lav = k.washroom.find((w) => w.night === day && w.id !== k.me.id);
     const upFront = k.jumpseat.find((j) => j.night === day && j.id !== k.me.id);
-    const react: Pick<Say, 'kind' | 'fill'> =
+    const react: Pick<Say, 'kind' | 'fill'> | null =
       blast && blast.location.kind === 'seat'
         ? { kind: 'react_blast', fill: { seat: blast.location.seat } }
         : died.length
@@ -233,7 +249,9 @@ export function wants(ctx: TalkContext): Say[] {
             : upFront && !grid.isCockpit(k.me.seat)
               ? { kind: 'react_jumpseat', fill: { name: name(upFront.id) } }
               : { kind: 'react_quiet', fill: {} };
-    out.push({ ...react, channel: 'cabin', priority: 40, key: `react:${day}`, at: soon(2, 6), reply: false });
+    // Not everyone remarks on the night: most do after a death or a blast, a few after a quiet one.
+    const odds = react.kind === 'react_quiet' ? 0.25 : react.kind === 'react_death' || react.kind === 'react_blast' ? 0.6 : 0.4;
+    if (chance(ctx, `react:${day}`, odds)) out.push({ ...react, channel: 'cabin', priority: 40, key: `react:${day}`, at: soon(2, 6), reply: false });
 
     // Results, and the claim that goes with a bomb found.
     const result = myResult(ctx);
@@ -243,7 +261,7 @@ export function wants(ctx: TalkContext): Say[] {
         out.push({ kind: 'claim', channel: 'cabin', fill: { role: roleName(k.me.role) }, priority: 85, key: 'claim', at: soon(3, 6), reply: false });
       }
       out.push({ ...result, channel: 'cabin', priority: bomb ? 80 : k.me.role === 'passenger' ? 25 : 45, key: `result:${day}`, at: soon(4, 9), reply: false });
-    } else if (result && saboteur && rng() < 0.4) {
+    } else if (result && saboteur && chance(ctx, `fake:${day}`, 0.4)) {
       out.push({ ...result, channel: 'cabin', priority: 30, key: `result:${day}`, at: soon(6, 14), reply: false });
     }
 
@@ -265,14 +283,14 @@ export function wants(ctx: TalkContext): Say[] {
       }
     }
 
-    if (chatter === 'lively' && rng() < 0.6) out.push({ kind: 'banter', channel: 'cabin', fill: {}, priority: 5, key: `banter:${day}`, at: soon(10, 30), reply: false });
+    if (chatter === 'lively' && chance(ctx, `banter:${day}`, 0.6)) out.push({ kind: 'banter', channel: 'cabin', fill: {}, priority: 5, key: `banter:${day}`, at: soon(10, 30), reply: false });
   }
 
   // After the vote: was the cabin right?
   if (kind === 'verdict') {
     const v = k.verdicts.find((x) => x.night === day);
     const role = v?.restrained ? k.roleOf.get(v.restrained) : undefined;
-    if (v?.restrained && role && v.restrained !== k.me.id && rng() < 0.5) {
+    if (v?.restrained && role && v.restrained !== k.me.id && chance(ctx, `verdict:${day}`, 0.5)) {
       const right = SABOTEUR_ROLES.includes(role);
       out.push({
         kind: right ? 'verdict_right' : 'verdict_wrong',
@@ -299,7 +317,7 @@ export function choose(says: Say[], memory: TalkMemory, chatter: BotChatter, lim
     .filter((s) => s.at <= now && !memory.said.has(s.key))
     .filter((s) => (s.reply ? memory.replies < REPLY_BUDGET : FREE.has(s.kind) || memory.proactive < BUDGET[chatter]))
     .sort((a, z) => z.priority - a.priority || a.at - z.at);
-  const pick = ready.find((s) => limiter.may(botId, now, s.reply || FREE.has(s.kind)));
+  const pick = ready.find((s) => limiter.may(botId, now, s.reply));
   return pick ?? null;
 }
 

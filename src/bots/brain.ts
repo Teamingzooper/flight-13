@@ -200,7 +200,9 @@ export class BotBrain {
     };
     for (const s of wants(ctx)) if (!this.pending.has(s.key)) this.pending.set(s.key, s);
     // The vote, and why.
-    if (kind === 'day_vote' && this.vote?.day === night && !this.memory.said.has(`vote:${night}`) && !this.pending.has(`vote:${night}`)) {
+    // (Skipping is mostly done quietly.)
+    const skipQuietly = this.vote?.target === 'skip' && hash01(`${this.id}:skip:${night}`) >= 0.35;
+    if (kind === 'day_vote' && this.vote?.day === night && !skipQuietly && !this.memory.said.has(`vote:${night}`) && !this.pending.has(`vote:${night}`)) {
       const v = this.vote;
       this.pending.set(`vote:${night}`, {
         kind: v.target === 'skip' ? 'skip' : 'vote',

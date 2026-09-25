@@ -7,6 +7,7 @@ import type { BombView, LogEntry, PlayerSummary, PlayerView, RoleId, SeatId, Sig
 
 /** One of my own searches, checks, sweeps or inspections, and the bombs it turned up. */
 export interface Finding {
+  kind: 'search' | 'check' | 'sweep' | 'inspect';
   night: number;
   where: 'seat' | 'cart' | 'lavatory';
   seats: SeatId[];
@@ -81,16 +82,16 @@ export function know(view: PlayerView): Knowledge {
         if (!mine(e, me.id)) break;
         k.findings.push(
           d.lavatory
-            ? { night: e.night, where: 'lavatory', seats: [], bombs: strings(d.bombs) }
-            : { night: e.night, where: 'seat', seats: str(d.seat) ? [str(d.seat)!] : [], bombs: strings(d.bombs) },
+            ? { kind: 'search', night: e.night, where: 'lavatory', seats: [], bombs: strings(d.bombs) }
+            : { kind: 'search', night: e.night, where: 'seat', seats: str(d.seat) ? [str(d.seat)!] : [], bombs: strings(d.bombs) },
         );
         break;
       case 'check':
       case 'sweep':
-        if (mine(e, me.id)) k.findings.push({ night: e.night, where: 'seat', seats: strings(d.seats), bombs: strings(d.bombs) });
+        if (mine(e, me.id)) k.findings.push({ kind: e.tag, night: e.night, where: 'seat', seats: strings(d.seats), bombs: strings(d.bombs) });
         break;
       case 'inspect':
-        if (mine(e, me.id)) k.findings.push({ night: e.night, where: d.what === 'cart' ? 'cart' : 'lavatory', seats: [], bombs: strings(d.bombs) });
+        if (mine(e, me.id)) k.findings.push({ kind: 'inspect', night: e.night, where: d.what === 'cart' ? 'cart' : 'lavatory', seats: [], bombs: strings(d.bombs) });
         break;
       case 'treat':
         if (mine(e, me.id) && str(d.target)) k.treated.push({ night: e.night, target: str(d.target)! });

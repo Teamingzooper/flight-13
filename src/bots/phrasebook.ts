@@ -102,13 +102,21 @@ function usable(kind: LineKind, fill: Fill): string[] {
   return LINES[kind].filter((t) => [...t.matchAll(/\{(\w+)\}/g)].every((m) => fill[m[1] as keyof Fill]));
 }
 
-function tone(line: string, t: Tone, rng: () => number): string {
-  const low = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+/** Lines where "I think" or "not sure, but" in front still makes sense. */
+const OPINIONS: ReadonlySet<LineKind> = new Set(['accuse', 'agree', 'disagree', 'vote', 'answer_suspect', 'defend_other']);
+
+function tone(line: string, t: Tone, kind: LineKind, fill: Fill, rng: () => number): string {
+  // Lower-case the first letter after a lead-in, unless it starts a name, "I", or a shout ("BOOM").
+  const proper = [fill.name, fill.target].filter((x): x is string => !!x);
+  const low = (s: string) => (proper.some((n) => s.startsWith(n)) || /^(I\b|I'|[A-Z]{2,})/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
   switch (t) {
     case 'blunt':
       return line.replace(/!/g, '.').replace(/^(honestly\?|okay so|well,)\s*/i, '');
-    case 'nervous':
-      return rng() < 0.45 ? `${['Um, ', 'I think ', 'Not sure, but '][Math.floor(rng() * 3)]}${low(line)}` : line;
+    case 'nervous': {
+      if (rng() >= 0.45) return line;
+      const leads = OPINIONS.has(kind) ? ['Um, ', 'I think ', 'Not sure, but '] : ['Um, ', 'Uh, '];
+      return `${leads[Math.floor(rng() * leads.length)]}${low(line)}`;
+    }
     case 'chatty': {
       const lead = rng() < 0.4 ? `${['Okay so ', 'Honestly, ', 'Ngl, '][Math.floor(rng() * 3)]}${low(line)}` : line;
       return rng() < 0.2 ? `${lead.replace(/[.!]$/, '')} lol` : lead;
@@ -137,7 +145,7 @@ export function say(kind: LineKind, fill: Fill, t: Tone, rng: () => number): str
   const template = options[Math.floor(rng() * options.length)];
   const filled = template.replace(/\{(\w+)\}/g, (_, key: string) => fill[key as keyof Fill] ?? '');
   // A reason slotted in after a full stop starts a sentence.
-  const shaped = tone(filled, t, rng).replace(/([.!?]\s+)([a-z])/g, (_, stop: string, c: string) => stop + c.toUpperCase());
+  const shaped = tone(filled, t, kind, fill, rng).replace(/([.!?]\s+)([a-z])/g, (_, stop: string, c: string) => stop + c.toUpperCase());
   return fit(shaped.charAt(0).toUpperCase() + shaped.slice(1));
 }
 
