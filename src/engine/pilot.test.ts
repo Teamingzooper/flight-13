@@ -172,9 +172,10 @@ describe('in the dark on the flight deck', () => {
     expect(entry.data).toMatchObject({ rows: [3, 4, 5] });
     expect(entry.data!.seen).toEqual(
       expect.arrayContaining([
-        { actor: 'b2', kind: 'plant' },
-        { actor: 'mid', kind: 'search' },
-        { actor: 'nurse', kind: 'treat', target: 'mid' },
+        // Planting and searching look the same on camera, in the data too.
+        { actor: 'b2', kind: 'under_seat' },
+        { actor: 'mid', kind: 'under_seat' },
+        { actor: 'nurse', kind: 'lean', target: 'mid' },
       ]),
     );
   });

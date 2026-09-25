@@ -257,6 +257,28 @@ function sighting(s: GameState, actor: PlayerState, action: NightAction): string
   }
 }
 
+/** What an action looks like on the cabin cameras (planting looks like searching, and so on). */
+function looksLike(action: NightAction): Sighting['kind'] {
+  switch (action.kind) {
+    case 'treat':
+      return 'lean';
+    case 'serve':
+      return 'drink';
+    case 'check':
+      return 'check';
+    case 'sweep':
+      return 'look_around';
+    case 'cuff':
+      return 'cuff';
+    case 'inspect':
+      return action.what;
+    case 'plant':
+      return action.where === 'seat' ? 'under_seat' : action.where;
+    default:
+      return 'under_seat';
+  }
+}
+
 interface Acting {
   actor: PlayerState;
   action: NightAction;
@@ -498,7 +520,7 @@ export function resolveNight(s: GameState, now: number): void {
       const target = 'target' in other.action ? playerById(other.action.target) : undefined;
       if (!text || !(inRows(other.actor) || inRows(target))) continue;
       seen.push(text);
-      caught.push({ actor: other.actor.id, kind: other.action.kind, ...(target ? { target: target.id } : {}) });
+      caught.push({ actor: other.actor.id, kind: looksLike(other.action), ...(target ? { target: target.id } : {}) });
     }
     for (const [user, seat] of Object.entries(s.night.flashlights)) {
       const u = playerById(user);
