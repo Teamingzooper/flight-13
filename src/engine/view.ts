@@ -2,9 +2,9 @@ import { voteWeight } from './day';
 import { isNightPhase, isWhisperPhase, phaseDue } from './engine';
 import { WHISPER_RADIUS, distance } from './grid';
 import { possibleItemUses, type ItemUse } from './items';
-import { isSaboteur, teamOf } from './roles';
-import { checkSeatbelt, checkWashroom, possibleActions, possibleMoves } from './rules';
-import { activePlayers, cellOf, getPlayer, inWashroom, isActive } from './state';
+import { isPilot, isSaboteur, teamOf } from './roles';
+import { checkCourse, checkJumpseat, checkSeatbelt, checkWashroom, flightDeckError, possibleActions, possibleMoves } from './rules';
+import { activePlayers, cellOf, getPlayer, inWashroom, isActive, isGuest } from './state';
 import type {
   Award,
   BombLocation,
@@ -78,11 +78,22 @@ export interface YouView {
   washroomUsed: boolean;
   /** You are locked in the lavatory right now. */
   inWashroom: boolean;
+  /** Pilot: rough air and a change of course are spent. */
+  roughAirUsed: boolean;
+  courseUsed: boolean;
+  /** Pilot: knocked out cold tonight (no calls, no cameras). */
+  knockedOut: boolean;
+  /** You are up in the Pilot's jump seat tonight. */
+  inJumpSeat: boolean;
 }
 
 export interface MineView {
   move: MoveTarget | null;
   seatbelt: string | null;
+  /** Pilot: tonight's calls. */
+  jumpseat: string | null;
+  roughair: number | null;
+  course: 'hold' | 'shortcut' | null;
   action: NightAction | null;
   acted: boolean;
   ready: boolean;
@@ -95,6 +106,10 @@ export interface OptionsView {
   seats: SeatId[];
   /** Why you cannot go to the washroom tonight, or null if you can. */
   washroom: string | null;
+  /** Pilot: who can be called up to the jump seat, where rough air can go, and the course changes on offer. */
+  jumpseat: string[];
+  roughair: number[];
+  course: ('hold' | 'shortcut')[];
   seatbelt: string[];
   actions: NightAction[];
   whisper: string[];
@@ -126,6 +141,8 @@ export interface PlayerView {
   cabin: Cabin;
   /** Who is locked in the lavatory right now. */
   washroom: string | null;
+  /** Who is up on the flight deck with the Pilot right now. */
+  jumpseat: string | null;
   blackout: boolean;
   bombs: BombView[];
   mine: MineView | null;
@@ -149,13 +166,15 @@ function optionsFor(s: GameState, me: PlayerState): OptionsView {
   const kind = s.phase.kind;
   const buckled = s.night.buckled[me.id] !== undefined;
   const others = activePlayers(s).filter((p) => p.id !== me.id);
+  // The flight deck's calls, while the Pilot is fit to make them.
+  const deck = kind === 'night_move' && isPilot(me.role) && flightDeckError(s, me) === null;
   return {
     seats: kind === 'night_move' && !buckled ? possibleMoves(s, me) : [],
     washroom: kind !== 'night_move' ? 'The washroom is for the night.' : buckled ? 'You are buckled in tonight.' : checkWashroom(s, me),
-    seatbelt:
-      kind === 'night_move' && !buckled && me.role === 'pilot'
-        ? others.filter((t) => checkSeatbelt(s, me, t.id) === null).map((t) => t.id)
-        : [],
+    seatbelt: deck ? others.filter((t) => checkSeatbelt(s, me, t.id) === null).map((t) => t.id) : [],
+    jumpseat: deck ? others.filter((t) => checkJumpseat(s, me, t.id) === null).map((t) => t.id) : [],
+    roughair: deck && !me.roughAirUsed ? Array.from({ length: s.cabin.rows - 2 }, (_, i) => i + 1) : [],
+    course: deck ? (['hold', 'shortcut'] as const).filter((c) => checkCourse(s, me, c) === null) : [],
     actions: kind === 'night_act' && !buckled ? possibleActions(s, me) : [],
     whisper:
       s.settings.whispers && isWhisperPhase(kind)
@@ -240,11 +259,18 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     packed: s.packed[me.id] === true,
     washroomUsed: me.washroomUsed,
     inWashroom: inWashroom(s, me.id),
+    roughAirUsed: me.roughAirUsed,
+    courseUsed: me.courseUsed,
+    knockedOut: isPilot(me.role) && isNightPhase(s.phase.kind) && me.knockedOutNight === s.phase.night,
+    inJumpSeat: isGuest(s, me.id),
   };
 
   const mine: MineView | null = me && {
     move: s.night.moves[me.id] ?? null,
     seatbelt: s.night.seatbelts[me.id] ?? null,
+    jumpseat: s.night.jumpseats[me.id] ?? null,
+    roughair: s.night.roughair[me.id] ?? null,
+    course: s.night.courses[me.id] ?? null,
     action: s.night.actions[me.id] ?? null,
     acted: me.id in s.night.actions,
     ready: s.day.ready[me.id] === true,
@@ -272,6 +298,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     players,
     cabin: s.cabin,
     washroom: s.phase.kind === 'night_act' ? s.night.washroom : null,
+    jumpseat: s.phase.kind === 'night_act' ? s.night.jumpseat : null,
     blackout: s.blackoutNight === s.phase.night && BLACKOUT_PHASES.has(s.phase.kind),
     bombs,
     mine,

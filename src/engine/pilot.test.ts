@@ -249,3 +249,30 @@ describe('the PA', () => {
     expect(viewFor(s, 'back', 0).chat.at(-1)).toMatchObject({ channel: 'pa', from: 'pilot', text: 'Watch row 4.' });
   });
 });
+
+describe('the Pilot on screen', () => {
+  it('sees every call on offer, and everyone sees his guest', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    const o = viewFor(s, 'pilot', 0).options!;
+    expect(o.jumpseat).toContain('mid');
+    expect(o.roughair).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(o.course).toEqual(['hold', 'shortcut']);
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'mid' }, 0);
+    expect(viewFor(s, 'pilot', 0).mine?.jumpseat).toBe('mid');
+    advanceTo(s, 'night_act', 1);
+    expect(viewFor(s, 'back', 0).jumpseat).toBe('mid');
+    expect(viewFor(s, 'mid', 0).you?.inJumpSeat).toBe(true);
+    expect(viewFor(s, 'pilot', 0).options?.actions).toContainEqual({ kind: 'watch', startRow: 1 });
+  });
+
+  it('shows a knocked-out Pilot nothing to call', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    player(s, 'pilot').knockedOutNight = 1;
+    const view = viewFor(s, 'pilot', 0);
+    expect(view.you?.knockedOut).toBe(true);
+    expect(view.options?.jumpseat).toEqual([]);
+    expect(view.options?.seatbelt).toEqual([]);
+  });
+});
