@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHAT_MAX_LENGTH, checkTakeoff, destinationOf, type IntentResult } from '../../engine';
+import { TutorialCoach } from '../../tutorial/Coach';
 import { formatCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
 import { Avatar } from '../Avatar';
@@ -52,6 +53,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
 
   return (
     <div class="page boarding">
+      <TutorialCoach state={state} className="lobby-coach" />
       <header class="gate">
         <div class="gate-info">
           <div class="label">Now boarding · Gate 13</div>

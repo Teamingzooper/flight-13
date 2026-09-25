@@ -13,6 +13,7 @@ import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
 import { captainName } from './format';
 import { Header } from './Header';
+import { TutorialCoach } from '../tutorial/Coach';
 import { VoiceButton } from './VoiceButton';
 import { IconBolt, IconChat, IconMap, IconPlane, IconVote } from './icons';
 import { MapTab } from './MapTab';
@@ -123,6 +124,7 @@ export function TV({
             tools={embedded ? null : <VoiceButton flight={flight} />}
           />
           <PaBanner game={game} />
+          <TutorialCoach state={state} className="tv-coach" />
           <main class="tv-body">
             {game.phase.kind === 'packing' ? (
               you ? (

@@ -78,6 +78,8 @@ export interface ClientState {
   voice?: Record<string, string>;
   /** The Pilot while he is talking on the PA (everyone hears him, through the cabin speakers). */
   pa?: string | null;
+  /** The tutorial flight: the coach shows what to do, and the clocks wait for you. */
+  tutorial?: boolean;
 }
 
 export type HostCommand =

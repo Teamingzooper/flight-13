@@ -1,9 +1,11 @@
 import { useState } from 'preact/hooks';
-import { useBag } from '../../meta/store';
+import { addItems, countOf } from '../../meta/bag';
+import { updateBag, useBag } from '../../meta/store';
 import { formatCode, normalizeCode } from '../../net/code';
 import { lastFlight, loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
 import { navigate } from '../router';
+import { bookTutorial } from '../sessions';
 import { Credits } from '../../meta/Credits';
 
 export function Home() {
@@ -22,6 +24,12 @@ export function Home() {
     if (profile.name.trim()) return true;
     setError('Write your name on the boarding pass first.');
     return false;
+  };
+  /** Flight School: a short flight with scripted bots. It uses a flashlight, so make sure there is one to pack. */
+  const tutorial = () => {
+    if (!named()) return;
+    updateBag((b) => (countOf(b, 'flashlight') > 0 ? b : addItems(b, { flashlight: 1 })));
+    navigate(`/f/${bookTutorial()}`);
   };
   const board = (e: Event) => {
     e.preventDefault();
@@ -50,6 +58,9 @@ export function Home() {
           <div class="ticket-stub">
             <button class="btn primary big" onClick={() => named() && navigate('/book')}>
               Book a flight
+            </button>
+            <button class={`btn${bag.stats.flights === 0 ? ' primary' : ''} tutorial-button`} onClick={tutorial}>
+              {bag.stats.flights === 0 ? 'New here? Take the tutorial flight' : 'Tutorial flight'}
             </button>
             <form class="board-form" onSubmit={board}>
               <label class="label" for="code">
