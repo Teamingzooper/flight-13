@@ -59,8 +59,22 @@ describe('the relay transport', () => {
     t.sendMany!(['host', 'nobody'], { t: 'poses' });
     expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
       { t: 'send', to: 'host', m: { t: 'join' } },
-      { t: 'send', to: ['host'], m: { t: 'poses' } },
+      // (One peer left after the filter: a plain id, which the relay treats the same.)
+      { t: 'send', to: 'host', m: { t: 'poses' } },
     ]);
+  });
+
+  it('keeps voice packets out of the game’s messages', () => {
+    vi.stubGlobal('WebSocket', FakeSocket);
+    const t = relayTransport('wss://relay.example.dev', 'AB12');
+    const got: unknown[] = [];
+    t.onMessage((m) => got.push(m));
+    const ws = FakeSocket.all[0];
+    ws.open(['host']);
+    ws.server({ t: 'msg', from: 'host', m: { __voice: 7, d: 'AAAA' } });
+    ws.server({ t: 'msg', from: 'host', m: { t: 'hello', v: 1 } });
+    expect(got).toEqual([{ t: 'hello', v: 1 }]);
+    t.close();
   });
 
   it('reconnects after a drop, and both sides greet each other afresh', () => {

@@ -21,8 +21,9 @@ as the game, so a network that needs a TURN relay (below) needs it for voice too
 ## The relay server (recommended)
 
 By default browsers connect to each other directly, which some networks block. The relay server in `server/` (a free
-Cloudflare Worker) carries every message instead, so any network works; the host's browser still runs the game. Voice
-chat needs direct connections, so it is off while playing through the relay.
+Cloudflare Worker) carries every message instead, so any network works; the host's browser still runs the game. Voice chat
+goes through it too: each browser encodes its microphone as Opus (WebCodecs) and the relay passes the packets on
+(silence is not sent), so browsers without WebCodecs audio get no voice button.
 
 It is deployed at `wss://flight13-relay.flight-13-relay.workers.dev` (the repo's `RELAY_URL` variable). To deploy your own:
 

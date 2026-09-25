@@ -1,9 +1,11 @@
+import { RelayVoice, canRelayVoice, isVoicePacket } from './relayVoice';
 import { Emitter, type MessageHandler, type PeerHandler, type Transport } from './transport';
 
 /**
  * Flight 13's relay server: instead of connecting browsers to each other (which some networks block), every player's
  * browser keeps one WebSocket to the flight's room on the server, and the room passes the messages on. The host's
- * browser still runs the game. See server/src/index.ts for the room's side.
+ * browser still runs the game. Voice rides along as Opus packets (see relayVoice.ts). See server/src/index.ts for the
+ * room's side.
  */
 
 const DEV_KEY = 'flight13.relay';
@@ -51,13 +53,24 @@ export function relayTransport(base: string, code: string): Transport {
   let retry: ReturnType<typeof setTimeout> | null = null;
   let grace: ReturnType<typeof setTimeout> | null = null;
 
+  /** Several peers, one message (the relay passes it to each). */
+  const sendTo = (peerIds: string[], msg: unknown) => {
+    if (closed || ws?.readyState !== WebSocket.OPEN) return;
+    const to = peerIds.filter((p) => peers.has(p));
+    if (to.length > 0) ws.send(JSON.stringify({ t: 'send', to: to.length === 1 ? to[0] : to, m: msg }));
+  };
+  // Voice goes through the relay too, where the browser can encode it itself.
+  const voice = canRelayVoice() ? new RelayVoice({ sendMany: sendTo, isConnected: (peer) => peers.has(peer) }) : null;
+
   const join = (peer: string) => {
     if (peer === selfId || peers.has(peer)) return;
     peers.add(peer);
     joins.emit(peer);
   };
   const leave = (peer: string) => {
-    if (peers.delete(peer)) leaves.emit(peer);
+    if (!peers.delete(peer)) return;
+    voice?.peerLeft(peer);
+    leaves.emit(peer);
   };
   const leaveAll = () => {
     for (const peer of [...peers]) leave(peer);
@@ -95,7 +108,8 @@ export function relayTransport(base: string, code: string): Transport {
           break;
         case 'msg':
           join(msg.from);
-          messages.emit(msg.m, msg.from);
+          if (isVoicePacket(msg.m)) voice?.received(msg.m, msg.from);
+          else messages.emit(msg.m, msg.from);
           break;
         default:
           break;
@@ -122,11 +136,8 @@ export function relayTransport(base: string, code: string): Transport {
       if (closed || ws?.readyState !== WebSocket.OPEN || !peers.has(peerId)) return;
       ws.send(JSON.stringify({ t: 'send', to: peerId, m: msg }));
     },
-    sendMany(peerIds, msg) {
-      if (closed || ws?.readyState !== WebSocket.OPEN) return;
-      const to = peerIds.filter((p) => peers.has(p));
-      if (to.length > 0) ws.send(JSON.stringify({ t: 'send', to, m: msg }));
-    },
+    sendMany: sendTo,
+    ...(voice ? { media: voice } : {}),
     onMessage: (fn: MessageHandler) => messages.on(fn),
     onPeerJoin: (fn: PeerHandler) => joins.on(fn),
     onPeerLeave: (fn: PeerHandler) => leaves.on(fn),
@@ -135,6 +146,7 @@ export function relayTransport(base: string, code: string): Transport {
       if (pinger) clearInterval(pinger);
       if (retry) clearTimeout(retry);
       if (grace) clearTimeout(grace);
+      voice?.close();
       ws?.close(1000, 'left');
       ws = null;
       messages.clear();
