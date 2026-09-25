@@ -11,7 +11,10 @@ import { believe, type HeardLine, type SeatHistory } from './mind';
 
 const act = (s: GameState, id: string, action: NightAction) => applyIntent(s, id, { kind: 'act', action }, 0);
 const flat = () => 0.5;
-const rng = (seed = 1) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const rng = (seed = 1) => {
+  let s = seed * 48271 + 11;
+  return () => (s = (s * 16807) % 2147483647) / 2147483647;
+};
 const seats = (view: PlayerView): SeatHistory => {
   const map = new Map(view.players.filter((p) => p.seat).map((p) => [p.id, p.seat!]));
   return new Map([[1, map], [2, map]]);
