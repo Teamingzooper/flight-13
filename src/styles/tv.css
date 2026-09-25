@@ -1804,3 +1804,46 @@ button.sm-num.pick:hover {
   text-transform: uppercase;
   color: var(--amber);
 }
+
+/* The end screen's flight recorder: night tabs, the seat map as it was, and the black box one line at a time. */
+.recorder {
+  display: grid;
+  gap: 10px;
+}
+
+.recorder-nights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recorder-nights button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--dim);
+  font: 600 13px var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recorder-nights button.on {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.recorder-clips {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.recorder-clips .note {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.recorder-clips .note.on {
+  opacity: 1;
+  border-color: var(--amber);
+}

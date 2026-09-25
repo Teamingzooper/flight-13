@@ -7,7 +7,7 @@ import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, chec
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
 import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, liveBombAt, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
-import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState, Sighting } from './types';
+import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, NightRecord, PlayerState, Sighting } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
 
@@ -290,6 +290,21 @@ export function resolveNight(s: GameState, now: number): void {
   const rows = s.cabin.rows;
   const cartRowAtAct = s.cabin.cartRow;
 
+  // The flight recorder notes the night as it was: who sat where, and (below) what they did.
+  const record: NightRecord = {
+    night: n,
+    seats: Object.fromEntries(activePlayers(s).flatMap((p) => (p.seat ? [[p.id, p.seat]] : []))),
+    washroom: s.night.washroom,
+    jumpseat: s.night.jumpseat,
+    cartRow: s.cabin.cartRow,
+    acts: [],
+    items: [
+      ...Object.entries(s.night.flashlights).map(([user, seat]) => ({ user, item: 'flashlight' as const, seat })),
+      ...Object.entries(s.night.asleep).map(([target, user]) => ({ user, item: 'pills' as const, target })),
+    ],
+  };
+  s.recorder.push(record);
+
   // 1. Only valid actions from active, unbuckled players count.
   const acts: Acting[] = [];
   for (const actor of activePlayers(s)) {
@@ -371,6 +386,7 @@ export function resolveNight(s: GameState, now: number): void {
       acts.splice(i, 1);
     }
   }
+  record.acts = acts.map(({ actor, action }) => ({ actor: actor.id, action }));
 
   // 1c. A saboteur in the jump seat knocks the Pilot out cold (and his cameras go dark tonight).
   for (const { actor, action } of acts) {

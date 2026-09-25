@@ -19,6 +19,7 @@ import type {
   Look,
   MoveTarget,
   NightAction,
+  NightRecord,
   PhaseKind,
   PlayerState,
   PlayerStats,
@@ -160,6 +161,8 @@ export interface PlayerView {
   /** Flight credits and what everyone did, once the game is over. */
   awards: Record<string, Award> | null;
   stats: Record<string, PlayerStats> | null;
+  /** The flight recorder, once the flight is over (null until then: it holds everyone's secrets). */
+  recorder: NightRecord[] | null;
 }
 
 const CHAT_IN_VIEW = 150;
@@ -315,5 +318,6 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     packing: s.phase.kind === 'packing' ? { done: s.players.filter((p) => s.packed[p.id]).length, total: s.players.length } : null,
     awards: ended ? s.awards : null,
     stats: ended ? s.stats : null,
+    recorder: ended ? s.recorder : null,
   };
 }
