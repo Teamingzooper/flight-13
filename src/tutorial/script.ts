@@ -134,7 +134,7 @@ export function tutorialCoach(game: PlayerView | null): CoachStep | null {
     case 'packing':
       return you.packed
         ? { title: 'Packed', text: 'Waiting for the others to pack.' }
-        : { title: 'Pack your carry-on', text: 'Put the Pocket flashlight in your bag (up to three items), then press Ready.' };
+        : { title: 'Pack your carry-on', text: 'Put the Pocket flashlight in your bag (up to three items), then press Done packing.' };
     case 'boarding':
       return { title: 'Your secret role', text: 'Your boarding pass says you are a Passenger. Somewhere on board is a Bomber: find them before the plane lands.' };
     case 'takeoff':

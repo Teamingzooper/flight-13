@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { destinationOf } from '../engine';
+import { destinationOf, isNightPhase, type PlayerView } from '../engine';
 import { tutorialWaits } from '../tutorial/Coach';
 import { formatCode } from '../net/code';
 import type { TVContext } from './context';
@@ -38,7 +38,8 @@ export function Header({
       </div>
       <div class="tv-clock">
         {!ended && !tutorialWaits(ctx.state) && <div class={`tv-time${left < 10_000 ? ' urgent' : ''}`}>{clock(left)}</div>}
-        <div class="label">{game.phase.night > 0 ? `Night ${game.phase.night} of ${game.phase.nights}` : 'Climbing'}</div>
+        {!ended && tutorialWaits(ctx.state) && <div class="tv-time calm">No rush</div>}
+        <div class="label">{journeyLabel(game)}</div>
       </div>
       <div class="tv-tools">
         {tools}
@@ -53,4 +54,12 @@ export function Header({
       </button>
     </header>
   );
+}
+
+/** Where the flight is: climbing out, night or day so-and-so of however many, or landed. */
+function journeyLabel(game: PlayerView): string {
+  const { kind, night, nights } = game.phase;
+  if (kind === 'ended') return 'Landed';
+  if (night === 0) return 'Climbing';
+  return `${isNightPhase(kind) ? 'Night' : 'Day'} ${night} of ${nights}`;
 }

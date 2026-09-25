@@ -91,7 +91,10 @@ export function phaseHint(game: PlayerView): string {
       if (!playing) return 'The living are changing seats in the dark.';
       if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Make your flight deck calls: seatbelt sign, jump seat, rough air, course.';
       if (you.buckled) return 'The seatbelt sign is on over your seat.';
-      return 'Change seats or stay put. Nobody can talk.';
+      // (Typed chat is shut at night; voice chat allows a whisper to the seats right round you, if the captain allows it.)
+      return game.settings.voiceMode !== 'off' && game.settings.nightVoiceRange > 0
+        ? 'Change seats or stay put. The chat is shut: only whispers carry.'
+        : 'Change seats or stay put. Nobody can talk.';
     case 'night_act':
       if (!playing) return 'Abilities are being used in the dark.';
       if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Aim the cabin cameras at three rows.';

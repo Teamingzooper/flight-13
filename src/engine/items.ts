@@ -234,7 +234,9 @@ export function useItem(s: GameState, p: PlayerState, use: ItemUse, now: number)
           : `You shone your flashlight under ${seat} and found a bomb, ${fuseText(found[0], n)}.`,
         { bombs: found.map((b) => b.id), seat },
       );
-      addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} looked under ${seat} with a flashlight${found.length ? ' and found a bomb' : ''}.`);
+      // (A Bomber checking on their own work reads as that, not as a discovery.)
+      const own = found.length > 0 && found.every((b) => b.planterId === p.id);
+      addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} looked under ${seat} with a flashlight${found.length ? (own ? ' and checked on their own bomb' : ' and found a bomb') : ''}.`);
       break;
     }
     case 'pills': {

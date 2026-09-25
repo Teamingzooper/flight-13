@@ -7,8 +7,19 @@ import { clock, nameOf, roleName, seatPill } from './format';
 export function VoteTab({ ctx }: { ctx: TVContext }) {
   const { game, send, left, flight } = ctx;
   if (game.phase.kind !== 'day_vote') {
+    // During the discussion the vote opens early once everyone still in play is ready: the button is here too.
+    const discussing = game.phase.kind === 'day_discuss' && game.you?.status === 'alive';
+    const ready = game.mine?.ready ?? false;
     return (
       <div class="tab">
+        {discussing && (
+          <div class="callout">
+            <span>The vote opens when the discussion ends, or sooner once everyone is ready.</span>
+            <button class="btn primary small" disabled={ready} onClick={() => void send({ kind: 'ready' })}>
+              {ready ? 'Ready ✓ waiting for the others' : 'Ready to vote'}
+            </button>
+          </div>
+        )}
         <LastVerdict game={game} />
       </div>
     );

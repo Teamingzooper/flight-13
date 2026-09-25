@@ -432,7 +432,8 @@ function buildRoom(scene: THREE.Scene): void {
     add(new THREE.CylinderGeometry(0.05, 0.08, 0.3, 16), brass, side * 1.18, 0.71, -1.86);
     const shade = add(new THREE.CylinderGeometry(0.13, 0.18, 0.24, 24, 1, true), lampShade, side * 1.18, 0.98, -1.86, 0, 0, 0, false);
     shade.castShadow = false;
-    const bulb = new THREE.PointLight('#ffc27a', 3.2, 6, 2);
+    // (Soft enough not to burn a hot spot into the wallpaper behind.)
+    const bulb = new THREE.PointLight('#ffd6a0', 1.7, 6, 2);
     bulb.position.set(side * 1.18, 0.98, -1.86);
     room.add(bulb);
   }

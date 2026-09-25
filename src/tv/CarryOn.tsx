@@ -1,4 +1,4 @@
-import { ITEMS, ITEM_ORDER, MAX_PACKED, type ItemId, type ItemUse, type PlayerView } from '../engine';
+import { ITEMS, ITEM_ORDER, MAX_PACKED, isNightPhase, type ItemId, type ItemUse, type PlayerView } from '../engine';
 import { ItemIcon } from '../meta/ItemIcon';
 import { whenLabel } from '../meta/shop';
 import type { TVContext } from './context';
@@ -84,6 +84,15 @@ export function CarryOn({ ctx }: { ctx: TVContext }) {
         })}
       </ul>
       {you.usedItems.length > 0 && <p class="carry-used muted">Used: {you.usedItems.map((id) => ITEMS[id].name).join(', ')}</p>}
+      {/* What your items turned up tonight, right where you used them (not only in the morning report). */}
+      {game.log
+        .filter((e) => e.tag === 'item' && e.night === game.phase.night && e.to !== 'end' && isNightPhase(game.phase.kind))
+        .slice(-2)
+        .map((e) => (
+          <p key={e.id} class="carry-result" role="status">
+            {e.text}
+          </p>
+        ))}
     </section>
   );
 }

@@ -31,8 +31,10 @@ const BEAM_FRAGMENT = /* glsl */ `
   varying float vAcross;
   void main() {
     // Soft at the edges of the window's light, fading as it travels into the cabin.
-    float edge = smoothstep(1.0, 0.35, abs(vAcross));
-    float fade = pow(1.0 - vAlong, 1.6) * smoothstep(0.0, 0.08, vAlong);
+    // (Clamped: rounding can carry vAlong a hair past 1, and pow of a negative is NaN, which bloom spreads everywhere.)
+    float along = clamp(vAlong, 0.0, 1.0);
+    float edge = smoothstep(1.0, 0.35, clamp(abs(vAcross), 0.0, 1.0));
+    float fade = pow(1.0 - along, 1.6) * smoothstep(0.0, 0.08, along);
     gl_FragColor = vec4(color * strength * edge * fade, 1.0);
   }
 `;

@@ -7,6 +7,7 @@ import type { LightMode } from './lighting';
 import { CHARGE_HIT, RISE, STRIKE_HIT, type Actor, type People } from './scene/people';
 import { TARMAC_LENGTH, TarmacSet } from './sets/tarmac';
 import type { WindowView } from './windows';
+import { CART_BAY } from './scene/galley';
 import { Spring } from './spring';
 
 /**
@@ -345,8 +346,8 @@ export class EndingDirector {
     const crew = this.players.find((p) => p.status === 'alive' && p.seat && grid.isAisleSpot(p.seat));
     const actor = crew ? this.actor(crew.id) : undefined;
     if (z === null || !actor) return at;
-    const parkZ = BULKHEAD_Z - 0.95;
-    const points = [new THREE.Vector3(0, 0, z + CART_HANDLE), new THREE.Vector3(0, 0, parkZ), new THREE.Vector3(0.95, 0, parkZ)];
+    // Up the aisle into the galley, then sideways into its bay in the galley unit.
+    const points = [new THREE.Vector3(0, 0, z + CART_HANDLE), new THREE.Vector3(0, 0, CART_BAY.z), new THREE.Vector3(CART_BAY.x, 0, CART_BAY.z)];
     const length = pathLength(points) - CART_HANDLE;
     const seconds = Math.min(4.8, Math.max(1.6, length / 1.3));
     this.at(at, () => (this.cartMove = { points, from: at, seconds, crew: actor, lastS: 0 }));

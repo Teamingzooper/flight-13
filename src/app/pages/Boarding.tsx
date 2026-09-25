@@ -26,6 +26,16 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filling, setFilling] = useState(false);
+  /** Every empty seat gets a bot, all at once. */
+  const fillWithBots = async () => {
+    setFilling(true);
+    const empty = state.settings.maxPassengers - state.players.length;
+    const results = await Promise.all(Array.from({ length: empty }, () => client.command({ kind: 'addBot' })));
+    setFilling(false);
+    const failed = results.find((r) => !r.ok);
+    if (failed && !failed.ok) showToast(failed.error);
+  };
   const [toast, showToast] = useToast();
   const network = useNetwork();
   const run = async (request: Promise<IntentResult>) => {
@@ -116,13 +126,22 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
             {state.players.length === 0 && <li class="muted">Nobody aboard yet.</li>}
           </ul>
           {state.isHost && (
-            <button
-              class="btn ghost small"
-              disabled={state.players.length >= state.settings.maxPassengers}
-              onClick={() => run(client.command({ kind: 'addBot' }))}
-            >
-              + Add a bot passenger
-            </button>
+            <div class="row">
+              <button
+                class="btn ghost small"
+                disabled={state.players.length >= state.settings.maxPassengers}
+                onClick={() => run(client.command({ kind: 'addBot' }))}
+              >
+                + Add a bot passenger
+              </button>
+              <button
+                class="btn ghost small"
+                disabled={filling || state.players.length >= state.settings.maxPassengers}
+                onClick={() => void fillWithBots()}
+              >
+                {filling ? 'Filling…' : 'Fill the empty seats with bots'}
+              </button>
+            </div>
           )}
         </section>
 
