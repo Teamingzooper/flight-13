@@ -41,6 +41,8 @@ export interface EndingContext {
   windows: WindowView;
   faces: ReadonlyMap<string, string> | null;
   showRunway: () => void;
+  /** Hold the flight deck door open or shut (null gives it back to whoever walks through). */
+  setCockpitDoor: (open: boolean | null) => void;
   setLights: (mode: LightMode) => void;
   masksDown: () => void;
   explode: (at: THREE.Vector3) => void;

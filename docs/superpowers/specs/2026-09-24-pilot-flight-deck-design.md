@@ -124,10 +124,11 @@ A saboteur guest knocks the Pilot out 30% of the time. A Nurse guest treats a po
 - **Where it is**: a cockpit room in front of the galley, entered through a door marked FLIGHT DECK.
   - The door opens for the guest at night and in the hijack. From the cabin you only see the closed door past the curtain.
 - **Inside**:
-  - The captain's seat (left) holds the Pilot's camera. The first officer's seat (right) is empty, and the folding jump seat sits behind the captain.
+  - The captain's seat (left) holds the Pilot's camera. The first officer's seat (right) is empty. The folding jump seat sits in the corner behind the first officer, clear of the door's swing, with its own small screen on an arm (the first officer's seat would hide his screen from back there).
+  - A dim dome light keeps whoever is up here visible at night.
   - The windscreen panes show the same skies as the cabin windows, and the runway during takeoff and landings.
   - The instrument panel carries a live flight display (horizon, speed, altitude), the Pilot's game screen on the centre display, a camera monitor and an overhead seatbelt switch.
-  - The camera monitor is a small render target (256×160, about 8 fps) from a ceiling camera over the watched rows. It is drawn only while the Pilot is looking from the cockpit.
+  - The camera monitor is a small render target (256×160, about 8 fps) from a ceiling camera over the watched rows. It is drawn only while the Pilot is looking from the cockpit. The cameras see in the dark (a light that shines only while they render), and a strip under the screen names the camera and rows.
 - **People**: the guest walks up the aisle and through the door, then sits in the jump seat. The Pilot's own body sits at the controls.
 - **Boarding**: the Pilot turns left at the aircraft door into the cockpit and sits down.
 - **Takeoff**: through the windscreen, the runway runs past and the nose rotates up.

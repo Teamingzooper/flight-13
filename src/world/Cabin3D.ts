@@ -25,6 +25,8 @@ import { Lighting, type LightMode } from './lighting';
 import { buildCabin, type CabinParts } from './scene/cabin';
 import { Cart } from './scene/cart';
 import { Effects } from './scene/effects';
+import { ForwardView, type ViewMode } from './forwardview';
+import { FlightDisplay, type Attitude } from './instruments';
 import { buildFlightDeck, type FlightDeck } from './scene/flightdeck';
 import { buildLavatory, type LavatoryInterior } from './scene/lavatory';
 import { People } from './scene/people';
@@ -133,6 +135,25 @@ export class Cabin3D {
   private seatKey: string | null = null;
   /** You work the aisle and the cart is at your row: your tablet screen rolls with it. */
   private tabletFollows = false;
+  /** The flight deck: the view through the windscreen, the flight displays, and how the plane is flying. */
+  private readonly forwardView = new ForwardView();
+  private readonly display = new FlightDisplay();
+  private attitude: Attitude = { speed: 0, altitude: 0, pitch: 0, roll: 0 };
+  private viewMode: ViewMode = 'runway';
+  private viewSpeed = 0;
+  /** The cabin camera the Pilot's monitor shows: a small render from the ceiling over three rows. */
+  private readonly cctv = {
+    target: new THREE.WebGLRenderTarget(256, 160),
+    camera: new THREE.PerspectiveCamera(72, 256 / 160, 0.05, 30),
+    renderedAt: -Infinity,
+    /** The cameras see in the dark: a light that only shines while they render. */
+    nightVision: new THREE.AmbientLight('#c8ffd8', 0),
+  };
+  /** An ending holding the flight deck door open or shut (null: people walking through open it). */
+  private cockpitDoor: boolean | null = null;
+  /** The endings' landing: the runway comes up to meet the flight deck. */
+  private landingView = false;
+  private landingFrom = 0;
   private state: ClientState | null = null;
   private snap: ClientSnapshot | null = null;
   private aimOnScreen = false;
@@ -189,7 +210,9 @@ export class Cabin3D {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.25 : 1.75));
     this.renderer.shadowMap.enabled = !TOUCH;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Not PCFSoftShadowMap: three.js dropped it and swaps in PCF at the first shadow pass, but shaders compiled
+    // before then keep the old shadow code, and draws with them go dark (the camera monitor was nearly black).
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
@@ -204,7 +227,7 @@ export class Cabin3D {
     this.liveMesh = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), this.liveScreen.material);
     this.liveMesh.matrixAutoUpdate = false;
     this.liveMesh.visible = false;
-    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera);
+    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision);
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType });
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -306,7 +329,12 @@ export class Cabin3D {
     const grounded = kind === 'packing' || kind === 'boarding' || kind === 'takeoff';
     const sky = grounded ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
     windows.show(sky, fresh || grounded ? 0 : 1.4);
-    this.built!.flightDeck.setSky(sky);
+    // Through the windscreen: the runway on the ground, then the sky for the time of day.
+    this.viewMode = grounded ? 'runway' : night ? (bermuda ? 'aurora' : 'night') : kind === 'dawn' ? 'dawn' : 'day';
+    if (kind !== 'ended') this.landingView = false;
+    // The overhead seatbelt switch glows while the Pilot has the sign on for someone tonight.
+    const belt = game.mine?.seatbelt;
+    this.built!.flightDeck.setSeatbeltLight(night && !!game.you && grid.isCockpit(game.you.seat) && !!belt && belt !== 'none');
     if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
@@ -415,7 +443,12 @@ export class Cabin3D {
         people: this.people,
         windows: built.windows,
         faces: this.faceSource,
-        showRunway: () => built.windows.show(built.skies.runway, 0),
+        showRunway: () => {
+          built.windows.show(built.skies.runway, 0);
+          this.landingView = true;
+          this.landingFrom = this.time;
+        },
+        setCockpitDoor: (open) => (this.cockpitDoor = open),
         setLights: (mode) => (this.wantedMode = mode),
         masksDown: () => built.effects.masks.drop(),
         explode: (at) => built.effects.explode(at),
@@ -439,6 +472,7 @@ export class Cabin3D {
   private finishEnding(): void {
     this.ending?.dispose();
     this.ending = null;
+    this.cockpitDoor = null;
     this.endingSettled = true;
     this.opts.onEnding?.(false);
   }
@@ -517,6 +551,9 @@ export class Cabin3D {
     this.timer.dispose();
     this.composer.dispose();
     this.liveScreen.dispose();
+    this.forwardView.dispose();
+    this.display.dispose();
+    this.cctv.target.dispose();
     this.scene.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
@@ -546,6 +583,11 @@ export class Cabin3D {
     const effects = new Effects(rows, seats, new THREE.Vector3(lav.x, 1.0, lav.z + 0.7));
     const lavatory = buildLavatory(cabin.lavatory);
     const flightDeck = buildFlightDeck();
+    flightDeck.setView(this.forwardView.texture);
+    flightDeck.setDisplay(this.display.texture);
+    const monitor = flightDeck.monitor.material as THREE.MeshBasicMaterial;
+    monitor.map = this.cctv.target.texture;
+    monitor.color.set('#cfe9dc');
     group.add(cabin.group, seats.group, effects.group, lavatory.group, flightDeck.group);
     this.scene.add(group);
     const lighting = new Lighting(this.scene, cabin, seats, windows, this.renderer.shadowMap.enabled);
@@ -571,8 +613,8 @@ export class Cabin3D {
       return;
     }
     if (seat && away === 'deck') {
-      // Up in the jump seat behind the captain, with the first officer's screen to use.
-      this.controls.setSeat(flightDeck.jumpSeatEye.clone(), flightDeck.guestScreen, false, 0);
+      // Up in the jump seat behind the first officer, with its own little screen.
+      this.controls.setSeat(flightDeck.jumpSeatEye.clone(), flightDeck.guestScreen, false, 0.15);
       useScreen(flightDeck.guestScreen);
       return;
     }
@@ -754,6 +796,7 @@ export class Cabin3D {
       const mode = this.wantedMode !== 'night' && (time < this.darkUntil || this.searching) ? 'night' : this.wantedMode;
       built.lighting.setMode(mode);
       this.flight(time, built);
+      this.flyDeck(dt, time, built);
       built.lighting.update(dt);
       built.windows.update(dt);
       built.effects.update(dt, time, this.cart.group.position.z);
@@ -956,6 +999,36 @@ export class Cabin3D {
       cabinAudio.setEngine(engine, kind === 'takeoff' ? 2.5 : 4);
     }
 
+    // How the plane is flying, for the flight deck: parked, the takeoff roll and climb, cruise, or landing.
+    const sway = (rate: number, amount: number) => Math.sin(time * rate) * amount;
+    if (this.landingView) {
+      const t = time - this.landingFrom;
+      const rollout = clamp01(1 - t / 9);
+      this.viewSpeed = rollout;
+      this.attitude = { speed: 150 * rollout, altitude: Math.max(0, 300 * (1 - t / 3.6)), pitch: t < 3.6 ? 0.06 : 0.01, roll: 0 };
+    } else if (kind === 'packing' || kind === 'boarding') {
+      this.viewSpeed = 0;
+      this.attitude = { speed: 0, altitude: 0, pitch: 0, roll: 0 };
+    } else if (kind === 'takeoff') {
+      const p = clamp01(1 - msLeft(snap, Date.now()) / phaseDurationMs(game.settings, 'takeoff'));
+      this.viewSpeed = p < 0.1 ? 0 : Math.min(1, ((p - 0.1) / 0.52) ** 1.6);
+      this.attitude = {
+        speed: p < 0.1 ? 0 : Math.min(160, ((p - 0.1) / 0.52) * 160) + Math.max(0, p - 0.62) * 150,
+        altitude: p < 0.64 ? 0 : ((p - 0.64) / 0.36) * 6000,
+        pitch: p < 0.6 ? 0 : Math.min(0.21, (p - 0.6) * 1.4),
+        roll: 0,
+      };
+    } else {
+      const rough = isNightPhase(kind) && this.turbulentNight === game.phase.night ? 3 : 1;
+      this.viewSpeed = isNightPhase(kind) ? 0.2 : 0.35;
+      this.attitude = {
+        speed: 452 + sway(0.3, 3),
+        altitude: 35000 + sway(0.17, 40 * rough),
+        pitch: 0.01 + sway(0.23, 0.008 * rough),
+        roll: sway(0.21, 0.02 * rough) + sway(1.7, 0.004 * rough),
+      };
+    }
+
     // Turbulent nights: a bump every few seconds.
     if (isNightPhase(kind) && this.turbulentNight === game.phase.night) {
       if (time >= this.nextBump) {
@@ -965,6 +1038,49 @@ export class Cabin3D {
         this.nextBump = time + rand(3.5, 9);
       }
     }
+  }
+
+  /** The flight deck: the windscreen view and the displays (only while you are up there), and its door. */
+  private flyDeck(dt: number, time: number, built: Built): void {
+    const you = this.lastView?.you;
+    const onDeck = /^(Cockpit|deck:)/.test(this.seatKey ?? '') || (!!this.ending && !!you && grid.isCockpit(you.seat));
+    if (onDeck) {
+      this.forwardView.update(dt, this.landingView ? 'runway' : this.viewMode, this.viewSpeed, this.attitude.pitch, time);
+      this.display.draw(this.attitude, time);
+    }
+    // The Pilot's camera monitor, about eight times a second.
+    if (this.seatKey === 'Cockpit' && !this.ending && time - this.cctv.renderedAt > 0.125) {
+      this.cctv.renderedAt = time;
+      this.renderCameras(time, built);
+    }
+    // Held by an ending, or open while someone is in the doorway.
+    built.flightDeck.setDoor(this.cockpitDoor ?? this.people.anyNear(built.flightDeck.doorway, 0.9));
+    built.flightDeck.update(dt);
+  }
+
+  /** Three rows on the cabin cameras: the ones the Pilot is watching tonight, or each section in turn. */
+  private renderCameras(time: number, built: Built): void {
+    const game = this.lastView;
+    if (!game) return;
+    const action = game.mine?.action;
+    const sections: number[] = [];
+    for (let row = 1; row <= built.rows - 2; row += 3) sections.push(row);
+    const start = game.phase.kind === 'night_act' && action?.kind === 'watch' ? action.startRow : sections[Math.floor(time / 6) % sections.length];
+    const last = Math.min(built.rows, start + 2);
+    built.flightDeck.setMonitorLabel(`CAM ${Math.ceil(start / 3)}  ·  ROWS ${start}–${last}`);
+    const cam = this.cctv.camera;
+    cam.position.set(0.25, 2.05, rowZ(start) - 0.7);
+    cam.lookAt(-0.1, 0.55, rowZ(start + 2) + 0.2);
+    const renderer = this.renderer;
+    const target = renderer.getRenderTarget();
+    const shadows = renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate = false;
+    this.cctv.nightVision.intensity = isNightPhase(game.phase.kind) ? 3.2 : 0.8;
+    renderer.setRenderTarget(this.cctv.target);
+    renderer.render(this.scene, cam);
+    renderer.setRenderTarget(target);
+    this.cctv.nightVision.intensity = 0;
+    renderer.shadowMap.autoUpdate = shadows;
   }
 
   /** Play one cue from the director. */
@@ -1057,9 +1173,9 @@ export class Cabin3D {
       ? game.players.map((p) => (this.holdAlive.has(p.id) ? { ...p, status: 'alive' as const, cause: null } : p))
       : game.players;
     // Nights away from a seat: the lavatory, or the flight deck's jump seat.
-    const away: { id: string; door: THREE.Vector3 }[] = [];
+    const away: { id: string; door: THREE.Vector3; sit?: THREE.Vector3 }[] = [];
     if (this.built && game.washroom) away.push({ id: game.washroom, door: this.built.lavatory.door });
-    if (this.built && game.jumpseat) away.push({ id: game.jumpseat, door: this.built.flightDeck.door });
+    if (this.built && game.jumpseat) away.push({ id: game.jumpseat, door: this.built.flightDeck.door, sit: this.built.flightDeck.jumpSeat });
     this.people.sync(players, this.youId, (i) => rearSpot(rows, i), this.faceSource, away);
   }
 

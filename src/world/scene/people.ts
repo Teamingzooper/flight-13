@@ -275,8 +275,10 @@ export class Actor {
   hidden = false;
   /** Crew: on their feet in the aisle, hands on the drink cart. */
   crew = false;
-  /** Gone to the lavatory for the night (drawn until they reach the door). */
+  /** Gone to the lavatory for the night (drawn until they reach the door), or up to the flight deck. */
   away = false;
+  /** Where they sit while away (the jump seat); null for the lavatory, where they go out of sight. */
+  private awaySeat: THREE.Vector3 | null = null;
   /** Moved by your camera instead of its own path (your own walk to a new seat). */
   private driven: { x: number; z: number; yaw: number; walk: number; phase: number } | null = null;
   /** Latest pose from the network (or your own camera). */
@@ -364,17 +366,42 @@ export class Actor {
     this.moveTo(new THREE.Vector3(x, 0, z + (this.crew ? 0 : 0.06)), walk);
   }
 
-  /** Off to the lavatory for the night: walk to its door, then out of sight. */
-  goAway(door: THREE.Vector3): void {
+  /** Off for the night: to the lavatory door and out of sight, or through the flight deck door to the jump seat. */
+  goAway(door: THREE.Vector3, sit?: THREE.Vector3): void {
     this.away = true;
-    this.moveTo(door, true);
+    this.awaySeat = sit?.clone() ?? null;
+    if (!sit) {
+      this.moveTo(door, true);
+      return;
+    }
+    const from = this.root.position.clone();
+    const curve = new THREE.CatmullRomCurve3([
+      from,
+      new THREE.Vector3(from.x * 0.45, 0, from.z),
+      new THREE.Vector3(0, 0, from.z - 0.25),
+      new THREE.Vector3(0, 0, door.z),
+      new THREE.Vector3(0, 0, door.z - 0.55),
+      new THREE.Vector3(sit.x, 0, sit.z),
+    ]);
+    this.path = { curve, t: 0, seconds: 1.6 + curve.getLength() / 1.1 };
   }
 
-  /** Out of the lavatory and back to your seat. */
+  /** Back to your seat in the morning. */
   comeBack(): void {
     this.away = false;
     this.hidden = false;
+    this.awaySeat = null;
     if (this.seat) this.place(this.seat, true);
+  }
+
+  /** Standing or walking (not sitting down). */
+  get onFeet(): boolean {
+    return this.path !== null || this.stand > 0.3;
+  }
+
+  /** Working the aisle with the cart (not while up on the flight deck). */
+  private get pushing(): boolean {
+    return this.crew && !this.awaySeat;
   }
 
   /** Stand in the rear galley, hands tied; walks there from the seat when asked. */
@@ -517,16 +544,16 @@ export class Actor {
       if (p.t >= 1) {
         this.path = null;
         this.root.rotation.y = 0;
-        // In through the lavatory door.
-        if (this.away) this.hidden = true;
+        // In through the lavatory door (a jump seat guest stays in sight, sitting down).
+        if (this.away && !this.awaySeat) this.hidden = true;
       }
     }
 
     const wantsStand =
-      d || this.restrained || this.standing || this.crew || this.away || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
+      d || this.restrained || this.standing || this.pushing || (this.path !== null && this.path.t > 0.04 && this.path.t < 0.96) ? 1 : 0;
     this.stand = approach(this.stand, this.dead ? 0 : wantsStand, 5, dt);
     // Crew push the cart with both hands; a stewardess who dies in the aisle ends up on the floor.
-    this.push = approach(this.push, this.crew && !this.dead && !d ? 1 : 0, 5, dt);
+    this.push = approach(this.push, this.pushing && !this.dead && !d ? 1 : 0, 5, dt);
     this.floor = approach(this.floor, this.crew && this.dead ? 1 : 0, 3, dt);
     const running = this.path?.run ? 1.8 : 1;
     this.walkAmount = approach(this.walkAmount, d ? d.walk : moving ? running : 0, 6, dt);
@@ -695,6 +722,16 @@ export class People {
     return this.actors.get(id);
   }
 
+  /** Anyone (drawn, and on their feet) within `radius` of a point on the floor. */
+  anyNear(point: THREE.Vector3, radius: number): boolean {
+    for (const actor of this.actors.values()) {
+      if (actor.hidden || !actor.onFeet) continue;
+      const p = actor.root.position;
+      if (Math.hypot(p.x - point.x, p.z - point.z) < radius) return true;
+    }
+    return false;
+  }
+
   /** Someone who is not a player, standing at `at` (the police, in an ending). Null if the cabin is full. */
   extra(id: string, look: Look, at: THREE.Vector3, face = ''): Actor | null {
     const existing = this.actors.get(id);
@@ -721,7 +758,7 @@ export class People {
     youId: string | null,
     rearSpot: (index: number) => THREE.Vector3,
     faces: ReadonlyMap<string, string> | null = null,
-    away: { id: string; door: THREE.Vector3 }[] = [],
+    away: { id: string; door: THREE.Vector3; sit?: THREE.Vector3 }[] = [],
   ): void {
     const seen = new Set<string>();
     for (const id of [...this.rearSlots.keys()]) {
@@ -759,9 +796,10 @@ export class People {
         actor.place(p.seat, true);
       }
       // Off to the lavatory or the flight deck for the night, and back at dawn (those who died in there stay out of sight).
+      // (Your own body goes up to the jump seat with you; to the lavatory it stays behind.)
       const trip = away.find((a) => a.id === p.id);
-      const gone = !!trip && p.id !== youId && p.status === 'alive';
-      if (trip && gone && !actor.away) actor.goAway(trip.door);
+      const gone = !!trip && (p.id !== youId || !!trip.sit) && p.status === 'alive';
+      if (trip && gone && !actor.away) actor.goAway(trip.door, trip.sit);
       else if (!gone && actor.away && p.status !== 'dead') actor.comeBack();
       const dead = p.status === 'dead';
       if (dead !== actor.dead || p.cause !== actor.cause) {
