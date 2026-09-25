@@ -59,6 +59,7 @@ export function RecorderScreen({ ctx, cabin, onClose }: { ctx: TVContext; cabin:
         </button>
       </div>
       <div class="cctv-screen" ref={screen}>
+        <canvas class="cctv-feed" aria-hidden="true" />
         <div class="cctv-tint" aria-hidden="true" />
         <div class="cctv-flash" aria-hidden="true" style={{ opacity: flash }} />
         <div class="cctv-osd" aria-hidden="true">

@@ -2,7 +2,7 @@ import { Avatar } from '../app/Avatar';
 import type { PlayerView } from '../engine';
 import { ItemIcon } from '../meta/ItemIcon';
 import type { TVContext } from './context';
-import { clock, nameOf, seatPill } from './format';
+import { clock, nameOf, roleName, seatPill } from './format';
 
 export function VoteTab({ ctx }: { ctx: TVContext }) {
   const { game, send, left, flight } = ctx;
@@ -25,6 +25,8 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
           .map(([v]) => nameOf(game, v))
       : [];
   const candidates = game.players.filter((p) => p.status === 'alive');
+  // Saboteurs know each other: their teammates are marked, so nobody votes out their own side by mistake.
+  const saboteur = game.you?.team === 'saboteurs';
   return (
     <div class="tab vote-tab">
       <div class="panel-title">
@@ -41,18 +43,27 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
         </div>
       )}
       <div class="vote-grid">
-        {candidates.map((p) => (
-          <button key={p.id} class={`vote-card${mine === p.id ? ' on' : ''}`} disabled={!canVote.has(p.id)} onClick={() => void send({ kind: 'vote', target: p.id })}>
+        {candidates.map((p) => {
+          const ally = saboteur && p.id !== game.you?.id && p.team === 'saboteurs';
+          return (
+          <button
+            key={p.id}
+            class={`vote-card${mine === p.id ? ' on' : ''}${ally ? ' ally' : ''}`}
+            disabled={!canVote.has(p.id)}
+            onClick={() => void send({ kind: 'vote', target: p.id })}
+          >
             <Avatar look={p.look} face={flight.client.faces.get(p.id)} size={44} />
             <span class="vote-name">
               {p.name}
               {p.id === game.you?.id ? ' (you)' : ''}
             </span>
+            {ally && <span class="vote-ally">Saboteur{p.role ? ` · ${roleName(p.role)}` : ''}</span>}
             <span class="vote-seat">{seatPill(p.seat)}</span>
             <span class="vote-count">{counts[p.id] ?? 0}</span>
             {voters(p.id).length > 0 && <span class="vote-voters">{voters(p.id).join(', ')}</span>}
           </button>
-        ))}
+          );
+        })}
         <button class={`vote-card skip${mine === 'skip' ? ' on' : ''}`} disabled={!voting} onClick={() => void send({ kind: 'vote', target: 'skip' })}>
           <span class="vote-name">Skip</span>
           <span class="vote-seat">Restrain no one</span>
