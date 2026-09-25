@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
-import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, type NightAction, type PlayerView } from '../engine';
+import { NOTE_MAX_LENGTH, ROLES, describeLocation, grid, isPilot, type NightAction, type PlayerView } from '../engine';
 import { CarryOn } from './CarryOn';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, placeLabel, roleName, shortName, teamName, whenLabel } from './format';
+import { CameraPanel, FlightDeckPanel, JumpSeatPanel, PaPanel } from './PilotPanels';
 import { SeatMap, type Spot } from './SeatMap';
 
 type TargetAction = Extract<NightAction, { target: string }>;
@@ -27,12 +28,24 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
     );
   }
   const kind = game.phase.kind;
+  const pilot = isPilot(you.role);
+  const day = kind === 'dawn' || kind === 'day_discuss' || kind === 'day_vote' || kind === 'verdict';
   return (
     <div class="tab action-tab">
       <RoleStrip game={game} />
       <BlackBoxNote ctx={ctx} />
-      {kind === 'night_move' && (you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
-      {kind === 'night_act' && (you.buckled ? <Buckled game={game} /> : <AbilityPanel ctx={ctx} />)}
+      {pilot && day && <PaPanel ctx={ctx} />}
+      {kind === 'night_move' && (pilot ? <FlightDeckPanel ctx={ctx} /> : you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
+      {kind === 'night_act' &&
+        (pilot ? (
+          <CameraPanel ctx={ctx} />
+        ) : you.inJumpSeat ? (
+          <JumpSeatPanel ctx={ctx} />
+        ) : you.buckled ? (
+          <Buckled game={game} />
+        ) : (
+          <AbilityPanel ctx={ctx} />
+        ))}
       <CarryOn ctx={ctx} />
       {kind !== 'night_move' && kind !== 'night_act' && <Notes game={game} />}
     </div>
@@ -49,8 +62,8 @@ function RoleStrip({ game }: { game: PlayerView }) {
         <div class="role-name">{info.name}</div>
         <div class="role-meta">
           <span class={`team-tag ${you.team}`}>{teamName(you.team)}</span>
-          <span>{crewRow(game) !== null ? `Working row ${crewRow(game)}` : `Seat ${you.seat ?? '—'}`}</span>
-          <span>{you.washroomUsed ? 'Washroom trip used' : 'Washroom trip left'}</span>
+          <span>{isPilot(you.role) ? 'On the flight deck' : crewRow(game) !== null ? `Working row ${crewRow(game)}` : `Seat ${you.seat ?? '—'}`}</span>
+          {!isPilot(you.role) && <span>{you.washroomUsed ? 'Washroom trip used' : 'Washroom trip left'}</span>}
         </div>
       </div>
       <p class="role-how">{info.howTo}</p>
@@ -59,12 +72,17 @@ function RoleStrip({ game }: { game: PlayerView }) {
           <b>Pilot must fly.</b> If the passengers restrain you, nobody can fly the plane and the saboteurs win.
         </div>
       )}
-      {you.poisoned && (
-        <div class="callout red">
-          <b>You were poisoned.</b> Get the Nurse to sit next to you and treat you tonight
-          {you.washroomUsed ? '' : ', or wash it out in the lavatory (your one trip this flight)'}, or you will not survive the next dawn.
-        </div>
-      )}
+      {you.poisoned &&
+        (isPilot(you.role) ? (
+          <div class="callout red">
+            <b>You were poisoned.</b> Call the Nurse up to the jump seat tonight so they can treat you, or you will not survive the next dawn.
+          </div>
+        ) : (
+          <div class="callout red">
+            <b>You were poisoned.</b> Get the Nurse to sit next to you and treat you tonight
+            {you.washroomUsed ? '' : ', or wash it out in the lavatory (your one trip this flight)'}, or you will not survive the next dawn.
+          </div>
+        ))}
     </div>
   );
 }
@@ -141,7 +159,6 @@ function MovePanel({ ctx }: { ctx: TVContext }) {
         <span class="muted">{status}</span>
       </div>
       <WashroomCard ctx={ctx} />
-      {you.role === 'pilot' && <SeatbeltPicker ctx={ctx} />}
     </div>
   );
 }
@@ -171,31 +188,6 @@ function WashroomCard({ ctx }: { ctx: TVContext }) {
             Never mind
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function SeatbeltPicker({ ctx }: { ctx: TVContext }) {
-  const { game, send } = ctx;
-  const chosen = game.mine?.seatbelt ?? null;
-  const targets = game.options?.seatbelt ?? [];
-  const last = game.you?.lastSeatbeltTarget;
-  return (
-    <div class="ability-card">
-      <div class="ability-title">Seatbelt sign</div>
-      <p class="muted">
-        Lock one passenger in tonight: no moving and no ability.{last ? ` You cannot pick ${nameWithSeat(game, last)} two nights running.` : ''}
-      </p>
-      <div class="chips">
-        {targets.map((id) => (
-          <button key={id} class={`chip${chosen === id ? ' on' : ''}`} onClick={() => void send({ kind: 'seatbelt', target: id })}>
-            {nameWithSeat(game, id)}
-          </button>
-        ))}
-        <button class={`chip${chosen === 'none' ? ' on' : ''}`} onClick={() => void send({ kind: 'seatbelt', target: 'none' })}>
-          No one
-        </button>
       </div>
     </div>
   );

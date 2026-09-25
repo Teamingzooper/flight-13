@@ -22,10 +22,17 @@ export function nameWithSeat(game: PlayerView, id: string): string {
   return p.seat ? `${p.name} (${placeLabel(p.seat)})` : p.name;
 }
 
-/** A seat, or where the Stewardess is working ("crew, row 5"). */
+/** A seat, where the Stewardess is working ("crew, row 5"), or the flight deck. */
 export function placeLabel(seat: string): string {
+  if (grid.isCockpit(seat)) return 'flight deck';
   const row = grid.aisleRow(seat);
   return row === null ? seat : `crew, row ${row}`;
+}
+
+/** A seat for a small label: the seat itself, or who works where (crew in the aisle, the Pilot). */
+export function seatPill(seat: string | null): string {
+  if (!seat) return '';
+  return grid.isCockpit(seat) ? 'Pilot' : grid.isAisleSpot(seat) ? 'Crew' : seat;
 }
 
 export function shortName(name: string): string {
@@ -74,10 +81,13 @@ export function phaseHint(game: PlayerView): string {
       return 'Fasten your seatbelt. Wheels up in a moment.';
     case 'night_move':
       if (!playing) return 'The living are changing seats in the dark.';
+      if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Make your flight deck calls: seatbelt sign, jump seat, rough air, course.';
       if (you.buckled) return 'The seatbelt sign is on over your seat.';
-      return you.role === 'pilot' ? 'Change seats if you like, and pick who gets the seatbelt sign.' : 'Change seats or stay put. Nobody can talk.';
+      return 'Change seats or stay put. Nobody can talk.';
     case 'night_act':
       if (!playing) return 'Abilities are being used in the dark.';
+      if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Aim the cabin cameras at three rows.';
+      if (you.inJumpSeat) return 'You are up on the flight deck tonight.';
       return you.buckled ? 'You are buckled in. Wait for dawn.' : 'Use your ability from your new seat, or rest.';
     case 'dawn':
       return 'The lights come back on. Here is what happened overnight.';

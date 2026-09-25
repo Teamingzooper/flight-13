@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { useNow, useToast } from '../app/hooks';
 import { navigate } from '../app/router';
 import { endFlight, type OpenFlight } from '../app/sessions';
-import { isNightPhase, type Intent, type PhaseKind, type PlayerView } from '../engine';
+import { isNightPhase, type ChatMessage, type Intent, type PhaseKind, type PlayerView } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import type { ClientState } from '../net/protocol';
 import { ActionTab } from './ActionTab';
@@ -20,6 +20,28 @@ import { usePacking } from './packing';
 import { VoteTab } from './VoteTab';
 
 export type TabId = 'map' | 'action' | 'chat' | 'vote' | 'flight';
+
+/** The captain's latest announcement, for a few seconds after it comes in. */
+function PaBanner({ game }: { game: PlayerView }) {
+  const latest = [...game.chat].reverse().find((m) => m.channel === 'pa') ?? null;
+  // Announcements made before you opened the screen stay in the chat.
+  const seen = useRef<number | null>(latest?.id ?? null);
+  const [shown, setShown] = useState<ChatMessage | null>(null);
+  useEffect(() => {
+    if (!latest || latest.id === seen.current) return undefined;
+    seen.current = latest.id;
+    setShown(latest);
+    const id = setTimeout(() => setShown(null), 8000);
+    return () => clearTimeout(id);
+  }, [latest?.id]);
+  if (!shown) return null;
+  const who = game.players.find((p) => p.id === shown.from)?.name ?? '';
+  return (
+    <div class="pa-banner" role="status">
+      <b>📢 Captain {who}</b> {shown.text}
+    </div>
+  );
+}
 
 const TABS: { id: TabId; label: string; Icon: () => VNode }[] = [
   { id: 'map', label: 'Map', Icon: IconMap },
@@ -98,6 +120,7 @@ export function TV({
             onUse3D={onUse3D}
             tools={embedded ? null : <VoiceButton flight={flight} />}
           />
+          <PaBanner game={game} />
           <main class="tv-body">
             {game.phase.kind === 'packing' ? (
               you ? (

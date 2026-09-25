@@ -413,6 +413,19 @@ input[type='range'] {
   font-style: italic;
 }
 
+/* The captain on the PA. */
+.msg.pa {
+  padding: 4px 8px;
+  border-left: 3px solid var(--amber);
+  border-radius: 4px;
+  background: rgba(255, 181, 71, 0.1);
+  color: #ffe9c7;
+}
+
+.msg.pa b {
+  color: var(--amber);
+}
+
 .chat-input {
   display: flex;
   gap: 8px;

@@ -1728,3 +1728,49 @@ button.sm-num.pick:hover {
 .sm-seat.row-pick:not(:disabled) {
   cursor: pointer;
 }
+
+/* ---------- The Pilot ---------- */
+.once-tag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 181, 71, 0.15);
+  color: var(--amber);
+  font: 600 10px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.used-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+.pa-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-banner {
+  margin: 8px 12px 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 181, 71, 0.5);
+  background: rgba(255, 181, 71, 0.14);
+  color: #ffe9c7;
+  font-size: 14px;
+  animation: pa-in 0.3s ease-out;
+}
+
+.pa-banner b {
+  margin-right: 6px;
+  color: var(--amber);
+}
+
+@keyframes pa-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}

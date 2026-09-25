@@ -1,8 +1,8 @@
 import { Avatar } from '../app/Avatar';
-import { grid, type PlayerView } from '../engine';
+import type { PlayerView } from '../engine';
 import { ItemIcon } from '../meta/ItemIcon';
 import type { TVContext } from './context';
-import { clock, nameOf } from './format';
+import { clock, nameOf, seatPill } from './format';
 
 export function VoteTab({ ctx }: { ctx: TVContext }) {
   const { game, send, left, flight } = ctx;
@@ -48,7 +48,7 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
               {p.name}
               {p.id === game.you?.id ? ' (you)' : ''}
             </span>
-            <span class="vote-seat">{p.seat && grid.isAisleSpot(p.seat) ? 'Crew' : p.seat}</span>
+            <span class="vote-seat">{seatPill(p.seat)}</span>
             <span class="vote-count">{counts[p.id] ?? 0}</span>
             {voters(p.id).length > 0 && <span class="vote-voters">{voters(p.id).join(', ')}</span>}
           </button>
