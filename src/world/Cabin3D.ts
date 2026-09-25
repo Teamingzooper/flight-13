@@ -38,6 +38,9 @@ import { GateSet } from './sets/gate';
 import { HotelSet } from './sets/hotel';
 import { auroraSkyTexture, dawnSkyTexture, runwayTexture } from './textures';
 import { WindowView } from './windows';
+import { personality } from '../bots/personality';
+import { proximityGain } from '../net/voiceRules';
+import { planBabble } from './babble';
 
 export interface Cabin3DOptions {
   onScreenClick: () => void;
@@ -122,6 +125,10 @@ export class Cabin3D {
   /** Emoji bubbles over the heads of people gesturing. */
   private readonly bubbles = document.createElement('div');
   private readonly bubbleEls = new Map<string, { el: HTMLDivElement; until: number }>();
+  /** What people said out loud in the cabin, over their heads for a few seconds. */
+  private readonly speechEls = new Map<string, { el: HTMLDivElement; until: number }>();
+  /** The last chat line heard (the chat already there when you arrive stays quiet). */
+  private lastChat: number | null = null;
   /** Voice chat: it listens from your camera, places voices at people's heads, and says who is talking. */
   private voice: VoiceChat | null = null;
   private readonly talkEls = new Map<string, HTMLDivElement>();
@@ -289,6 +296,7 @@ export class Cabin3D {
     this.onAir = state.pa ?? null;
     const game = state.game;
     if (!game) return;
+    this.hearChat(game, state);
     const fresh = !this.built || this.built.rows !== game.cabin.rows;
     if (fresh) this.build(game.cabin.rows);
     const { cabin, lighting, windows, effects, skies } = this.built!;
@@ -882,10 +890,62 @@ export class Cabin3D {
   }
 
   /** Keep each bubble over its head, and drop it when the gesture is done. */
+  /** New lines said out loud in the cabin: a bubble over the speaker, and gibberish from a bot. */
+  private hearChat(game: PlayerView, state: ClientState): void {
+    const newest = game.chat.at(-1)?.id ?? 0;
+    if (this.lastChat === null) {
+      this.lastChat = newest;
+      return;
+    }
+    for (const m of game.chat) {
+      if (m.id <= this.lastChat || m.channel !== 'cabin' || m.from === this.youId) continue;
+      this.speak(m.from, m.text);
+      if (state.players.find((p) => p.id === m.from)?.bot) this.babble(m.from, m.text);
+    }
+    this.lastChat = Math.max(this.lastChat, newest);
+  }
+
+  private speak(id: string, text: string): void {
+    this.speechEls.get(id)?.el.remove();
+    const el = document.createElement('div');
+    el.className = 'speech-bubble';
+    el.textContent = text.length > 80 ? `${text.slice(0, 79).trimEnd()}…` : text;
+    // Out of sight until the next frame puts it over the right head.
+    el.hidden = true;
+    this.bubbles.appendChild(el);
+    this.speechEls.set(id, { el, until: this.time + Math.min(9, 3.5 + text.length * 0.06) });
+  }
+
+  private babble(id: string, text: string): void {
+    const actor = this.people.actor(id);
+    if (!actor || actor.hidden || this.showing !== 'cabin') return;
+    const head = actor.eyes();
+    const cam = this.camera.position;
+    const gain = proximityGain(head.distanceTo(cam));
+    if (gain < 0.02) return;
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const pan = head.clone().sub(cam).normalize().dot(right);
+    cabinAudio.babble(planBabble(text, personality(id).pitch), { gain, pan });
+  }
+
   private placeBubbles(time: number): void {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     const at = new THREE.Vector3();
+    for (const [id, bubble] of this.speechEls) {
+      const actor = this.people.actor(id);
+      if (!actor || time > bubble.until) {
+        bubble.el.remove();
+        this.speechEls.delete(id);
+        continue;
+      }
+      // Above the head, and above a gesture bubble if there is one.
+      actor.joints.head.getWorldPosition(at).add(new THREE.Vector3(0, this.bubbleEls.has(id) ? 0.78 : 0.36, 0));
+      const p = at.project(this.camera);
+      const visible = !actor.hidden && !this.dark && this.showing === 'cabin' && p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
+      bubble.el.hidden = !visible;
+      if (visible) bubble.el.style.transform = `translate(${((p.x + 1) / 2) * width}px, ${((1 - p.y) / 2) * height}px) translate(-50%, -100%)`;
+    }
     for (const [id, bubble] of this.bubbleEls) {
       const actor = this.people.actor(id);
       if (!actor || time > bubble.until) {

@@ -583,6 +583,37 @@
   z-index: -1;
 }
 
+/* What someone said out loud, over their head. */
+.speech-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 230px;
+  width: max-content;
+  padding: 6px 10px 7px;
+  border-radius: 12px;
+  background: rgba(240, 244, 252, 0.94);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  color: #141a26;
+  font: 600 13px/1.3 var(--body, system-ui, sans-serif);
+  text-align: center;
+  pointer-events: none;
+  animation: emote-pop 0.2s ease-out;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 2px;
+  z-index: -1;
+}
+
 @keyframes emote-pop {
   from {
     opacity: 0;

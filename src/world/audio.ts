@@ -361,6 +361,52 @@ class CabinAudio {
     this.setEngine(this.engineLevel, 2);
   }
 
+  /**
+   * A bot talking: blips of gibberish (see babble.ts), from its side of the cabin (`pan` -1..1) and as loud as
+   * its distance allows (`gain` 0..1).
+   */
+  babble(syllables: readonly { at: number; dur: number; freq: number; formant: number; level: number }[], opts: { gain: number; pan: number }): void {
+    const t = this.now();
+    if (t === null || opts.gain < 0.02 || syllables.length === 0) return;
+    const ctx = this.ctx!;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = clamp(opts.pan, -1, 1);
+    const bus = ctx.createGain();
+    bus.gain.value = 0.2 * opts.gain;
+    bus.connect(pan).connect(this.muffle!);
+    let end = t;
+    for (const s of syllables) {
+      const at = t + 0.03 + s.at;
+      const osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(s.freq, at);
+      osc.frequency.linearRampToValueAtTime(s.freq * 0.9, at + s.dur);
+      // Two formants: a fixed low one for body, the vowel's for colour.
+      const body = ctx.createBiquadFilter();
+      body.type = 'bandpass';
+      body.frequency.value = 600;
+      body.Q.value = 3;
+      const vowel = ctx.createBiquadFilter();
+      vowel.type = 'bandpass';
+      vowel.frequency.value = s.formant;
+      vowel.Q.value = 4;
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, at);
+      env.gain.exponentialRampToValueAtTime(Math.max(0.0002, s.level), at + 0.012);
+      env.gain.exponentialRampToValueAtTime(0.0001, at + s.dur);
+      osc.connect(body).connect(env);
+      osc.connect(vowel).connect(env);
+      env.connect(bus);
+      osc.start(at);
+      osc.stop(at + s.dur + 0.03);
+      end = Math.max(end, at + s.dur + 0.05);
+    }
+    setTimeout(() => {
+      bus.disconnect();
+      pan.disconnect();
+    }, (end - t) * 1000 + 200);
+  }
+
   private now(): number | null {
     return this.ctx && this.muffle ? this.ctx.currentTime : null;
   }
