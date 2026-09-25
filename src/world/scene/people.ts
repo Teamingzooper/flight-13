@@ -690,6 +690,11 @@ export class People {
   private readonly slots = new Map<string, number>();
   /** Actors who are not players (the police, in an ending): `sync` leaves them alone. */
   private readonly extras = new Set<string>();
+  /** Stand-ins only the cabin cameras see (last night's tape). */
+  private readonly cameraOnly = new Set<string>();
+  /** Players the cameras leave out while a tape plays (their stand-ins sit in for them). */
+  private cameraHide = new Set<string>();
+  private cameraPass = false;
   private readonly free: number[] = [];
   /** Stable standing spot per restrained passenger. */
   private readonly rearSlots = new Map<string, number>();
@@ -732,8 +737,11 @@ export class People {
     return false;
   }
 
-  /** Someone who is not a player, standing at `at` (the police, in an ending). Null if the cabin is full. */
-  extra(id: string, look: Look, at: THREE.Vector3, face = ''): Actor | null {
+  /**
+   * Someone who is not a player, standing at `at` (the police, in an ending), or a stand-in only the cabin cameras
+   * see. Null if the cabin is full.
+   */
+  extra(id: string, look: Look, at: THREE.Vector3, face = '', cameraOnly = false): Actor | null {
     const existing = this.actors.get(id);
     if (existing) return existing;
     const slot = this.free.pop();
@@ -744,9 +752,38 @@ export class People {
     this.actors.set(id, actor);
     this.slots.set(id, slot);
     this.extras.add(id);
+    if (cameraOnly) this.cameraOnly.add(id);
     this.paint(id);
     if (face) this.setFace(id, actor, face);
     return actor;
+  }
+
+  /** Take an extra away again. */
+  dropExtra(id: string): void {
+    const actor = this.actors.get(id);
+    if (!actor || !this.extras.has(id)) return;
+    this.hide(id);
+    this.setFace(id, actor, '');
+    this.free.push(this.slots.get(id)!);
+    this.slots.delete(id);
+    this.actors.delete(id);
+    this.extras.delete(id);
+    this.cameraOnly.delete(id);
+    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Players the cameras leave out while their stand-ins sit in for them (empty when no tape plays). */
+  setCameraHide(ids: Iterable<string>): void {
+    this.cameraHide = new Set(ids);
+  }
+
+  /** Draw for the cabin cameras (true) or for your own eyes (false): swaps camera-only stand-ins and the people they stand in for. */
+  cameraView(on: boolean): void {
+    if (this.cameraPass === on) return;
+    this.cameraPass = on;
+    if (this.cameraOnly.size === 0 && this.cameraHide.size === 0) return;
+    for (const [id, actor] of this.actors) if (this.cameraOnly.has(id) || this.cameraHide.has(id)) this.write(id, actor);
+    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -840,7 +877,8 @@ export class People {
   private write(id: string, actor: Actor): void {
     const slot = this.slots.get(id)!;
     // Your camera travels on its own path, so your body only shows once you have arrived (or while it follows you).
-    const hideBody = actor.hidden || (actor.hideHead && actor.walking);
+    const offCamera = this.cameraPass ? this.cameraHide.has(id) : this.cameraOnly.has(id);
+    const hideBody = actor.hidden || offCamera || (actor.hideHead && actor.walking);
     const look = actor.look;
     this.parts.forEach((part, index) => {
       const mesh = this.meshes[index];

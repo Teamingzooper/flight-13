@@ -83,7 +83,8 @@ export function TV({
   onUse3D?: () => void;
 }) {
   const game = state.game!;
-  const { ctx, toast } = useTVContext(flight, snap, state);
+  const { ctx: shared, toast } = useTVContext(flight, snap, state);
+  const ctx = embedded ? { ...shared, embedded } : shared;
   const [tab, setTab] = useState<TabId>(() => AUTO_TAB[game.phase.kind] ?? 'action');
   const [leaving, setLeaving] = useState(false);
   const phaseKey = `${game.phase.kind}:${game.phase.night}`;

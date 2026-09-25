@@ -201,6 +201,8 @@ export interface Sighting {
   kind: 'under_seat' | 'cart' | 'lavatory' | 'lean' | 'drink' | 'check' | 'look_around' | 'cuff' | 'flashlight' | 'pills';
   target?: string;
   seat?: SeatId;
+  /** What the camera caption says ("Jo bent down under their seat"). Missing in games saved before replays. */
+  text?: string;
 }
 
 export interface NightChoices {

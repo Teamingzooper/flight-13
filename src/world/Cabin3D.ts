@@ -20,7 +20,7 @@ import type { ClientState, Pose } from '../net/protocol';
 import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
 import { directorCues, type Cue } from './director';
-import { BULKHEAD_Z, colX, eyePosition, rowZ } from './layout';
+import { BULKHEAD_Z, colX, eyePosition, rowZ, seatPose } from './layout';
 import { Lighting, type LightMode } from './lighting';
 import { buildCabin, type CabinParts } from './scene/cabin';
 import { Cart } from './scene/cart';
@@ -41,6 +41,9 @@ import { WindowView } from './windows';
 import { personality } from '../bots/personality';
 import { proximityGain } from '../net/voiceRules';
 import { planBabble } from './babble';
+import { atTheControls, deckLook, type ControlId } from './cockpit';
+import { clipAt, type Clip, type Tape } from './tape';
+import type { Actor } from './scene/people';
 
 export interface Cabin3DOptions {
   onScreenClick: () => void;
@@ -57,9 +60,32 @@ export interface Cabin3DOptions {
   onUnpack?: (slot: number) => void;
   /** The ending cutscene started (true) or finished (false): hold the end screen until it is over. */
   onEnding?: (playing: boolean) => void;
+  /** The captain clicked one of his controls on the flight deck. */
+  onControl?: (id: ControlId) => void;
+  /** The crosshair moved onto one of the captain's controls (or off them: null). */
+  onAimControl?: (id: ControlId | null) => void;
+}
+
+/** The camera console: the cabin cameras drawn into `screen` (an element over the canvas), and last night's tape. */
+export interface ConsoleView {
+  screen: HTMLElement;
+  startRow: number;
+  tape: Tape | null;
 }
 
 export type SceneKind = 'walk' | 'search' | 'glance';
+
+/** A cabin camera in the ceiling at the front of `start`'s three rows, looking back down them. */
+function aimCabinCamera(cam: THREE.PerspectiveCamera, start: number): void {
+  cam.position.set(0.25, 2.05, rowZ(start) - 0.7);
+  cam.lookAt(-0.1, 0.55, rowZ(start + 2) + 0.2);
+}
+
+/** The console's view of the same rows: steeper, so the three rows fill the big screen. */
+function aimConsoleCamera(cam: THREE.PerspectiveCamera, start: number): void {
+  cam.position.set(0.3, 2.05, rowZ(start) - 0.6);
+  cam.lookAt(-0.05, 0.4, rowZ(start + 1) + 0.3);
+}
 
 /** A night away from your seat: in the lavatory, or up on the flight deck. */
 type Away = 'wc' | 'deck' | null;
@@ -166,6 +192,14 @@ export class Cabin3D {
   private state: ClientState | null = null;
   private snap: ClientSnapshot | null = null;
   private aimOnScreen = false;
+  private aimControl: ControlId | null = null;
+  /** The camera console, while open, and the tape it plays. */
+  private consoleView: ConsoleView | null = null;
+  /** The console's own camera (the monitor's keeps its small frame). */
+  private readonly consoleCam = new THREE.PerspectiveCamera(62, 1.6, 0.05, 30);
+  private tape: { plan: Tape; start: number; cast: Map<string, Actor> } | null = null;
+  /** Where everyone sat on the night the cameras last ran (the tape puts them back there). */
+  private nightSeats: { night: number; seats: Map<string, SeatId> } | null = null;
   private disposed = false;
   /** The previous view, for the director to compare against. */
   private lastView: PlayerView | null = null;
@@ -346,9 +380,9 @@ export class Cabin3D {
     // Through the windscreen: the runway on the ground, then the sky for the time of day.
     this.viewMode = grounded ? 'runway' : night ? (bermuda ? 'aurora' : 'night') : kind === 'dawn' ? 'dawn' : 'day';
     if (kind !== 'ended') this.landingView = false;
-    // The overhead seatbelt switch glows while the Pilot has the sign on for someone tonight.
-    const belt = game.mine?.seatbelt;
-    this.built!.flightDeck.setSeatbeltLight(night && !!game.you && grid.isCockpit(game.you.seat) && !!belt && belt !== 'none');
+    // The captain's controls show tonight's calls (and the handset is up while he is on the PA).
+    this.built!.flightDeck.setLook(deckLook(game, !!game.you && state.pa === game.you.id));
+    this.noteNightSeats(game);
     if (night && game.log.some((e) => e.tag === 'turbulence' && e.night === game.phase.night)) this.turbulentNight = game.phase.night;
 
     this.youId = game.you?.id ?? null;
@@ -646,6 +680,8 @@ export class Cabin3D {
       const row = grid.aisleRow(seat);
       const screen = grid.isCockpit(seat) ? flightDeck.captainScreen : row === null ? seats.screenMatrix(seat) : Cart.tabletAt(row);
       this.controls.setSeat(new THREE.Vector3(e.x, e.y, e.z), screen, animate, 0, row !== null);
+      // The captain can look right up at the overhead panel.
+      this.controls.setLookUp(grid.isCockpit(seat) ? 1.05 : undefined);
       useScreen(screen);
       return;
     }
@@ -661,15 +697,27 @@ export class Cabin3D {
   }
 
   private tap(ndc: THREE.Vector2): void {
-    if (!this.controls.walking && this.hitsScreen(ndc)) this.opts.onScreenClick();
+    const hit = this.controls.walking ? null : this.aimedAt(ndc);
+    if (hit === 'screen') this.opts.onScreenClick();
+    else if (hit) this.opts.onControl?.(hit);
     else this.controls.requestLock();
   }
 
-  private hitsScreen(ndc: THREE.Vector2): boolean {
-    if (!this.liveMesh.visible) return false;
+  /** What is under a point of the view: your screen, one of the captain's controls (if you are him), or nothing. */
+  private aimedAt(ndc: THREE.Vector2): 'screen' | ControlId | null {
+    const targets: THREE.Object3D[] = [];
+    if (this.liveMesh.visible) targets.push(this.liveMesh);
+    const game = this.lastView;
+    if (this.built && this.seatKey === 'Cockpit' && game && atTheControls(game)) targets.push(...this.built.flightDeck.controls);
+    if (targets.length === 0) return null;
     this.raycaster.setFromCamera(ndc, this.camera);
-    return this.raycaster.intersectObject(this.liveMesh, false).length > 0;
+    // Controls sit within arm's reach; anything further is the windscreen or the cabin.
+    const [hit] = this.raycaster.intersectObjects(targets, false);
+    if (!hit) return null;
+    if (hit.object === this.liveMesh) return 'screen';
+    return hit.distance < 1.6 ? (hit.object.userData.control as ControlId) : null;
   }
+
 
   private resize(): void {
     const width = this.container.clientWidth || 1;
@@ -853,16 +901,24 @@ export class Cabin3D {
     }
     this.applyPoses(time);
     this.playEmotes(time);
+    this.playTape(time);
     this.people.update(dt, time);
     this.placeBubbles(time);
     this.followVoice();
     this.drawScreen(time);
-    const aim = this.controls.locked && this.hitsScreen(new THREE.Vector2(0, 0));
+    const aimed = this.controls.locked ? this.aimedAt(new THREE.Vector2(0, 0)) : null;
+    const aim = aimed !== null;
     if (aim !== this.aimOnScreen) {
       this.aimOnScreen = aim;
       this.opts.onAimChange?.(aim);
     }
+    const control = aimed === 'screen' ? null : aimed;
+    if (control !== this.aimControl) {
+      this.aimControl = control;
+      this.opts.onAimControl?.(control);
+    }
     this.composer.render(dt);
+    this.drawConsole();
   }
 
   /** Start any new gestures, with a bubble over the head (yours shows above the gesture bar). */
@@ -1124,8 +1180,8 @@ export class Cabin3D {
       this.forwardView.update(dt, this.landingView ? 'runway' : this.viewMode, this.viewSpeed, this.attitude.pitch, time, this.attitude.roll);
       this.display.draw(this.attitude, time);
     }
-    // The Pilot's camera monitor, about eight times a second.
-    if (this.seatKey === 'Cockpit' && !this.ending && time - this.cctv.renderedAt > 0.125) {
+    // The Pilot's camera monitor, about eight times a second (not while the console covers it).
+    if (this.seatKey === 'Cockpit' && !this.ending && !this.consoleView && time - this.cctv.renderedAt > 0.125) {
       this.cctv.renderedAt = time;
       this.renderCameras(time, built);
     }
@@ -1145,8 +1201,7 @@ export class Cabin3D {
     const last = Math.min(built.rows, start + 2);
     built.flightDeck.setMonitorLabel(`CAM ${Math.ceil(start / 3)}  ·  ROWS ${start}–${last}`);
     const cam = this.cctv.camera;
-    cam.position.set(0.25, 2.05, rowZ(start) - 0.7);
-    cam.lookAt(-0.1, 0.55, rowZ(start + 2) + 0.2);
+    aimCabinCamera(cam, start);
     const renderer = this.renderer;
     const target = renderer.getRenderTarget();
     const shadows = renderer.shadowMap.autoUpdate;
@@ -1157,6 +1212,220 @@ export class Cabin3D {
     renderer.setRenderTarget(target);
     this.cctv.nightVision.intensity = 0;
     renderer.shadowMap.autoUpdate = shadows;
+  }
+
+  /** Open the camera console (or close it: null). A new tape starts playing from the top. */
+  setConsole(view: ConsoleView | null): void {
+    const tape = view?.tape ?? null;
+    if (tape !== (this.tape?.plan ?? null)) this.loadTape(tape);
+    this.consoleView = view;
+  }
+
+  /** Play the tape on the console again from the top. */
+  replayTape(): void {
+    if (this.tape) this.tape.start = this.time;
+  }
+
+  /** Seconds into the tape on the console, or null when none plays. */
+  get tapeTime(): number | null {
+    return this.tape ? this.time - this.tape.start : null;
+  }
+
+  /** Where everyone sat on a night, as this view saw it (null if it did not see that night). */
+  seatsOn(night: number): ReadonlyMap<string, SeatId> | null {
+    return this.nightSeats?.night === night ? this.nightSeats.seats : null;
+  }
+
+  /** In the dark, note who sits where (the Pilot's tape puts them back there, even after the dead are gone). */
+  private noteNightSeats(game: PlayerView): void {
+    if (game.phase.kind !== 'night_act') return;
+    const seats = new Map<string, SeatId>();
+    for (const p of game.players) {
+      if (p.status !== 'alive' || !p.seat || grid.isCockpit(p.seat) || p.id === game.washroom || p.id === game.jumpseat) continue;
+      seats.set(p.id, p.seat);
+    }
+    this.nightSeats = { night: game.phase.night, seats };
+  }
+
+  /** Put the tape's cast back in their seats as stand-ins only the cameras see (or clear them away). */
+  private loadTape(plan: Tape | null): void {
+    if (this.tape) for (const id of this.tape.cast.keys()) this.people.dropExtra(`tape:${id}`);
+    this.people.setCameraHide([]);
+    this.tape = null;
+    if (!plan) return;
+    const players = new Map((this.lastView?.players ?? []).map((p) => [p.id, p]));
+    const cast = new Map<string, Actor>();
+    for (const { id, seat } of plan.cast) {
+      const p = players.get(id);
+      if (!p) continue;
+      const at = seatPose(seat);
+      const actor = this.people.extra(`tape:${id}`, p.look, new THREE.Vector3(at.x, 0, at.z), this.faceSource?.get(id) ?? '', true);
+      if (!actor) continue;
+      actor.standing = false;
+      actor.place(seat, false);
+      cast.set(id, actor);
+    }
+    this.people.setCameraHide(cast.keys());
+    this.tape = { plan, start: this.time, cast };
+  }
+
+  /** Act out the clip playing now: everyone dozes, and the one the camera caught does what it saw. */
+  private playTape(time: number): void {
+    const tape = this.tape;
+    if (!tape) return;
+    const t = time - tape.start;
+    for (const actor of tape.cast.values()) {
+      actor.duck = false;
+      actor.handsUp = false;
+      actor.pointAt = null;
+      actor.gaze = null;
+      actor.standing = false;
+      actor.pose = { yaw: 0, pitch: -0.45, lean: false };
+    }
+    const clip = clipAt(tape.plan, t);
+    const into = clip ? t - clip.at : 0;
+    // Each clip settles in and out, so one person's move reads before the next begins.
+    if (clip && into > 0.35 && into < clip.dur - 0.45) this.actOut(clip, into);
+  }
+
+  private actOut(clip: Clip, into: number): void {
+    const tape = this.tape!;
+    const actor = tape.cast.get(clip.actor);
+    if (!actor) return;
+    const seatAt = (id: string | undefined, y: number) => {
+      const seat = id ? tape.plan.seats.get(id) : undefined;
+      if (!seat) return null;
+      const p = seatPose(seat);
+      return new THREE.Vector3(p.x, y, p.z);
+    };
+    const self = actor.root.position.clone();
+    const other = clip.target && clip.target !== clip.actor ? clip.target : undefined;
+    const target = seatAt(other, 0.95);
+    const face = (p: THREE.Vector3) => p.clone().setY(1.15);
+    actor.pose = null;
+    switch (clip.kind) {
+      case 'under_seat':
+        actor.duck = true;
+        actor.pointAt = self.clone().add(new THREE.Vector3(0, 0.08, -0.32));
+        break;
+      case 'lean':
+        if (target) {
+          actor.pointAt = target;
+          actor.gaze = face(target);
+        } else {
+          // Treating yourself: rummaging in a bag at your feet.
+          actor.duck = true;
+          actor.pointAt = self.clone().add(new THREE.Vector3(0.22, 0.2, -0.12));
+        }
+        break;
+      case 'drink':
+      case 'pills':
+        if (target) {
+          actor.pointAt = target.clone().setY(clip.kind === 'drink' ? 1.05 : 0.8);
+          actor.gaze = face(target);
+        }
+        break;
+      case 'check':
+        actor.duck = true;
+        actor.pointAt = self.clone().add(new THREE.Vector3(into < clip.dur / 2 ? -0.75 : 0.75, 0.15, 0));
+        break;
+      case 'look_around':
+        actor.standing = true;
+        actor.gaze = self.clone().add(new THREE.Vector3(Math.sin(into * 1.9) * 2, 1.5, 0.6));
+        break;
+      case 'cuff':
+        actor.standing = true;
+        if (target) {
+          actor.pointAt = target;
+          actor.gaze = face(target);
+        }
+        if (other) {
+          const held = tape.cast.get(other);
+          if (held) held.handsUp = true;
+        }
+        break;
+      case 'flashlight': {
+        const seat = clip.seat ? seatPose(clip.seat) : null;
+        const spot = seat ? new THREE.Vector3(seat.x, 0.12, seat.z - 0.15) : self.clone().add(new THREE.Vector3(0, 0.1, -0.45));
+        actor.pointAt = spot;
+        actor.gaze = spot;
+        break;
+      }
+      case 'cart':
+        actor.pointAt = new THREE.Vector3(0, 0.95, self.z);
+        actor.gaze = actor.pointAt.clone();
+        break;
+      case 'lavatory':
+        actor.standing = true;
+        actor.gaze = new THREE.Vector3(0, 1.5, rowZ(this.built?.rows ?? 8) + 1.4);
+        break;
+    }
+  }
+
+  /** The camera console: the cabin cameras over the chosen rows, full size in their frame, with name tags over heads. */
+  private drawConsole(): void {
+    const view = this.consoleView;
+    const built = this.built;
+    if (!view || !built || this.seatKey !== 'Cockpit') return;
+    const box = this.renderer.domElement.getBoundingClientRect();
+    const r = view.screen.getBoundingClientRect();
+    const w = Math.round(r.width);
+    const h = Math.round(r.height);
+    if (w < 8 || h < 8) return;
+    const x = Math.round(r.left - box.left);
+    const y = Math.round(box.bottom - r.bottom);
+    const cam = this.consoleCam;
+    aimConsoleCamera(cam, Math.max(1, Math.min(view.startRow, built.rows - 2)));
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+    const renderer = this.renderer;
+    const shadows = renderer.shadowMap.autoUpdate;
+    const autoClear = renderer.autoClear;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.autoClear = false;
+    // Night vision in the dark (and on last night's tape). This draws straight to the screen, with no tone mapping
+    // to tame it, so it needs far less light than the little monitor's render.
+    this.cctv.nightVision.intensity = isNightPhase(this.lastView?.phase.kind ?? 'day_discuss') || this.tape ? 1.3 : 0.25;
+    this.people.cameraView(this.tape !== null);
+    renderer.setRenderTarget(null);
+    renderer.setScissorTest(true);
+    renderer.setViewport(x, y, w, h);
+    renderer.setScissor(x, y, w, h);
+    renderer.clear();
+    const draw = () => renderer.render(this.scene, cam);
+    // Last night's tape looks like night, whatever the time now: lights down, dark windows.
+    if (this.tape && !isNightPhase(this.lastView?.phase.kind ?? 'day_discuss')) {
+      built.lighting.withMode('night', () => built.windows.withShade(0.06, draw));
+    } else draw();
+    renderer.setScissorTest(false);
+    const size = renderer.getSize(new THREE.Vector2());
+    renderer.setViewport(0, 0, size.x, size.y);
+    this.people.cameraView(false);
+    this.cctv.nightVision.intensity = 0;
+    renderer.autoClear = autoClear;
+    renderer.shadowMap.autoUpdate = shadows;
+    this.placeTags(view, cam, w, h);
+  }
+
+  /** Name tags (the console's `[data-cctv-tag]` elements) float over the heads the cameras see. */
+  private placeTags(view: ConsoleView, cam: THREE.PerspectiveCamera, w: number, h: number): void {
+    const head = new THREE.Vector3();
+    for (const tag of view.screen.querySelectorAll<HTMLElement>('[data-cctv-tag]')) {
+      const id = tag.dataset.cctvTag!;
+      const actor = this.tape?.cast.get(id) ?? this.people.actor(id);
+      if (!actor || actor.hidden) {
+        tag.hidden = true;
+        continue;
+      }
+      actor.eyes(head);
+      head.y += 0.25;
+      head.project(cam);
+      // Someone right under the camera has their tag held just inside the top of the picture.
+      const inView = head.z < 1 && Math.abs(head.x) < 0.98 && head.y > -0.98;
+      tag.hidden = !inView;
+      const y = Math.min(head.y, 0.84);
+      if (inView) tag.style.transform = `translate(${((head.x + 1) / 2) * w}px, ${((1 - y) / 2) * h}px) translate(-50%, -100%)`;
+    }
   }
 
   /** Play one cue from the director. */

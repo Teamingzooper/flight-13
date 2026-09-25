@@ -14,4 +14,6 @@ export interface TVContext {
   /** Send an intent; shows a toast and resolves false when the host refuses it. */
   send: (intent: Intent) => Promise<boolean>;
   toast: (message: string) => void;
+  /** Drawn on a screen inside the 3D cabin (the captain works his controls there instead). */
+  embedded?: boolean;
 }

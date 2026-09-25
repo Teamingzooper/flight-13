@@ -68,6 +68,17 @@ export class WindowView {
     for (const map of this.maps) map.dispose();
   }
 
+  /** Draw once with every window shaded to `shade` (the cabin cameras' tape of last night), then put them back. */
+  withShade(shade: number, draw: () => void): void {
+    const saved = this.glass.map((g) => g.color.r);
+    for (const g of this.glass) g.color.setScalar(shade);
+    try {
+      draw();
+    } finally {
+      this.glass.forEach((g, i) => g.color.setScalar(saved[i]));
+    }
+  }
+
   private apply(texture: THREE.Texture): void {
     this.glass.forEach((g, i) => {
       const old = this.maps[i];

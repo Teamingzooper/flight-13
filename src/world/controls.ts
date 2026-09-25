@@ -394,6 +394,8 @@ export class SeatControls {
   private pitchVel = 0;
   private targetYaw = 0;
   private targetPitch = REST_PITCH;
+  /** How far up you can look: the captain can look up at the overhead panel. */
+  private pitchMax = PITCH_MAX;
   private restYaw = 0;
   private roll = 0;
   private rollVel = 0;
@@ -618,7 +620,7 @@ export class SeatControls {
     const dz = target.z - from.z;
     const yaw = this.restYaw + clamp(wrap(Math.atan2(-dx, -dz) - this.restYaw), -YAW_LIMIT, YAW_LIMIT);
     this.targetYaw = this.yaw + wrap(yaw - this.yaw);
-    this.targetPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), PITCH_MIN, PITCH_MAX);
+    this.targetPitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), PITCH_MIN, this.pitchMax);
     this.leanTarget = 0;
     this.glanceUntil = this.time + seconds;
   }
@@ -845,6 +847,11 @@ export class SeatControls {
       return;
     }
     this.targetYaw = clamp(this.targetYaw - dx * speed, this.restYaw - YAW_LIMIT, this.restYaw + YAW_LIMIT);
-    this.targetPitch = clamp(this.targetPitch - dy * speed, PITCH_MIN, PITCH_MAX);
+    this.targetPitch = clamp(this.targetPitch - dy * speed, PITCH_MIN, this.pitchMax);
+  }
+
+  /** How far up this seat lets you look (radians; the default suits a cabin seat). */
+  setLookUp(max = PITCH_MAX): void {
+    this.pitchMax = max;
   }
 }
