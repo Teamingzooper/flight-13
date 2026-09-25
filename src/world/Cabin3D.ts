@@ -50,6 +50,7 @@ import { proximityGain } from '../net/voiceRules';
 import { planBabble } from './babble';
 import { atTheControls, deckLook, type ControlId } from './cockpit';
 import { buildStaircase } from './scene/staircase';
+import { buildGalley } from './scene/galley';
 import { Trays } from './scene/trays';
 import { clipAt, type Clip, type Tape } from './tape';
 import type { Actor } from './scene/people';
@@ -714,6 +715,7 @@ export class Cabin3D {
     group.add(cabin.group, seats.group, effects.group, lavatory.group, flightDeck.group);
     // The jumbo's spiral staircase up to the upper deck, in the front galley.
     if (plane === 'jumbo') group.add(buildStaircase());
+    group.add(buildGalley(plane));
     this.scene.add(group);
     const lighting = new Lighting(this.scene, cabin, seats, windows, this.profile.shadows);
     lighting.setShadows(this.profile.shadows, this.profile.shadowMapSize, this.profile.shadowRadius);

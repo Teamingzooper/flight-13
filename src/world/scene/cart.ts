@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { TABLET, rowZ } from '../layout';
 import { SCREEN_H, SCREEN_W } from './seats';
+import { withDetail } from '../graphics';
 
 /** The crew tablet's screen on the cart, in the cart's own space. */
 const TABLET_LOCAL = new THREE.Matrix4().compose(
@@ -23,7 +24,9 @@ export class Cart {
 
   constructor() {
     this.group.name = 'cart';
-    const aluminium = new THREE.MeshStandardMaterial({ color: '#c3c9d1', roughness: 0.28, metalness: 0.75 });
+    // Brushed aluminium (satin, not a mirror), with its doors, latches and a band of the airline's colour.
+    const aluminium = withDetail(new THREE.MeshStandardMaterial({ color: '#b9c0c9', roughness: 0.42, metalness: 0.55 }), 'brushed', [2, 2], 0.35);
+    const stripe = new THREE.MeshStandardMaterial({ color: '#1f3f8f', roughness: 0.5 });
     const dark = new THREE.MeshStandardMaterial({ color: '#2a2f38', roughness: 0.6 });
     const top = new THREE.MeshStandardMaterial({ color: '#e7e2d6', roughness: 0.5 });
     const body = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.92, 0.72, 3, 0.03), aluminium);
@@ -33,6 +36,24 @@ export class Cart {
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.035, 0.03), dark);
     handle.position.set(0, 0.95, 0.38);
     this.group.add(body, tray, handle);
+    // The airline's band round the top, a door at each end with its latch, and the panel seams down the sides.
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.305, 0.05, 0.725), stripe);
+    band.position.y = 0.94;
+    this.group.add(band);
+    for (const end of [-1, 1]) {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.004), dark);
+      door.position.set(0, 0.5, end * 0.362);
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.69, 0.004), aluminium);
+      panel.position.set(0, 0.5, end * 0.364);
+      const latch = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 0.018), dark);
+      latch.position.set(0.08, 0.78, end * 0.37);
+      this.group.add(door, panel, latch);
+      for (const z of [-0.12, 0.12]) {
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.8, 0.006), dark);
+        seam.position.set(end * 0.151, 0.52, z);
+        this.group.add(seam);
+      }
+    }
     // The crew tablet, propped on a little stand at the handle end (the Stewardess's screen).
     const tablet = new THREE.Mesh(new RoundedBoxGeometry(SCREEN_W + 0.03, SCREEN_H + 0.03, 0.014, 2, 0.006), dark);
     tablet.applyMatrix4(new THREE.Matrix4().multiplyMatrices(TABLET_LOCAL, new THREE.Matrix4().makeTranslation(0, 0, -0.009)));

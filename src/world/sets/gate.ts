@@ -82,16 +82,22 @@ function passTexture(pass: PassInfo): THREE.CanvasTexture {
     g.fillStyle = '#7a8394';
     g.font = '600 15px sans-serif';
     g.fillText('PHOTO ID', 84, 334);
-    const field = (label: string, value: string, x: number, y: number, size = 38) => {
+    /** A label and its value; a long value shrinks to fit `width` (a name is never cut short). */
+    const field = (label: string, value: string, x: number, y: number, size = 38, width = Infinity) => {
       g.fillStyle = '#7a8394';
       g.font = '600 17px sans-serif';
       g.fillText(label, x, y);
       g.fillStyle = '#16213b';
-      g.font = `bold ${size}px sans-serif`;
+      let fit = size;
+      g.font = `bold ${fit}px sans-serif`;
+      while (fit > 14 && g.measureText(value).width > width) {
+        fit -= 1;
+        g.font = `bold ${fit}px sans-serif`;
+      }
       g.fillText(value, x, y + size + 4);
     };
     const name = pass.name.toUpperCase().slice(0, 16);
-    field('PASSENGER', name, 236, 118, name.length > 11 ? 36 : 46);
+    field('PASSENGER', name, 236, 118, 46, 520);
     field('TO', `${pass.city.toUpperCase()} (${pass.destination})`, 236, 206, 30);
     field('SEAT', pass.seat, 236, 282, 44);
     field('GROUP', 'A', 400, 282, 44);
@@ -114,7 +120,7 @@ function passTexture(pass: PassInfo): THREE.CanvasTexture {
     g.lineTo(770, 410);
     g.stroke();
     g.setLineDash([]);
-    field('NAME', name.slice(0, 10), 790, 118, 28);
+    field('NAME', name, 790, 118, 28, 215);
     field('SEAT', pass.seat, 790, 196, 52);
     field('TO', pass.destination, 790, 290, 44);
   });

@@ -147,7 +147,7 @@ export function graphicsProfile(quality: Quality, touch: boolean): GraphicsProfi
 
 // ---------- Surface detail ----------
 
-export type DetailKind = 'fabric' | 'plastic' | 'carpet' | 'leather';
+export type DetailKind = 'fabric' | 'plastic' | 'carpet' | 'leather' | 'brushed';
 
 /** A normal map from a height field drawn on a canvas (Sobel slopes; `strength` steepens them). */
 function normalMapFrom(height: (g: CanvasRenderingContext2D, size: number) => void, size: number, strength: number): THREE.CanvasTexture {
@@ -182,7 +182,7 @@ function seeded(seed: number): () => number {
   return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646;
 }
 
-/** Height fields: a basket weave, fine moulded grain, cut carpet pile, pebbled leather. */
+/** Height fields: a basket weave, fine moulded grain, cut carpet pile, pebbled leather, brushed metal. */
 const HEIGHTS: Record<DetailKind, { size: number; strength: number; draw: (g: CanvasRenderingContext2D, size: number) => void }> = {
   fabric: {
     size: 128,
@@ -232,6 +232,21 @@ const HEIGHTS: Record<DetailKind, { size: number; strength: number; draw: (g: Ca
         g.beginPath();
         g.arc(r() * size, r() * size, 0.6 + r() * 1.1, 0, Math.PI * 2);
         g.fill();
+      }
+    },
+  },
+  brushed: {
+    size: 128,
+    strength: 1.2,
+    draw(g, size) {
+      g.fillStyle = '#808080';
+      g.fillRect(0, 0, size, size);
+      const r = seeded(83);
+      // Fine streaks all one way, as the brush left them.
+      for (let i = 0; i < 700; i++) {
+        const v = Math.floor(95 + r() * 70);
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(r() * size, r() * size, 10 + r() * 50, 1);
       }
     },
   },

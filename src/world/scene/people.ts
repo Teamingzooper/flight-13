@@ -98,8 +98,15 @@ export function hairGeometries(): (THREE.BufferGeometry | null)[] {
   };
   const bun = new THREE.SphereGeometry(0.045, 12, 10);
   bun.translate(0, 0.2, 0.07);
-  const longBack = new RoundedBoxGeometry(0.2, 0.2, 0.06, 2, 0.03);
-  longBack.translate(0, 0.02, 0.085);
+  // Long hair falls behind the head to the shoulders (a curved sheet, not a slab), with a lock down each side of the face.
+  const longBack = merge(
+    new THREE.CylinderGeometry(0.106, 0.12, 0.2, 24, 3, true, -Math.PI / 2 + 0.15, Math.PI - 0.3).translate(0, 0.03, 0.012),
+    ...[-1, 1].map((side) => {
+      const lock = new THREE.CapsuleGeometry(0.028, 0.13, 4, 10);
+      lock.scale(0.9, 1, 1.2);
+      return lock.translate(side * 0.094, 0.045, 0.022);
+    }),
+  );
   const spikes: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 7; i++) {
     const cone = new THREE.ConeGeometry(0.03, 0.07, 6);
@@ -116,8 +123,11 @@ export function hairGeometries(): (THREE.BufferGeometry | null)[] {
     s.translate(Math.sin(a) * 0.085, 0.132 + Math.cos(a * 2) * 0.02, Math.cos(a) * 0.075 + 0.01);
     curls.push(s);
   }
-  const brim = new THREE.CylinderGeometry(0.12, 0.12, 0.012, 20);
-  brim.translate(0, 0.16, -0.05);
+  // A cap's bill: the front half of a disc, drawn out a little and tipped down over the eyes.
+  const brim = new THREE.CylinderGeometry(0.1, 0.1, 0.012, 20, 1, false, Math.PI / 2, Math.PI);
+  brim.scale(1, 1, 1.25);
+  brim.rotateX(-0.18);
+  brim.translate(0, 0.162, -0.04);
   // A tie at the back of the head and a tail hanging down behind it.
   const tie = new THREE.SphereGeometry(0.024, 10, 8);
   tie.translate(0, 0.15, 0.116);
