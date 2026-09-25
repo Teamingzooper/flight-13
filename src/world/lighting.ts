@@ -108,6 +108,8 @@ export class Lighting {
   readonly ceiling: THREE.RectAreaLight;
   /** Your own screen lighting your face and hands at night. */
   readonly screenGlow = new THREE.PointLight('#8db3ff', 0, 1.0, 2);
+  /** Lightning through the windows: a cold white light over everything, for an instant. */
+  readonly lightning = new THREE.HemisphereLight('#dfe8ff', '#1c2433', 0);
   mode: LightMode = 'day';
   private from: Preset = PRESETS.day;
   private to: Preset = PRESETS.day;
@@ -142,7 +144,7 @@ export class Lighting {
       this.key.shadow.normalBias = 0.02;
     }
     this.key.target.position.set(0, 0.8, midZ);
-    scene.add(this.hemi, this.ambient, this.key, this.key.target, this.ceiling, this.screenGlow);
+    scene.add(this.hemi, this.ambient, this.key, this.key.target, this.ceiling, this.screenGlow, this.lightning);
     this.apply(PRESETS.day);
   }
 
@@ -166,7 +168,7 @@ export class Lighting {
 
   dispose(): void {
     this.clearReadingLights();
-    for (const light of [this.hemi, this.ambient, this.key, this.key.target, this.ceiling, this.screenGlow]) light.removeFromParent();
+    for (const light of [this.hemi, this.ambient, this.key, this.key.target, this.ceiling, this.screenGlow, this.lightning]) light.removeFromParent();
     this.key.shadow.map?.dispose();
   }
 
@@ -182,6 +184,20 @@ export class Lighting {
     } finally {
       this.apply(saved);
     }
+  }
+
+  /** At night, someone switches their reading light on or off (fewer than one in five stay on). */
+  toggleReadingLight(): void {
+    if (this.mode !== 'night') return;
+    const seats = this.cabin.readingLights.seats;
+    if (seats.length === 0) return;
+    const lit = [...this.litSeats];
+    const off = lit.length > seats.length * 0.18 || (lit.length > 0 && Math.random() < 0.5);
+    const seat = off ? lit[Math.floor(Math.random() * lit.length)] : seats[Math.floor(Math.random() * seats.length)];
+    const on = !this.litSeats.has(seat);
+    if (on) this.litSeats.add(seat);
+    else this.litSeats.delete(seat);
+    this.cabin.readingLights.set(seat, on);
   }
 
   /** Put your screen's glow in front of your face. */

@@ -291,6 +291,87 @@ export function dawnSkyTexture(): THREE.CanvasTexture {
   return texture;
 }
 
+/** A thunderstorm at night: no stars, heavy clouds banked up to the horizon. */
+export function stormSkyTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(512, 256);
+  const r = seeded(59);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, '#05070c');
+  sky.addColorStop(0.6, '#0e131d');
+  sky.addColorStop(1, '#1b2231');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 90; i++) {
+    const x = r() * 512;
+    const y = 40 + r() * 216;
+    const w = 40 + r() * 110;
+    const cloud = g.createRadialGradient(x, y, 1, x, y, w);
+    const shade = 30 + Math.floor(r() * 26);
+    cloud.addColorStop(0, `rgba(${shade},${shade + 6},${shade + 16},0.8)`);
+    cloud.addColorStop(1, `rgba(${shade},${shade + 6},${shade + 16},0)`);
+    g.fillStyle = cloud;
+    g.fillRect(x - w, y - w, w * 2, w * 2);
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** An overcast day: grey, soft and low. */
+export function cloudySkyTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(512, 256);
+  const r = seeded(71);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, '#77879c');
+  sky.addColorStop(0.6, '#a9b5c4');
+  sky.addColorStop(1, '#d9dee5');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 80; i++) {
+    const x = r() * 512;
+    const y = r() * 256;
+    const w = 50 + r() * 120;
+    const cloud = g.createRadialGradient(x, y, 1, x, y, w);
+    const shade = 170 + Math.floor(r() * 60);
+    cloud.addColorStop(0, `rgba(${shade},${shade + 4},${shade + 10},0.55)`);
+    cloud.addColorStop(1, `rgba(${shade},${shade + 4},${shade + 10},0)`);
+    g.fillStyle = cloud;
+    g.fillRect(x - w, y - w, w * 2, w * 2);
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** The evening before the night: a low sun and the sky burning orange and pink. */
+export function sunsetSkyTexture(): THREE.CanvasTexture {
+  const [canvas, g] = makeCanvas(512, 256);
+  const r = seeded(83);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, '#26295a');
+  sky.addColorStop(0.4, '#8a4f86');
+  sky.addColorStop(0.72, '#f2784f');
+  sky.addColorStop(1, '#ffc46b');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 512, 256);
+  const sun = g.createRadialGradient(160, 236, 6, 160, 236, 140);
+  sun.addColorStop(0, 'rgba(255,236,180,0.95)');
+  sun.addColorStop(1, 'rgba(255,170,90,0)');
+  g.fillStyle = sun;
+  g.fillRect(0, 90, 512, 166);
+  for (let i = 0; i < 30; i++) {
+    const x = r() * 512;
+    const y = 120 + r() * 110;
+    g.fillStyle = `rgba(${120 + r() * 60},${50 + r() * 40},${90 + r() * 40},0.4)`;
+    g.beginPath();
+    g.ellipse(x, y, 30 + r() * 90, 3 + r() * 6, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
 /** Night over the Bermuda Triangle: green curtains of light. */
 export function auroraSkyTexture(): THREE.CanvasTexture {
   const [canvas, g] = makeCanvas(512, 256);

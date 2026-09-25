@@ -11,6 +11,8 @@ export class WindowView {
   speed = 0.006;
   /** Extra vertical offset: the ground falls away as the plane climbs. */
   lift = 0;
+  /** Lightning, 0..1: the windows blaze white for an instant. */
+  flash = 0;
   private current: THREE.Texture;
   private next: THREE.Texture | null = null;
   private fade = 1;
@@ -56,8 +58,11 @@ export class WindowView {
       dip = Math.abs(1 - 2 * this.fade);
     }
     const shade = this.brightness * (0.12 + 0.88 * dip);
+    const f = this.flash;
     this.glass.forEach((g, i) => {
-      g.color.setScalar(shade);
+      // (A flash is bright and a little blue.)
+      if (f > 0.01) g.color.setRGB(shade + f * 2.2, shade + f * 2.4, shade + f * 2.9);
+      else g.color.setScalar(shade);
       const map = this.maps[i];
       map.offset.x += dt * this.speed;
       map.offset.y = this.baseY[i] + this.lift;
