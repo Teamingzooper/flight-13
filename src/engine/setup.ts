@@ -1,4 +1,4 @@
-import { DESTINATIONS } from './destinations';
+import { destinationOf } from './destinations';
 import { COCKPIT, aisleSpot, allSeats, rowsFor } from './grid';
 import { nextFloat, shuffle, type RngHolder } from './rng';
 import { isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
@@ -85,7 +85,7 @@ export function createGame(opts: CreateGameOptions): GameState {
   const { settings, players, seed, now } = opts;
   const error = checkTakeoff(settings, players);
   if (error) throw new Error(error);
-  const destination = DESTINATIONS[settings.destination];
+  const destination = destinationOf(settings);
   const rows = rowsFor(settings.maxPassengers);
   const s: GameState = {
     v: 1,
@@ -133,7 +133,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     cause: null,
     outNight: null,
     poisonedNight: null,
-    bombUsed: false,
+    bombsPlanted: 0,
     selfTreatUsed: false,
     lastSeatbeltTarget: null,
     revealed: false,
@@ -154,6 +154,6 @@ export function createGame(opts: CreateGameOptions): GameState {
 
 /** The doors close behind the last passenger: the takeoff roll starts. */
 export function clearedForTakeoff(s: GameState, now: number): void {
-  const destination = DESTINATIONS[s.settings.destination];
-  addLog(s, now, 'all', 'takeoff', `Flight 13 to ${destination.city} is cleared for takeoff. ${destination.nights} nights until landing.`);
+  const destination = destinationOf(s.settings);
+  addLog(s, now, 'all', 'takeoff', `Flight 13 to ${destination.city} is cleared for takeoff. ${s.nights} nights until landing.`);
 }

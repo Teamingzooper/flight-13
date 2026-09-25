@@ -15,7 +15,7 @@ export interface TestPlayer {
 /** A game at takeoff with exactly these roles and seats (an 8-row cabin unless more players). */
 export function makeGame(
   players: TestPlayer[],
-  opts: { destination?: DestinationId; settings?: Partial<Settings> } = {},
+  opts: { destination?: DestinationId | 'custom'; settings?: Partial<Settings> } = {},
 ): GameState {
   const settings: Settings = {
     ...defaultSettings(),

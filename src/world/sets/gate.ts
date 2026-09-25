@@ -3,7 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { SKIN, TOP } from '../../app/Avatar';
 import { drawPortrait } from '../../app/portrait';
-import { DESTINATIONS, grid, type Look, type PlayerSummary, type PlayerView } from '../../engine';
+import { destinationOf, grid, type Look, type PlayerSummary, type PlayerView } from '../../engine';
 import { cabinAudio } from '../audio';
 import { People } from '../scene/people';
 import { buildAirliner } from './airliner';
@@ -366,8 +366,8 @@ export class GateSet {
       seat: you?.seat ? (grid.isAisleSpot(you.seat) ? 'CREW' : you.seat) : '--',
       look: game.players.find((p) => p.id === you?.id)?.look ?? { body: 1, skin: 2, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 },
       face: you ? faces?.get(you.id) : undefined,
-      destination: game.settings.destination,
-      city: DESTINATIONS[game.settings.destination].city,
+      destination: destinationOf(game.settings).code,
+      city: destinationOf(game.settings).city,
     };
     this.pass = new THREE.Group();
     const card = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.0012, 0.082), [

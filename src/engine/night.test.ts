@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { applyIntent } from './engine';
+import { normalizeGame } from './state';
 import { advanceTo, logTexts, makeGame, player, type TestPlayer } from './testkit';
-import type { GameState, NightAction } from './types';
+import type { DestinationId, GameState, NightAction, PlayerState } from './types';
+import { viewFor } from './view';
 
 const act = (s: GameState, id: string, action: NightAction | null) => applyIntent(s, id, { kind: 'act', action }, 0);
 const move = (s: GameState, id: string, to: string) => applyIntent(s, id, { kind: 'move', to }, 0);
 
-/** One bomber among six passengers in an 8-row cabin. */
-function cabin(): GameState {
-  return makeGame([
-    { id: 'bomber', role: 'bomber', seat: '4B' },
-    { id: 'near1', role: 'passenger', seat: '5C' },
-    { id: 'near2', role: 'passenger', seat: '6A' },
-    { id: 'far', role: 'passenger', seat: '4E' },
-    { id: 'nurse', role: 'nurse', seat: '1F' },
-    { id: 'pilot', role: 'pilot', seat: '8F' },
-    { id: 'inv', role: 'investigator', seat: '2E' },
-  ]);
+/** One bomber among six passengers in an 8-row cabin, flying to London (5 nights) unless told otherwise. */
+function cabin(destination: DestinationId = 'LHR'): GameState {
+  return makeGame(
+    [
+      { id: 'bomber', role: 'bomber', seat: '4B' },
+      { id: 'near1', role: 'passenger', seat: '5C' },
+      { id: 'near2', role: 'passenger', seat: '6A' },
+      { id: 'far', role: 'passenger', seat: '4E' },
+      { id: 'nurse', role: 'nurse', seat: '1F' },
+      { id: 'pilot', role: 'pilot', seat: '8F' },
+      { id: 'inv', role: 'investigator', seat: '2E' },
+    ],
+    { destination },
+  );
 }
 
 describe('bombs', () => {
@@ -69,12 +74,76 @@ describe('bombs', () => {
     expect(player(s, 'near1').status).toBe('dead');
   });
 
-  it('each bomber gets one bomb per game', () => {
+  it('a Bomber carries a bomb for every three nights and plants at most one a night', () => {
+    const s = cabin();
+    expect(viewFor(s, 'bomber', 0).you?.bombsLeft).toBe(2);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 })).toEqual({ ok: true });
+    advanceTo(s, 'night_move', 2);
+    expect(viewFor(s, 'bomber', 0).you?.bombsLeft).toBe(1);
+    move(s, 'bomber', '1A');
+    advanceTo(s, 'night_act', 2);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 })).toEqual({ ok: true });
+    advanceTo(s, 'night_act', 3);
+    expect(player(s, 'bomber').bombsPlanted).toBe(2);
+    expect(s.bombs.map((b) => b.location)).toEqual([
+      { kind: 'seat', seat: '4B' },
+      { kind: 'seat', seat: '1A' },
+    ]);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'You have no bombs left.' });
+    expect(viewFor(s, 'bomber', 0).you?.bombsLeft).toBe(0);
+  });
+
+  it('a three-night flight gives one bomb', () => {
+    const s = cabin('LAS');
+    advanceTo(s, 'night_act', 1);
+    act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 });
+    advanceTo(s, 'night_move', 2);
+    move(s, 'bomber', '1A');
+    advanceTo(s, 'night_act', 2);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'You have no bombs left.' });
+  });
+
+  it('a seat holds one live bomb at a time', () => {
     const s = cabin();
     advanceTo(s, 'night_act', 1);
     act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 });
     advanceTo(s, 'night_act', 2);
-    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'You already used your bomb.' });
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'There is already a bomb there.' });
+  });
+
+  it('two saboteurs picking the lavatory on the same night: the second one keeps their bomb', () => {
+    const s = makeGame([
+      { id: 'bomber', role: 'bomber', seat: '8B' },
+      { id: 'mm', role: 'mastermind', seat: '8C' },
+      { id: 'p1', role: 'passenger', seat: '1A' },
+      { id: 'p2', role: 'passenger', seat: '2A' },
+      { id: 'p3', role: 'passenger', seat: '3A' },
+      { id: 'p4', role: 'passenger', seat: '4A' },
+      { id: 'p5', role: 'passenger', seat: '5A' },
+    ]);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'lavatory', fuse: 2 })).toEqual({ ok: true });
+    expect(act(s, 'mm', { kind: 'plant', where: 'lavatory', fuse: 2 })).toEqual({ ok: true });
+    advanceTo(s, 'dawn', 1);
+    expect(s.bombs).toHaveLength(1);
+    const kept = [player(s, 'bomber'), player(s, 'mm')].find((p) => p.bombsPlanted === 0)!;
+    expect(kept).toBeDefined();
+    expect(logTexts(s, kept.id)).toContain('Someone had already planted a bomb in the lavatory. You kept yours.');
+    advanceTo(s, 'night_act', 2);
+    expect(act(s, kept.id, { kind: 'plant', where: 'lavatory', fuse: 1 })).toEqual({ ok: false, error: 'There is already a bomb there.' });
+  });
+
+  it('a game saved before bomb counts treats a used bomb as one planted', () => {
+    const s = cabin('LAS');
+    const old = player(s, 'bomber') as Partial<PlayerState> & { bombUsed?: boolean };
+    delete old.bombsPlanted;
+    old.bombUsed = true;
+    normalizeGame(s);
+    expect(player(s, 'bomber').bombsPlanted).toBe(1);
+    expect('bombUsed' in player(s, 'bomber')).toBe(false);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 1 })).toEqual({ ok: false, error: 'You have no bombs left.' });
   });
 
   it('cart and lavatory bombs require sitting next to them', () => {

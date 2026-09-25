@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { botIntents } from './bots';
-import { DESTINATION_ORDER } from './destinations';
+import { DESTINATION_ORDER, bombsFor, destinationOf } from './destinations';
 import { applyIntent, phaseDue, tick } from './engine';
 import { aisleRow, isSeatInCabin } from './grid';
 import { isPilot, isStewardess } from './roles';
 import { defaultSettings } from './settings';
 import { createGame } from './setup';
 import { TEST_LOOK } from './testkit';
-import type { DestinationId, GameState } from './types';
+import type { DestinationId, GameState, Settings } from './types';
 
 function assertInvariants(s: GameState): void {
   const seats = s.players.map((p) => p.seat).filter((seat): seat is string => seat !== null);
@@ -23,15 +23,27 @@ function assertInvariants(s: GameState): void {
     }
   }
   expect(s.phase.night).toBeLessThanOrEqual(s.nights);
-  const planters = s.bombs.map((b) => b.planterId);
-  expect(new Set(planters).size).toBe(planters.length);
+  // A bomb for every three nights, at most one a night, and one live bomb per spot.
+  const planted = new Map<string, number>();
+  for (const b of s.bombs) planted.set(b.planterId, (planted.get(b.planterId) ?? 0) + 1);
+  for (const p of s.players) expect(p.bombsPlanted).toBe(planted.get(p.id) ?? 0);
+  for (const n of planted.values()) expect(n).toBeLessThanOrEqual(bombsFor(destinationOf(s.settings).nights));
+  expect(new Set(s.bombs.map((b) => `${b.planterId}@${b.plantedNight}`)).size).toBe(s.bombs.length);
+  const live = s.bombs.filter((b) => !b.exploded && !b.defused).map((b) => (b.location.kind === 'seat' ? b.location.seat : b.location.kind));
+  expect(new Set(live).size).toBe(live.length);
   expect(s.cabin.cartRow).toBeGreaterThanOrEqual(1);
   expect(s.cabin.cartRow).toBeLessThanOrEqual(s.cabin.rows);
   if (s.night.washroom) expect(s.players.find((p) => p.id === s.night.washroom)?.washroomUsed).toBe(true);
 }
 
-function simulate(seed: number, players: number, destination: DestinationId): GameState {
-  const settings = { ...defaultSettings(), destination, maxPassengers: players };
+/** A long host-made flight with every effect at once. */
+const WILD: Partial<Settings> = {
+  destination: 'custom',
+  customDestination: { city: 'Nowhere', code: 'NWH', nights: 10, twists: ['turbulence', 'redeye', 'triangle'] },
+};
+
+function simulate(seed: number, players: number, destination: DestinationId | Partial<Settings>): GameState {
+  const settings = { ...defaultSettings(), ...(typeof destination === 'string' ? { destination } : destination), maxPassengers: players };
   const roster = Array.from({ length: players }, (_, i) => ({ id: `p${i}`, name: `P${i}`, look: TEST_LOOK }));
   let now = 0;
   const s = createGame({ settings, players: roster, seed, now });
@@ -57,8 +69,9 @@ describe('bot simulation', () => {
     let games = 0;
     for (let players = 4; players <= 16; players++) {
       const wins: Record<string, number> = { passengers: 0, saboteurs: 0, draw: 0 };
-      for (const destination of DESTINATION_ORDER) {
-        for (let seed = 1; seed <= 6; seed++) {
+      for (const destination of [...DESTINATION_ORDER, WILD]) {
+        // The long custom flight is the slowest to play out: fewer seeds.
+        for (let seed = 1; seed <= (destination === WILD ? 3 : 6); seed++) {
           const s = simulate(seed * 1000 + players, players, destination);
           expect(s.phase.kind).toBe('ended');
           expect(s.result).not.toBeNull();
@@ -71,7 +84,7 @@ describe('bot simulation', () => {
     }
     // Vitest hides console output of passing tests; stderr always shows.
     if (process.env.SIM_REPORT) process.stderr.write(`${report.join('\n')}\nby reason: ${JSON.stringify(reasons)}\n`);
-    expect(games).toBe(13 * 5 * 6);
-    // 390 whole games: allow for a busy machine running the other test files alongside.
-  }, 30_000);
+    expect(games).toBe(13 * (5 * 6 + 3));
+    // 429 whole games: allow for a busy machine running the other test files alongside.
+  }, 60_000);
 });

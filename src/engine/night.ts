@@ -1,4 +1,4 @@
-import { DESTINATIONS } from './destinations';
+import { destinationOf, hasTwist } from './destinations';
 import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder, seatsWithin } from './grid';
 import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
@@ -6,7 +6,7 @@ import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, liveBombAt, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
 import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState, Sighting } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
@@ -28,9 +28,9 @@ export function startNight(s: GameState, night: number, now: number): void {
   s.night = emptyNight();
   s.day = emptyDay();
   s.incidentAtDawn = false;
-  const twist = DESTINATIONS[s.settings.destination].twist;
-  if (twist === 'triangle') s.night.anomaly = pick(s, ANOMALIES);
-  if (twist === 'turbulence' || s.night.anomaly === 'turbulence') {
+  const destination = destinationOf(s.settings);
+  if (hasTwist(destination, 'triangle')) s.night.anomaly = pick(s, ANOMALIES);
+  if (hasTwist(destination, 'turbulence') || s.night.anomaly === 'turbulence') {
     const candidates = activePlayers(s);
     if (candidates.length > 0) {
       const victim = pick(s, candidates);
@@ -410,6 +410,11 @@ export function resolveNight(s: GameState, now: number): void {
   for (const { actor, action } of acts) {
     if (action.kind !== 'plant') continue;
     const location: BombLocation = action.where === 'seat' ? { kind: 'seat', seat: actor.seat! } : { kind: action.where };
+    // Two saboteurs picked the same spot tonight: the second one keeps their bomb.
+    if (liveBombAt(s, location)) {
+      addLog(s, now, [actor.id], 'plant', `Someone had already planted a bomb ${describeLocation(location)}. You kept yours.`);
+      continue;
+    }
     const bomb: Bomb = {
       id: `bomb${newId(s)}`,
       planterId: actor.id,
@@ -421,7 +426,7 @@ export function resolveNight(s: GameState, now: number): void {
       defused: false,
     };
     s.bombs.push(bomb);
-    actor.bombUsed = true;
+    actor.bombsPlanted += 1;
     const where = describeLocation(location);
     addLog(s, now, 'saboteurs', 'plant', `${actor.name} planted a bomb ${where}. It goes off at the end of night ${bomb.detonateNight}.`, {
       bomb: bomb.id,

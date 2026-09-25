@@ -1,12 +1,16 @@
 import {
   BOT_CHATTERS,
   BOT_SKILLS,
+  CUSTOM_LIMITS,
   DESTINATIONS,
   SPECIAL_CARDS,
   TIMERS,
+  TWISTS,
+  validateCustomDestination,
   type BotChatter,
   type BotSkill,
   type Cards,
+  type CustomDestination,
   type Intent,
   type Look,
   type PlayerView,
@@ -137,6 +141,20 @@ export function randomLook(random: () => number): Look {
 }
 
 /** Rebuild Settings from untrusted input, keeping only known fields (validate separately). */
+/** A host-made destination from untrusted input, or null when it is not a valid one. Unknown effects are dropped. */
+export function cleanCustomDestination(raw: unknown): CustomDestination | null {
+  if (!isObj(raw)) return null;
+  const { city, code, nights, twists } = raw;
+  if (typeof city !== 'string' || typeof code !== 'string' || !isInt(nights) || !Array.isArray(twists)) return null;
+  const c: CustomDestination = {
+    city: city.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, CUSTOM_LIMITS.cityLength),
+    code: code.toUpperCase(),
+    nights,
+    twists: TWISTS.map((t) => t.id).filter((id) => twists.includes(id)),
+  };
+  return validateCustomDestination(c) ? null : c;
+}
+
 export function cleanSettings(raw: unknown): Settings | null {
   if (!isObj(raw) || !isObj(raw.cards)) return null;
   const cards = {} as Cards;
@@ -151,7 +169,8 @@ export function cleanSettings(raw: unknown): Settings | null {
   const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
   const botChatter = raw.botChatter ?? 'normal';
   const botSkill = raw.botSkill ?? 'normal';
-  if (typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
+  const customDestination = raw.customDestination == null ? null : cleanCustomDestination(raw.customDestination);
+  if (destination === 'custom' ? !customDestination : typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
   if (!isInt(maxPassengers)) return null;
   if (rolesMode !== 'auto' && rolesMode !== 'custom') return null;
   if (typeof stewardessRogueChance !== 'number') return null;
@@ -163,6 +182,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (!BOT_CHATTERS.includes(botChatter as BotChatter) || !BOT_SKILLS.includes(botSkill as BotSkill)) return null;
   return {
     destination: destination as Settings['destination'],
+    customDestination,
     maxPassengers,
     rolesMode,
     cards,

@@ -1,6 +1,6 @@
 import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
 import { canCuff, canPlantBombs, isPilot, isSaboteur, isStewardess } from './roles';
-import { activePlayers, cellOf, emptySeats, getPlayer, inWashroom, isActive, isGuest, occupantOf, onFlightDeck } from './state';
+import { activePlayers, bombsLeft, cellOf, emptySeats, getPlayer, inWashroom, isActive, isGuest, liveBombAt, occupantOf, onFlightDeck } from './state';
 import type { GameState, MoveTarget, NightAction, PlayerState, SeatId } from './types';
 
 /** Why the drink cart stops you walking from your row to `toRow` (crew squeeze past their own cart). */
@@ -115,7 +115,8 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
   if (inWashroom(s, p.id)) {
     // Locked in the lavatory: search it, or (with a bomb) leave one behind.
     if (action?.kind === 'search') return null;
-    if (action?.kind === 'plant' && action.where === 'lavatory' && canPlantBombs(p.role) && !p.bombUsed) {
+    if (action?.kind === 'plant' && action.where === 'lavatory' && bombsLeft(s, p) > 0) {
+      if (liveBombAt(s, { kind: 'lavatory' })) return 'There is already a bomb in here.';
       return action.fuse === 1 || action.fuse === 2 ? null : 'The fuse must be 1 or 2 nights.';
     }
     return 'You are locked in the lavatory tonight. Search it, or wait for morning.';
@@ -172,19 +173,21 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
     }
     case 'plant': {
       if (!canPlantBombs(p.role)) return 'You have no bomb.';
-      if (p.bombUsed) return 'You already used your bomb.';
+      if (bombsLeft(s, p) <= 0) return 'You have no bombs left.';
       if (action.fuse !== 1 && action.fuse !== 2) return 'The fuse must be 1 or 2 nights.';
+      const taken = 'There is already a bomb there.';
       if (action.where === 'cart') {
         if (s.cabin.cartDestroyed) return 'The drink cart is gone.';
         if (!nextToCart(s, p)) return 'You must be in an aisle seat next to the drink cart.';
-        return null;
+        return liveBombAt(s, { kind: 'cart' }) ? taken : null;
       }
       if (action.where === 'lavatory') {
         if (s.cabin.lavatoryDestroyed) return 'The lavatory is destroyed.';
         if (!nextToLavatory(s, p)) return 'You must be in a seat next to the lavatory.';
-        return null;
+        return liveBombAt(s, { kind: 'lavatory' }) ? taken : null;
       }
-      return action.where === 'seat' ? null : 'Unknown place to plant a bomb.';
+      if (action.where !== 'seat') return 'Unknown place to plant a bomb.';
+      return p.seat && liveBombAt(s, { kind: 'seat', seat: p.seat }) ? taken : null;
     }
     case 'search':
       return p.seat && !isAisleSpot(p.seat) && !isCockpit(p.seat) ? null : 'You have no seat to look under.';

@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { Avatar } from '../app/Avatar';
 import { Credits } from '../meta/Credits';
-import { DESTINATIONS, ITEMS, ROLES, grid, type PlayerView } from '../engine';
+import { ITEMS, ROLES, destinationOf, grid, type PlayerView } from '../engine';
 import { ACHIEVEMENTS } from '../meta/achievements';
 import { settlementFor } from '../meta/bag';
 import { ItemIcon } from '../meta/ItemIcon';
@@ -97,14 +97,14 @@ function Overlay({ children, onClose, wide = false }: { children: ComponentChild
 function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void }) {
   const you = game.you!;
   const info = ROLES[you.role];
-  const d = DESTINATIONS[game.settings.destination];
+  const d = destinationOf(game.settings);
   const allies = game.players.filter((p) => p.team === 'saboteurs' && p.id !== you.id);
   return (
     <Overlay onClose={onClose}>
       <div class={`pass ${you.team}`}>
         <div class="pass-head">
           <span>Boarding pass</span>
-          <span>Flight 13 → {d.id}</span>
+          <span>Flight 13 → {d.code}</span>
         </div>
         <div class="pass-body">
           <div>

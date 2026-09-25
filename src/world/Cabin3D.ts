@@ -12,7 +12,7 @@ import {
 } from 'postprocessing';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { DESTINATIONS, grid, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
+import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type ItemId, type PlayerView, type SeatId } from '../engine';
 import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
@@ -312,7 +312,7 @@ export class Cabin3D {
     } else if (kind === 'boarding') {
       // The boarding sequence plays frame by frame from the phase clock (see boardingFrame).
       this.hotel?.close();
-      if (!game.you) this.fade(1, 0, `Now boarding · Flight 13 to ${DESTINATIONS[game.settings.destination].city}`);
+      if (!game.you) this.fade(1, 0, `Now boarding · Flight 13 to ${destinationOf(game.settings).city}`);
     } else {
       this.endPreflight();
       if (this.dark) this.fade(0, 1.4);
@@ -338,7 +338,8 @@ export class Cabin3D {
     }
     // People caught in a blast stay upright until it goes off on screen.
     for (const c of cues) if (c.kind === 'explosion') for (const id of c.victims) this.holdAlive.add(id);
-    const bermuda = game.settings.destination === 'BDA';
+    // The Bermuda Triangle's nights have aurora skies, wherever the flight is headed.
+    const bermuda = hasTwist(destinationOf(game.settings), 'triangle');
     const grounded = kind === 'packing' || kind === 'boarding' || kind === 'takeoff';
     const sky = grounded ? skies.runway : night ? (bermuda ? skies.aurora : skies.night) : kind === 'dawn' ? skies.dawn : skies.day;
     windows.show(sky, fresh || grounded ? 0 : 1.4);
@@ -760,7 +761,7 @@ export class Cabin3D {
           this.gate = new GateSet(this.renderer, game, this.faceSource);
           this.resize();
           if (moment.shot === 'queue' && moment.t < 1) {
-            this.later(0.9, () => this.opts.onCaption?.(`Flight 13 to ${DESTINATIONS[game.settings.destination].city} is now boarding. Please have your boarding pass ready.`, 'Gate 13'));
+            this.later(0.9, () => this.opts.onCaption?.(`Flight 13 to ${destinationOf(game.settings).city} is now boarding. Please have your boarding pass ready.`, 'Gate 13'));
           }
         }
         this.showing = 'gate';

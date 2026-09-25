@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // Whole flights over the fake network take a few seconds, more while the other files run alongside.
+    testTimeout: 20_000,
   },
 });

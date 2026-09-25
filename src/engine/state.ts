@@ -1,7 +1,8 @@
 import { allSeats, isCockpit, parsePlace } from './grid';
-import { ROLES } from './roles';
+import { bombsFor, destinationOf } from './destinations';
+import { ROLES, canPlantBombs } from './roles';
 import { normalizeSettings, phaseDurationMs } from './settings';
-import type { Bomb, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
+import type { Bomb, BombLocation, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
 
 export function getPlayer(s: GameState, id: string): PlayerState | undefined {
   return s.players.find((p) => p.id === id);
@@ -90,6 +91,19 @@ export function fuseText(bomb: Bomb, night: number): string {
   return `set to go off in ${left} nights`;
 }
 
+/** Bombs a Bomber or the Mastermind still carries: one for every three scheduled nights of the flight. */
+export function bombsLeft(s: GameState, p: PlayerState): number {
+  if (!canPlantBombs(p.role)) return 0;
+  return Math.max(0, bombsFor(destinationOf(s.settings).nights) - p.bombsPlanted);
+}
+
+/** The bomb still ticking at a seat, the cart or the lavatory: each holds one at a time. */
+export function liveBombAt(s: GameState, where: BombLocation): Bomb | undefined {
+  return s.bombs.find(
+    (b) => !b.exploded && !b.defused && b.location.kind === where.kind && (where.kind !== 'seat' || (b.location.kind === 'seat' && b.location.seat === where.seat)),
+  );
+}
+
 /** Fill in fields that games saved by an older version do not have. */
 export function normalizeGame(s: GameState): GameState {
   s.settings = normalizeSettings(s.settings);
@@ -120,6 +134,10 @@ export function normalizeGame(s: GameState): GameState {
     p.roughAirUsed ??= false;
     p.courseUsed ??= false;
     p.knockedOutNight ??= null;
+    // Older games gave each Bomber one bomb and only noted whether it was used.
+    const old = p as PlayerState & { bombUsed?: boolean };
+    p.bombsPlanted ??= old.bombUsed ? 1 : 0;
+    delete old.bombUsed;
   }
   return s;
 }

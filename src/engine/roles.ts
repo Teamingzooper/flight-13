@@ -63,16 +63,16 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     id: 'bomber',
     name: 'Bomber',
     team: 'saboteurs',
-    blurb: 'One bomb. Make it count.',
+    blurb: 'A bomb for every three nights. Make them count.',
     howTo:
-      'Once per game, plant a bomb under your seat, on the drink cart (from an aisle seat next to it) or in the lavatory (from a seat next to it). It goes off at the end of tomorrow night or the night after, and everyone within 2 seats is caught in the blast.',
+      'You carry one bomb for every three nights of the flight, and plant at most one a night: under your seat, on the drink cart (from an aisle seat next to it) or in the lavatory (from a seat next to it). Each goes off at the end of tomorrow night or the night after, and everyone within 2 seats is caught in the blast.',
   },
   mastermind: {
     id: 'mastermind',
     name: 'Mastermind',
     team: 'saboteurs',
     blurb: 'Planned all of this. Looks completely harmless.',
-    howTo: "Plant one bomb per game, just like a Bomber, but hidden so well that the Stewardess's checks miss it.",
+    howTo: "Plant bombs just like a Bomber (one for every three nights of the flight), but hidden so well that the Stewardess's checks miss them.",
   },
   stewardess_rogue: {
     id: 'stewardess_rogue',
