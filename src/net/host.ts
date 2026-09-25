@@ -5,6 +5,7 @@ import {
   isNightPhase,
   checkTakeoff,
   createGame,
+  isRoleId,
   submitDefaults,
   tick,
   validateSettings,
@@ -13,6 +14,7 @@ import {
   type Intent,
   type IntentResult,
   type Look,
+  type RoleId,
   type Settings,
 } from '../engine';
 import {
@@ -59,6 +61,8 @@ export interface HostSnapshot {
   nextId: number;
   /** The tutorial flight: scripted bots, fixed roles and seats, and clocks that wait for you (tutorial/script.ts). */
   tutorial?: boolean;
+  /** The role the host picked for themselves (kept here, never sent to anyone else). */
+  hostRole?: RoleId | null;
 }
 
 export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
@@ -422,7 +426,10 @@ export class HostSession {
         const error = checkTakeoff(s.settings, roster);
         if (error) return fail(error);
         const now = this.now();
-        s.game = createGame({ settings: s.settings, players: roster, seed: Math.floor(this.random() * 2 ** 31), now });
+        // The host may have picked their own role (not in the tutorial, which casts everyone).
+        const captain = s.players.find((p) => !p.bot && p.token === s.hostToken);
+        const chosen = s.hostRole && captain && !s.tutorial ? { player: captain.id, role: s.hostRole } : undefined;
+        s.game = createGame({ settings: s.settings, players: roster, seed: Math.floor(this.random() * 2 ** 31), now, chosen });
         if (s.tutorial) this.castTutorial(s.game);
         this.botPlans.clear();
         this.phaseStarted(now);
@@ -451,6 +458,12 @@ export class HostSession {
         const base = names[Math.floor(this.random() * names.length)];
         const face = FACE_TEMPLATES[Math.floor(this.random() * FACE_TEMPLATES.length)].face;
         s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random, true), face, bot: true });
+        break;
+      }
+      case 'myRole': {
+        if (s.game) return fail('Roles are dealt once the doors close.');
+        if (cmd.role !== null && !isRoleId(cmd.role)) return fail('Unknown role.');
+        s.hostRole = cmd.role;
         break;
       }
       case 'boardAgain': {
@@ -595,6 +608,9 @@ export class HostSession {
       voice: this.voicePeers(),
       pa: this.paSpeaker(),
       ...(s.tutorial ? { tutorial: true } : {}),
+      // The host's own pick goes to the host alone; everyone else only learns that there is one.
+      ...(peer.trusted ? { myRole: s.hostRole ?? null } : {}),
+      ...(s.hostRole && !s.tutorial ? { hostPicksRole: true } : {}),
     };
   }
 

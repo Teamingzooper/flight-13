@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { CHAT_MAX_LENGTH, checkTakeoff, destinationOf, type IntentResult } from '../../engine';
+import { CHAT_MAX_LENGTH, ROLES, checkTakeoff, destinationOf, type IntentResult, type RoleId } from '../../engine';
 import { TutorialCoach } from '../../tutorial/Coach';
 import { formatCode } from '../../net/code';
 import type { ClientState } from '../../net/protocol';
@@ -11,6 +11,12 @@ import { ProfileEditor } from '../ProfileEditor';
 import { flightLink, navigate } from '../router';
 import { endFlight, type OpenFlight } from '../sessions';
 import { SettingsForm, describeRules } from '../SettingsForm';
+
+/** What the host can pick for themselves, by team. */
+const ROLE_CHOICES: { team: string; roles: RoleId[] }[] = [
+  { team: 'Passengers', roles: ['passenger', 'nurse', 'investigator', 'marshal', 'stewardess_loyal', 'pilot'] },
+  { team: 'Saboteurs', roles: ['bomber', 'mastermind', 'stewardess_rogue', 'pilot_rogue'] },
+];
 
 export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientState }) {
   const { client } = flight;
@@ -127,7 +133,36 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
               {describeRules(state.settings).map((line) => (
                 <li key={line}>{line}</li>
               ))}
+              {state.hostPicksRole && <li>The captain picked their own role (nobody else is told which).</li>}
             </ul>
+            {state.isHost && !!state.you && !state.controlTower && !state.tutorial && (
+              <label class="field my-role">
+                <span class="label">Your role</span>
+                <select
+                  class="input"
+                  value={state.myRole ?? 'random'}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    void run(client.command({ kind: 'myRole', role: value === 'random' ? null : (value as RoleId) }));
+                  }}
+                >
+                  <option value="random">Random, like everyone else</option>
+                  {ROLE_CHOICES.map(({ team, roles }) => (
+                    <optgroup key={team} label={team}>
+                      {roles.map((id) => (
+                        <option key={id} value={id}>
+                          {ROLES[id].name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <small class="hint">
+                  Only you see this; the others just hear that you picked. If it cannot fit this flight (a rogue Pilot with too few aboard), you
+                  are dealt a random role instead.
+                </small>
+              </label>
+            )}
           </section>
           {me && <MyPass flight={flight} />}
         </div>

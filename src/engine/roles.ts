@@ -156,3 +156,63 @@ export function validateCards(cards: Cards, players: number, rogueChance: number
   }
   return null;
 }
+
+export function isRoleId(id: unknown): id is RoleId {
+  return typeof id === 'string' && Object.hasOwn(ROLES, id);
+}
+
+/**
+ * Hand one player the role they asked for (the host choosing theirs) out of a dealt deck: swapped with whoever drew
+ * it, or else made out of another card, so the teams keep their size. A saboteur role comes out of a Bomber's or the
+ * Mastermind's card and a passengers' role out of a Passenger's. A rogue (or loyal) Stewardess or Pilot turns the one
+ * that was dealt, as long as the saboteurs stay outnumbered. Returns the new deck, or why it cannot be done.
+ */
+export function giveRole(roles: readonly RoleId[], who: number, wanted: RoleId): RoleId[] | string {
+  const out = [...roles];
+  const swapInto = (k: number) => {
+    [out[who], out[k]] = [out[k], out[who]];
+    return out;
+  };
+  const dealt = out.indexOf(wanted);
+  if (dealt >= 0) return swapInto(dealt);
+  const outnumbered = (deck: readonly RoleId[]) => deck.filter(isSaboteur).length * 2 < deck.length;
+  const find = (...kinds: RoleId[]) => {
+    for (const kind of kinds) {
+      const k = out.indexOf(kind);
+      if (k >= 0) return k;
+    }
+    return -1;
+  };
+  let k: number;
+  switch (wanted) {
+    case 'pilot':
+    case 'pilot_rogue':
+      // One Pilot to a plane: the dealt one changes sides, or a Passenger's card becomes the Pilot's.
+      k = find(wanted === 'pilot' ? 'pilot_rogue' : 'pilot', 'passenger');
+      break;
+    case 'stewardess_rogue': {
+      // The loyal Stewardess turns, if the saboteurs stay outnumbered; otherwise a Bomber's card becomes hers.
+      const loyal = find('stewardess_loyal');
+      const turned = [...out];
+      if (loyal >= 0) turned[loyal] = wanted;
+      k = loyal >= 0 && outnumbered(turned) ? loyal : find('bomber', 'mastermind');
+      break;
+    }
+    case 'stewardess_loyal':
+      k = find('stewardess_rogue', 'passenger');
+      break;
+    case 'bomber':
+    case 'mastermind':
+      k = find(wanted === 'bomber' ? 'mastermind' : 'bomber', 'stewardess_rogue');
+      break;
+    case 'passenger':
+      k = find('marshal', 'investigator', 'nurse', 'stewardess_loyal');
+      break;
+    default:
+      k = find('passenger', 'marshal', 'investigator', 'nurse', 'stewardess_loyal');
+  }
+  if (k < 0) return `there is no card on this flight that could become the ${ROLES[wanted].name}`;
+  out[k] = wanted;
+  if (!outnumbered(out)) return `a ${ROLES[wanted].name} would leave the saboteurs too strong for this many passengers`;
+  return swapInto(k);
+}

@@ -15,6 +15,7 @@ import {
   type Intent,
   type Look,
   type PlayerView,
+  type RoleId,
   type Settings,
 } from '../engine';
 import { isEmoteId, type EmoteId } from './emotes';
@@ -80,6 +81,10 @@ export interface ClientState {
   pa?: string | null;
   /** The tutorial flight: the coach shows what to do, and the clocks wait for you. */
   tutorial?: boolean;
+  /** Only in the host's own state: the role they picked for themselves (null: random). */
+  myRole?: RoleId | null;
+  /** Everyone is told that the captain picked their own role (never which). */
+  hostPicksRole?: boolean;
 }
 
 export type HostCommand =
@@ -87,7 +92,9 @@ export type HostCommand =
   | { kind: 'takeoff' }
   | { kind: 'kick'; playerId: string }
   | { kind: 'addBot' }
-  | { kind: 'boardAgain' };
+  | { kind: 'boardAgain' }
+  /** The host's own role next flight (null: dealt at random like everyone else's). */
+  | { kind: 'myRole'; role: RoleId | null };
 
 export type ClientMessage =
   | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean }

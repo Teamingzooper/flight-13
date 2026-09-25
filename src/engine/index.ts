@@ -18,6 +18,8 @@ export {
   teamOf,
   isSaboteur,
   isPilot,
+  isRoleId,
+  giveRole,
   presetCards,
   validateCards,
   emptyCards,
