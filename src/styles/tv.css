@@ -438,7 +438,7 @@
   --cell: clamp(28px, 5.4vh, 44px);
   display: grid;
   gap: 4px;
-  grid-template-columns: 22px 36px repeat(var(--rows), minmax(30px, 1fr)) 44px;
+  grid-template-columns: 22px 46px 36px repeat(var(--rows), minmax(30px, 1fr)) 44px;
   grid-template-rows: 18px repeat(3, var(--cell)) calc(var(--cell) * 0.6) repeat(3, var(--cell));
   padding: 10px;
   overflow-x: auto;
@@ -450,7 +450,7 @@
 .seatmap.vertical {
   --cell: 34px;
   grid-template-columns: 22px repeat(3, minmax(0, 1fr)) minmax(20px, 0.6fr) repeat(3, minmax(0, 1fr));
-  grid-template-rows: 18px 30px repeat(var(--rows), var(--cell)) 40px;
+  grid-template-rows: 18px 40px 30px repeat(var(--rows), var(--cell)) 40px;
 }
 
 .sm-num,
@@ -1672,4 +1672,105 @@ button.pack-slot:hover:not(:disabled) {
 /* In the 3D HUD the voice controls sit with the other chips. */
 .hud-actions .voice-controls .voice-button {
   padding: 8px 12px;
+}
+
+/* ---------- The flight deck on the seat map ---------- */
+.sm-cockpit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 22px 8px 8px 22px;
+  background: linear-gradient(90deg, #0d1a33, #101b30);
+  color: #9fb0cf;
+}
+
+.seatmap.vertical .sm-cockpit {
+  flex-direction: row;
+  border-radius: 22px 22px 8px 8px;
+  background: linear-gradient(180deg, #0d1a33, #101b30);
+}
+
+.seatmap:not(.vertical) .sm-cockpit-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.sm-cockpit-guest {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--amber);
+}
+
+.seatmap:not(.vertical) .sm-cockpit-guest {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+/* Three-row sections: every seat and row number picks the rows around it. */
+button.sm-num.pick {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+button.sm-num.pick:hover {
+  background: rgba(255, 181, 71, 0.18);
+  color: var(--amber);
+}
+
+.sm-seat.row-pick:not(:disabled) {
+  cursor: pointer;
+}
+
+/* ---------- The Pilot ---------- */
+.once-tag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 181, 71, 0.15);
+  color: var(--amber);
+  font: 600 10px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.used-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+.pa-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-banner {
+  margin: 8px 12px 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 181, 71, 0.5);
+  background: rgba(255, 181, 71, 0.14);
+  color: #ffe9c7;
+  font-size: 14px;
+  animation: pa-in 0.3s ease-out;
+}
+
+.pa-banner b {
+  margin-right: 6px;
+  color: var(--amber);
+}
+
+@keyframes pa-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 }

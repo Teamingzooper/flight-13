@@ -30,6 +30,15 @@ export function parseSeat(id: SeatId): Cell | null {
   return { row: Number(m[1]), col: COL_BY_LETTER[m[2]] };
 }
 
+/** The flight deck, in front of the galley: the Pilot's place. */
+export const COCKPIT = 'Cockpit';
+/** Where the flight deck sits on the grid: far enough ahead of row 1 that no blast, cuff, whisper or treatment reaches it. */
+export const COCKPIT_ROW = -3;
+
+export function isCockpit(id: SeatId | null | undefined): boolean {
+  return id === COCKPIT;
+}
+
 /** The aisle beside row `row`, where the Stewardess works with the drink cart. */
 export function aisleSpot(row: number): SeatId {
   return `Aisle ${row}`;
@@ -47,6 +56,7 @@ export function isAisleSpot(id: SeatId | null | undefined): boolean {
 
 /** A seat or an aisle spot as a grid cell. */
 export function parsePlace(id: SeatId): Cell | null {
+  if (id === COCKPIT) return { row: COCKPIT_ROW, col: AISLE_COL };
   const row = aisleRow(id);
   return row === null ? parseSeat(id) : { row, col: AISLE_COL };
 }

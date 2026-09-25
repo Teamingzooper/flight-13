@@ -140,6 +140,7 @@ export function cleanSettings(raw: unknown): Settings | null {
   }
   const { destination, maxPassengers, rolesMode, stewardessRogueChance, timers, revealRoles, voteMode, anonymousVotes, whispers } = raw;
   const pilotMustFly = raw.pilotMustFly ?? false;
+  const pilotRogueChance = raw.pilotRogueChance ?? 0.3;
   if (typeof destination !== 'string' || !(destination in DESTINATIONS)) return null;
   if (!isInt(maxPassengers)) return null;
   if (rolesMode !== 'auto' && rolesMode !== 'custom') return null;
@@ -148,12 +149,14 @@ export function cleanSettings(raw: unknown): Settings | null {
   if (voteMode !== 'daily' && voteMode !== 'afterIncident') return null;
   if (typeof revealRoles !== 'boolean' || typeof anonymousVotes !== 'boolean' || typeof whispers !== 'boolean') return null;
   if (typeof pilotMustFly !== 'boolean') return null;
+  if (typeof pilotRogueChance !== 'number') return null;
   return {
     destination: destination as Settings['destination'],
     maxPassengers,
     rolesMode,
     cards,
     stewardessRogueChance,
+    pilotRogueChance,
     timers: timers as Settings['timers'],
     revealRoles,
     voteMode,

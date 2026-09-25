@@ -11,6 +11,9 @@ export const CHAT_MAX_LENGTH = 200;
 export const CHAT_COOLDOWN_MS = 1000;
 export const CHAT_HISTORY = 300;
 export const NOTE_MAX_LENGTH = 300;
+/** The Pilot's PA: short announcements, a little while apart. */
+export const PA_MAX_LENGTH = 140;
+export const PA_COOLDOWN_MS = 15_000;
 
 export interface TimerSet {
   night_move: number;
@@ -36,6 +39,7 @@ export function defaultSettings(): Settings {
     rolesMode: 'auto',
     cards: emptyCards(),
     stewardessRogueChance: 0.5,
+    pilotRogueChance: 0.3,
     timers: 'standard',
     revealRoles: true,
     voteMode: 'daily',
@@ -76,6 +80,7 @@ export function validateSettings(s: Settings): string | null {
     return `Max passengers must be between ${MIN_PLAYERS} and ${MAX_PLAYERS}.`;
   }
   if (!(s.stewardessRogueChance >= 0 && s.stewardessRogueChance <= 1)) return 'Stewardess odds must be between 0 and 1.';
+  if (!(s.pilotRogueChance >= 0 && s.pilotRogueChance <= 1)) return 'Pilot odds must be between 0 and 1.';
   if (!TIMERS[s.timers]) return 'Unknown timer preset.';
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';

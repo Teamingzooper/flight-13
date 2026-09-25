@@ -721,7 +721,7 @@ export class People {
     youId: string | null,
     rearSpot: (index: number) => THREE.Vector3,
     faces: ReadonlyMap<string, string> | null = null,
-    away: { id: string; door: THREE.Vector3 } | null = null,
+    away: { id: string; door: THREE.Vector3 }[] = [],
   ): void {
     const seen = new Set<string>();
     for (const id of [...this.rearSlots.keys()]) {
@@ -758,9 +758,10 @@ export class People {
       } else if (p.seat && (actor.seat !== p.seat || actor.restrained)) {
         actor.place(p.seat, true);
       }
-      // Off to the lavatory for the night, and back at dawn (those who died in there stay out of sight).
-      const gone = away?.id === p.id && p.id !== youId && p.status === 'alive';
-      if (gone && !actor.away) actor.goAway(away!.door);
+      // Off to the lavatory or the flight deck for the night, and back at dawn (those who died in there stay out of sight).
+      const trip = away.find((a) => a.id === p.id);
+      const gone = !!trip && p.id !== youId && p.status === 'alive';
+      if (trip && gone && !actor.away) actor.goAway(trip.door);
       else if (!gone && actor.away && p.status !== 'dead') actor.comeBack();
       const dead = p.status === 'dead';
       if (dead !== actor.dead || p.cause !== actor.cause) {

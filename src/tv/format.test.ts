@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock, placeLabel, shortName } from './format';
+import { captainName, clock, placeLabel, shortName } from './format';
 
 describe('tv formatting', () => {
   it('formats countdowns', () => {
@@ -17,5 +17,11 @@ describe('tv formatting', () => {
   it('labels the Stewardess by the row she works', () => {
     expect(placeLabel('12C')).toBe('12C');
     expect(placeLabel('Aisle 5')).toBe('crew, row 5');
+  });
+
+  it('signs PA announcements for the Pilot', () => {
+    expect(captainName('Ann')).toBe('Captain Ann');
+    expect(captainName('Captain Kay')).toBe('Captain Kay');
+    expect(placeLabel('Cockpit')).toBe('flight deck');
   });
 });

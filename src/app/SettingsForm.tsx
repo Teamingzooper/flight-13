@@ -61,6 +61,7 @@ export function describeRules(s: Settings): string[] {
       ? 'Roles are balanced automatically for however many passengers board.'
       : `Roles: ${describeCards(s.cards)}. Everyone else is a Passenger.`,
     `The Stewardess turns rogue ${Math.round(s.stewardessRogueChance * 100)}% of the time.`,
+    `The Pilot turns rogue ${Math.round(s.pilotRogueChance * 100)}% of the time (never if the saboteurs would stop being outnumbered).`,
     `Pace: nights ${t.night_move + t.night_act}s, discussion ${discuss}s, votes ${t.day_vote}s.`,
     s.voteMode === 'daily' ? 'A vote every day.' : 'Votes only after a night with a death or an explosion.',
     s.revealRoles ? 'Roles are revealed when someone is out.' : 'Roles stay secret until landing.',
@@ -240,6 +241,17 @@ export function SettingsForm({
             step={5}
             value={Math.round(s.stewardessRogueChance * 100)}
             onInput={(e) => set({ stewardessRogueChance: Number(e.currentTarget.value) / 100 })}
+          />
+        </label>
+        <label class="field">
+          <span class="label">Pilot turns rogue: {Math.round(s.pilotRogueChance * 100)}%</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={Math.round(s.pilotRogueChance * 100)}
+            onInput={(e) => set({ pilotRogueChance: Number(e.currentTarget.value) / 100 })}
           />
         </label>
       </section>

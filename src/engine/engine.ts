@@ -4,9 +4,9 @@ import { DESTINATIONS } from './destinations';
 import { WHISPER_RADIUS, distance } from './grid';
 import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
-import { isSaboteur } from './roles';
-import { checkAction, checkMove, checkSeatbelt } from './rules';
-import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
+import { isPilot, isSaboteur } from './roles';
+import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
+import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH, PA_COOLDOWN_MS, PA_MAX_LENGTH } from './settings';
 import { clearedForTakeoff } from './setup';
 import { activePlayers, addLog, cellOf, getPlayer, inWashroom, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
@@ -67,11 +67,33 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
     }
     case 'seatbelt': {
       if (s.phase.kind !== 'night_move') return fail('The seatbelt sign is set while the lights are out.');
-      if (p.role !== 'pilot') return fail('Only the Pilot controls the seatbelt sign.');
-      if (s.night.buckled[p.id]) return fail('Turbulence has you buckled in tonight.');
+      if (!isPilot(p.role)) return fail('Only the Pilot controls the seatbelt sign.');
       const error = checkSeatbelt(s, p, intent.target);
       if (error) return fail(error);
       s.night.seatbelts[p.id] = intent.target;
+      break;
+    }
+    case 'jumpseat': {
+      if (s.phase.kind !== 'night_move') return fail('Call someone up while the lights are out.');
+      const error = checkJumpseat(s, p, intent.target);
+      if (error) return fail(error);
+      s.night.jumpseats[p.id] = intent.target;
+      break;
+    }
+    case 'roughair': {
+      if (s.phase.kind !== 'night_move') return fail('Rough air is flown while the lights are out.');
+      const error = checkRoughAir(s, p, intent.startRow);
+      if (error) return fail(error);
+      if (intent.startRow === null) delete s.night.roughair[p.id];
+      else s.night.roughair[p.id] = intent.startRow;
+      break;
+    }
+    case 'course': {
+      if (s.phase.kind !== 'night_move') return fail('Change course while the lights are out.');
+      const error = checkCourse(s, p, intent.change);
+      if (error) return fail(error);
+      if (intent.change === null) delete s.night.courses[p.id];
+      else s.night.courses[p.id] = intent.change;
       break;
     }
     case 'act': {
@@ -122,11 +144,16 @@ function allSubmitted(s: GameState): boolean {
     case 'packing':
       return s.players.every((p) => s.packed[p.id] === true);
     case 'night_move':
+      // The Pilot never moves: his calls are in once he has picked for the seatbelt sign (or he cannot call tonight).
       return active.every(
-        (p) => s.night.buckled[p.id] !== undefined || (p.id in s.night.moves && (p.role !== 'pilot' || p.id in s.night.seatbelts)),
+        (p) =>
+          s.night.buckled[p.id] !== undefined ||
+          (isPilot(p.role) ? p.id in s.night.seatbelts || flightDeckError(s, p) !== null : p.id in s.night.moves),
       );
     case 'night_act':
-      return active.every((p) => s.night.buckled[p.id] !== undefined || p.id in s.night.actions);
+      return active.every(
+        (p) => s.night.buckled[p.id] !== undefined || p.id in s.night.actions || (isPilot(p.role) && flightDeckError(s, p) !== null),
+      );
     case 'day_discuss':
       return active.every((p) => s.day.ready[p.id] === true);
     case 'day_vote':
@@ -153,7 +180,7 @@ export function submitDefaults(s: GameState, playerId: string, now: number): voi
       break;
     case 'night_move':
       s.night.moves[p.id] ??= 'stay';
-      if (p.role === 'pilot') s.night.seatbelts[p.id] ??= 'none';
+      if (isPilot(p.role)) s.night.seatbelts[p.id] ??= 'none';
       break;
     case 'night_act':
       if (!(p.id in s.night.actions)) s.night.actions[p.id] = null;
@@ -259,6 +286,9 @@ function channelError(s: GameState, p: PlayerState, channel: ChatChannel): strin
       return null;
     case 'ghosts':
       return isActive(p) && kind !== 'ended' ? 'Only ghosts can use that channel.' : null;
+    case 'pa':
+      if (!isPilot(p.role) || !isActive(p)) return 'Only the Pilot can use the PA.';
+      return PA_PHASES.has(kind) ? null : 'The PA is for announcements by day.';
     default:
       return 'Unknown channel.';
   }
@@ -270,11 +300,21 @@ function pushChat(s: GameState, message: Omit<ChatMessage, 'id'>): void {
 }
 
 function postChat(s: GameState, p: PlayerState, channel: ChatChannel, text: string, now: number): IntentResult {
-  const error = textError(s, p, text, now) ?? channelError(s, p, channel);
+  const error = textError(s, p, text, now) ?? channelError(s, p, channel) ?? (channel === 'pa' ? paError(s, p, text, now) : null);
   if (error) return fail(error);
   pushChat(s, { t: now, channel, from: p.id, to: null, text: text.trim() });
   s.lastChatAt[p.id] = now;
+  if (channel === 'pa') s.lastChatAt[`pa:${p.id}`] = now;
   return OK;
+}
+
+const PA_PHASES: ReadonlySet<PhaseKind> = new Set(['dawn', 'day_discuss', 'day_vote', 'verdict']);
+
+/** Announcements are short, and the PA needs a moment between them. */
+function paError(s: GameState, p: PlayerState, text: string, now: number): string | null {
+  if (text.trim().length > PA_MAX_LENGTH) return `Keep announcements under ${PA_MAX_LENGTH} characters.`;
+  const wait = PA_COOLDOWN_MS - (now - (s.lastChatAt[`pa:${p.id}`] ?? -Infinity));
+  return wait > 0 ? `The PA needs a moment: ${Math.ceil(wait / 1000)}s.` : null;
 }
 
 function postWhisper(s: GameState, p: PlayerState, to: string, text: string, now: number): IntentResult {

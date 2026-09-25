@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { TOP } from '../app/Avatar';
 import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerView } from '../engine';
 import type { TVContext } from './context';
-import { nameOf, nameWithSeat, playerById } from './format';
+import { captainName, nameOf, nameWithSeat, playerById } from './format';
 
 type Channel = 'cabin' | 'saboteurs' | 'ghosts' | 'whisper';
 
@@ -33,7 +33,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
   const channel: Channel = channels.includes(picked) ? picked : 'cabin';
   const whisperTargets = game.options?.whisper ?? [];
   const shown = game.chat.filter((m) => {
-    if (channel === 'cabin') return m.channel === 'cabin' || m.channel === 'whisper';
+    if (channel === 'cabin') return m.channel === 'cabin' || m.channel === 'whisper' || m.channel === 'pa';
     if (channel === 'whisper') return m.channel === 'whisper' && (m.from === you?.id || m.to === you?.id);
     return m.channel === channel;
   });
@@ -110,6 +110,14 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
 
 function ChatLine({ game, m }: { game: PlayerView; m: ChatMessage }) {
   const from = nameOf(game, m.from);
+  if (m.channel === 'pa') {
+    return (
+      <li class="msg pa">
+        <b>📢 {captainName(from)}</b>
+        {m.text}
+      </li>
+    );
+  }
   if (m.channel === 'whisper') {
     const to = nameOf(game, m.to);
     return m.text ? (

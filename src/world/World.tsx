@@ -257,7 +257,9 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     scene === 'walk'
       ? crewRow !== null
         ? `Walking the cart to row ${crewRow}…`
-        : `Walking to seat ${you?.seat ?? ''}…`
+        : grid.isCockpit(you?.seat)
+          ? 'Walking to the flight deck…'
+          : `Walking to seat ${you?.seat ?? ''}…`
       : scene === 'search'
         ? you?.inWashroom
           ? 'Searching the lavatory…'

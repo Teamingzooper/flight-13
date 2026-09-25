@@ -464,6 +464,13 @@ export class SeatControls {
         ? new THREE.Vector2(0, 0)
         : new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       this.events.onTap(ndc);
+      // The click that follows must not land on whatever this tap just opened (the screen appears right under it).
+      const swallow = (ev: MouseEvent) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+      };
+      addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => removeEventListener('click', swallow, { capture: true }), 400);
     });
     listen(dom, 'pointercancel', () => (this.drag = null));
     listen(document, 'pointerlockchange', () => {

@@ -1,12 +1,12 @@
 import { DESTINATIONS } from './destinations';
-import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, lavatoryCells, parseSeat, rowSeats, seatOrder } from './grid';
+import { BLAST_RADIUS, SWEEP_RADIUS, aisleRow, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, lavatoryCells, parsePlace, parseSeat, rowSeats, seatOrder } from './grid';
 import { consumeItem } from './items';
 import { nextInt, pick } from './rng';
-import { ROLES, isSaboteur, isStewardess } from './roles';
-import { checkAction, checkMove, checkSeatbelt } from './rules';
+import { ROLES, isPilot, isSaboteur, isStewardess } from './roles';
+import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
 import { phaseDurationMs } from './settings';
 import { emptyDay, emptyNight } from './setup';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, readNote, removeFromPlay, statsOf } from './state';
+import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, label, newId, onFlightDeck, readNote, removeFromPlay, statsOf } from './state';
 import type { Anomaly, Bomb, BombLocation, Cell, GameState, MoveTarget, NightAction, PlayerState } from './types';
 
 const ANOMALIES: readonly Anomaly[] = ['turbulence', 'runaway_cart', 'blackout'];
@@ -45,45 +45,25 @@ export function startNight(s: GameState, night: number, now: number): void {
 /** End of night_move: the Pilot's seatbelts apply first, then every seat change at once. */
 export function resolveMoves(s: GameState, now: number): void {
   const n = s.phase.night;
-  const turbulence = new Set(Object.keys(s.night.buckled));
-  for (const pilot of activePlayers(s).filter((p) => p.role === 'pilot')) {
-    const choice = s.night.seatbelts[pilot.id];
-    if (turbulence.has(pilot.id) || !choice || choice === 'none') {
+  // The flight deck first: course, rough air and the seatbelt sign; then, with everyone buckled, the jump seat.
+  const pilots = activePlayers(s).filter((p) => isPilot(p.role));
+  for (const pilot of pilots) {
+    if (flightDeckError(s, pilot) !== null) {
       pilot.lastSeatbeltTarget = null;
       continue;
     }
-    const error = checkSeatbelt(s, pilot, choice);
-    if (error) {
-      pilot.lastSeatbeltTarget = null;
-      addLog(s, now, [pilot.id], 'fizzle', `The seatbelt sign did not come on: ${error}`);
-      continue;
-    }
-    const target = getPlayer(s, choice)!;
-    pilot.lastSeatbeltTarget = target.id;
-    addLog(s, now, [pilot.id], 'seatbelt', `You turned on the seatbelt sign for ${target.name} (${target.seat}).`);
-    if (s.night.freed[target.id]) {
-      addLog(s, now, [target.id], 'item', 'Ding. The seatbelt sign lit up over your seat, but your extender keeps you free tonight.');
-      addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} tried to buckle in ${target.name}, who had a seatbelt extender.`);
-      continue;
-    }
-    s.night.buckled[target.id] ??= 'pilot';
-    addLog(
-      s,
-      now,
-      [target.id],
-      'buckled',
-      isStewardess(target.role)
-        ? 'Ding. The captain told the crew to stay put. You are stuck at your post tonight and cannot use an ability.'
-        : 'Ding. The seatbelt sign lit up over your seat. You are stuck here tonight and cannot use an ability.',
-    );
-    addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} buckled in ${target.name}.`);
+    changeCourse(s, pilot, now);
+    flyRoughAir(s, pilot, now);
+    seatbeltSign(s, pilot, now);
   }
+  for (const pilot of pilots) if (flightDeckError(s, pilot) === null) callUp(s, pilot, now);
 
   // Every move is checked against the cabin as it was when the lights went out, then all happen at once.
   const claims = new Map<MoveTarget, PlayerState[]>();
   for (const p of activePlayers(s)) {
     const to = s.night.moves[p.id];
-    if (!to || to === 'stay' || s.night.buckled[p.id]) continue;
+    // (The jump seat guest spends the night on the flight deck instead.)
+    if (!to || to === 'stay' || s.night.buckled[p.id] || p.id === s.night.jumpseat) continue;
     if (checkMove(s, p, to) !== null) continue;
     claims.set(to, [...(claims.get(to) ?? []), p]);
   }
@@ -112,6 +92,92 @@ export function resolveMoves(s: GameState, now: number): void {
     s.cabin.cartRow = row;
     addLog(s, now, 'all', 'cart', `The drink cart is now at row ${row}.`);
   }
+}
+
+/** The seatbelt sign over one passenger (never the same one two nights running). */
+function seatbeltSign(s: GameState, pilot: PlayerState, now: number): void {
+  const n = s.phase.night;
+  const choice = s.night.seatbelts[pilot.id];
+  if (!choice || choice === 'none') {
+    pilot.lastSeatbeltTarget = null;
+    return;
+  }
+  const error = checkSeatbelt(s, pilot, choice);
+  if (error) {
+    pilot.lastSeatbeltTarget = null;
+    addLog(s, now, [pilot.id], 'fizzle', `The seatbelt sign did not come on: ${error}`);
+    return;
+  }
+  const target = getPlayer(s, choice)!;
+  pilot.lastSeatbeltTarget = target.id;
+  addLog(s, now, [pilot.id], 'seatbelt', `You turned on the seatbelt sign for ${target.name} (${target.seat}).`);
+  if (s.night.freed[target.id]) {
+    addLog(s, now, [target.id], 'item', 'Ding. The seatbelt sign lit up over your seat, but your extender keeps you free tonight.');
+    addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} tried to buckle in ${target.name}, who had a seatbelt extender.`);
+    return;
+  }
+  s.night.buckled[target.id] ??= 'pilot';
+  addLog(
+    s,
+    now,
+    [target.id],
+    'buckled',
+    isStewardess(target.role)
+      ? 'Ding. The captain told the crew to stay put. You are stuck at your post tonight and cannot use an ability.'
+      : 'Ding. The seatbelt sign lit up over your seat. You are stuck here tonight and cannot use an ability.',
+  );
+  addLog(s, now, 'end', 'seatbelt', `Night ${n}: Pilot ${pilot.name} buckled in ${target.name}.`);
+}
+
+/** Once per flight: land a night later (hold) or a night sooner (shortcut). Everyone hears. */
+function changeCourse(s: GameState, pilot: PlayerState, now: number): void {
+  const change = s.night.courses[pilot.id];
+  if (!change || checkCourse(s, pilot, change) !== null) return;
+  pilot.courseUsed = true;
+  s.nights += change === 'hold' ? 1 : -1;
+  const text =
+    change === 'hold'
+      ? `The captain is holding: Flight 13 now lands after night ${s.nights}.`
+      : `The captain is taking a shortcut: Flight 13 now lands after night ${s.nights}.`;
+  addLog(s, now, 'all', 'course', text, { change, nights: s.nights });
+  addLog(s, now, 'end', 'course', `Night ${s.phase.night}: Pilot ${pilot.name} ${change === 'hold' ? 'flew a holding pattern' : 'took a shortcut'}.`);
+}
+
+/** Once per flight: rough air buckles everyone in three rows (crew working them included). */
+function flyRoughAir(s: GameState, pilot: PlayerState, now: number): void {
+  const start = s.night.roughair[pilot.id];
+  if (start === undefined || checkRoughAir(s, pilot, start) !== null) return;
+  pilot.roughAirUsed = true;
+  const rows = [start, start + 1, start + 2];
+  for (const p of activePlayers(s)) {
+    const cell = p.seat ? parsePlace(p.seat) : null;
+    if (!cell || !rows.includes(cell.row)) continue;
+    if (s.night.freed[p.id]) {
+      addLog(s, now, [p.id], 'item', 'The plane bucked through rough air, but your seatbelt extender keeps you free tonight.');
+      continue;
+    }
+    s.night.buckled[p.id] ??= 'rough';
+    addLog(s, now, [p.id], 'buckled', 'The plane bucked through rough air and the seatbelt sign came on over your row. You cannot move or use an ability tonight.');
+  }
+  addLog(s, now, 'all', 'roughair', `The plane bucked through rough air over rows ${start}–${start + 2}. Everyone there is buckled in tonight.`, { rows });
+  addLog(s, now, 'end', 'roughair', `Night ${s.phase.night}: Pilot ${pilot.name} flew through rough air over rows ${start}–${start + 2}.`);
+}
+
+/** The jump seat: the guest spends the night on the flight deck (unless they are buckled in). */
+function callUp(s: GameState, pilot: PlayerState, now: number): void {
+  const target = s.night.jumpseats[pilot.id];
+  if (!target || target === 'none' || checkJumpseat(s, pilot, target) !== null) return;
+  const guest = getPlayer(s, target)!;
+  if (s.night.buckled[guest.id]) {
+    addLog(s, now, [pilot.id], 'fizzle', `You called ${guest.name} up to the flight deck, but they are buckled in tonight.`);
+    return;
+  }
+  s.night.jumpseat = guest.id;
+  const back = isAisleSpot(guest.seat) ? 'back at your post' : `back in ${guest.seat}`;
+  addLog(s, now, [guest.id], 'jumpseat', `The captain called you up to the flight deck for the night. You sit in the jump seat, out of everyone's reach, and will be ${back} by morning.`);
+  addLog(s, now, [pilot.id], 'jumpseat', `${guest.name} is up in the jump seat tonight.`);
+  addLog(s, now, 'all', 'jumpseat', `${guest.name} was called up to the flight deck for the night.`, { player: guest.id });
+  addLog(s, now, 'end', 'jumpseat', `Night ${s.phase.night}: Pilot ${pilot.name} called ${guest.name} up to the jump seat.`);
 }
 
 /** Lock yourself in the lavatory for the night: out of reach, and any poison washed out. */
@@ -161,6 +227,34 @@ export function searchSeat(s: GameState, p: PlayerState, now: number): void {
       : `You looked under ${p.seat} and found a bomb, ${fuseText(found[0], n)}. Get away from it.`;
   addLog(s, now, [p.id], 'search', text, { bombs: found.map((b) => b.id), seat: p.seat });
   addLog(s, now, 'end', 'search', `Night ${n}: ${p.name} looked under ${p.seat}${found.length ? ' and found a bomb' : ''}.`);
+}
+
+/** What a cabin camera shows of one action: searching and planting look alike, so bombers can always deny it. */
+function sighting(s: GameState, actor: PlayerState, action: NightAction): string | null {
+  const target = 'target' in action ? getPlayer(s, action.target) : undefined;
+  switch (action.kind) {
+    case 'treat':
+      return target && target.id !== actor.id ? `${actor.name} leaned over to ${target.name}` : `${actor.name} rummaged in a bag`;
+    case 'serve':
+      return target ? `${actor.name} handed ${target.name} a drink` : null;
+    case 'check': {
+      const row = aisleRow(actor.seat);
+      return row === null ? null : `${actor.name} checked under ${rowSeats(row, action.side).join(', ')}`;
+    }
+    case 'sweep':
+      return `${actor.name} looked around the seats nearby`;
+    case 'inspect':
+      return action.what === 'cart' ? `${actor.name} fiddled with the drink cart` : `${actor.name} peered at the lavatory door`;
+    case 'plant':
+      if (action.where === 'seat') return `${actor.name} bent down under their seat`;
+      return action.where === 'cart' ? `${actor.name} fiddled with the drink cart` : `${actor.name} peered at the lavatory door`;
+    case 'search':
+      return `${actor.name} bent down under their seat`;
+    case 'cuff':
+      return target ? `${actor.name} snapped handcuffs on ${target.name}` : null;
+    default:
+      return null;
+  }
 }
 
 interface Acting {
@@ -251,6 +345,23 @@ export function resolveNight(s: GameState, now: number): void {
     } else if ('target' in action && action.kind !== 'cuff' && cuffed.has(action.target)) {
       addLog(s, now, [actor.id], 'fizzle', `${playerById(action.target).name} was handcuffed and led away before you got to them.`);
       acts.splice(i, 1);
+    }
+  }
+
+  // 1c. A saboteur in the jump seat knocks the Pilot out cold (and his cameras go dark tonight).
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'knockout') continue;
+    const pilot = activePlayers(s).find((o) => isPilot(o.role) && isCockpit(o.seat));
+    if (!pilot) continue;
+    pilot.knockedOutNight = n + 1;
+    visit(pilot.id, `${actor.name} knocked you out`);
+    addLog(s, now, [pilot.id], 'knockout', `${actor.name} knocked you out cold in the jump seat. You will be in no state to fly tomorrow night either.`);
+    addLog(s, now, [actor.id], 'knockout', 'You knocked the Pilot out cold. He is out of action tomorrow night too.');
+    addLog(s, now, 'end', 'knockout', `Night ${n}: ${actor.name} knocked Pilot ${pilot.name} out in the jump seat.`);
+    const i = acts.findIndex((a) => a.actor.id === pilot.id);
+    if (i >= 0) {
+      acts.splice(i, 1);
+      addLog(s, now, [pilot.id], 'fizzle', 'You were knocked out before you could check the cameras.');
     }
   }
 
@@ -366,6 +477,42 @@ export function resolveNight(s: GameState, now: number): void {
     addLog(s, now, 'end', action.kind, `Night ${n}: Investigator ${actor.name} checked ${what}${found.length ? ' and found a bomb' : ''}.`);
   }
 
+  // 5c. The cabin cameras: what the Pilot saw in three rows.
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'watch') continue;
+    const rows = [action.startRow, action.startRow + 1, action.startRow + 2];
+    const inRows = (p: PlayerState | undefined) => {
+      if (!p || !p.seat || inWashroom(s, p.id) || onFlightDeck(s, p)) return false;
+      const cell = parsePlace(p.seat);
+      return !!cell && rows.includes(cell.row);
+    };
+    const seen: string[] = [];
+    for (const other of acts) {
+      const text = sighting(s, other.actor, other.action);
+      const target = 'target' in other.action ? playerById(other.action.target) : undefined;
+      if (text && (inRows(other.actor) || inRows(target))) seen.push(text);
+    }
+    for (const [user, seat] of Object.entries(s.night.flashlights)) {
+      const u = playerById(user);
+      if (inRows(u) || rows.includes(parseSeat(seat)?.row ?? 0)) seen.push(`${u.name} shone a light under ${seat}`);
+    }
+    for (const [sleeper, by] of Object.entries(s.night.asleep)) {
+      const a = playerById(by);
+      const t = playerById(sleeper);
+      if (inRows(a) || inRows(t)) seen.push(`${a.name} slipped something into ${t.name}\u2019s water`);
+    }
+    const where = `rows ${rows[0]}–${rows[2]}`;
+    addLog(
+      s,
+      now,
+      [actor.id],
+      'watch',
+      seen.length ? `On the cabin cameras over ${where} you saw: ${seen.join('; ')}.` : `The cabin cameras showed ${where} sleeping.`,
+      { rows },
+    );
+    addLog(s, now, 'end', 'watch', `Night ${n}: Pilot ${actor.name} watched ${where} on the cabin cameras.`);
+  }
+
   // 6. A runaway cart leaves the Stewardess behind (she catches up with it when she next walks).
   if (s.night.anomaly === 'runaway_cart' && !s.cabin.cartDestroyed) {
     s.cabin.cartRow = 1 + nextInt(s, rows);
@@ -399,6 +546,8 @@ export function resolveNight(s: GameState, now: number): void {
     s.incidentAtDawn = true;
     const victims: PlayerState[] = [];
     for (const p of activePlayers(s)) {
+      // No blast reaches the flight deck.
+      if (onFlightDeck(s, p)) continue;
       // Whoever is locked in the lavatory is only caught by a bomb in there with them.
       const caught = inWashroom(s, p.id) ? bomb.location.kind === 'lavatory' : !!p.seat && distanceToAny(cellOf(p), centers) <= BLAST_RADIUS;
       if (!caught) continue;

@@ -113,7 +113,7 @@ function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void
           </div>
           <div>
             <div class="label">Seat</div>
-            <div class="pass-big">{you.seat && grid.isAisleSpot(you.seat) ? 'Crew' : you.seat}</div>
+            <div class="pass-big">{you.seat && grid.isCockpit(you.seat) ? 'Flight deck' : you.seat && grid.isAisleSpot(you.seat) ? 'Crew' : you.seat}</div>
           </div>
           <div>
             <div class="label">Role</div>

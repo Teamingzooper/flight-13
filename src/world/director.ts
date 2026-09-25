@@ -1,4 +1,5 @@
 import { DESTINATIONS, isNightPhase, type Cell, type GameResult, type PlayerView } from '../engine';
+import { captainName } from '../tv/format';
 
 /** Something the cabin should play: a sound, an effect, a camera move or a captain announcement. */
 export type Cue =
@@ -10,7 +11,8 @@ export type Cue =
   | { kind: 'cartRoll'; from: number; to: number; runaway: boolean }
   | { kind: 'restrained'; playerId: string }
   | { kind: 'landing'; result: GameResult }
-  | { kind: 'pa'; text: string };
+  /** An announcement: the flight deck's automatic ones, or the Pilot's own (`who`). */
+  | { kind: 'pa'; text: string; who?: string };
 
 const pa = (text: string): Cue => ({ kind: 'pa', text });
 const CAPTION_MAX = 160;
@@ -83,6 +85,13 @@ export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
   }
   // Black box notes are read out to the cabin.
   for (const e of fresh) if (e.tag === 'note' && e.to === 'all') cues.push(pa(clip(e.text)));
+  // The Pilot's own announcements over the PA.
+  const said = new Set(prev.chat.map((m) => m.id));
+  for (const m of next.chat) {
+    if (m.channel !== 'pa' || said.has(m.id)) continue;
+    const name = next.players.find((p) => p.id === m.from)?.name ?? '';
+    cues.push({ kind: 'pa', text: clip(m.text), who: captainName(name) });
+  }
 
   if (kind === 'ended' && prev.phase.kind !== 'ended' && next.result) {
     cues.push({ kind: 'landing', result: next.result }, pa(endingLine(next.result, city)));

@@ -17,6 +17,7 @@ export {
   SPECIAL_CARDS,
   teamOf,
   isSaboteur,
+  isPilot,
   presetCards,
   validateCards,
   emptyCards,
@@ -35,6 +36,8 @@ export {
   MIN_PLAYERS,
   MAX_PLAYERS,
   CHAT_MAX_LENGTH,
+  PA_MAX_LENGTH,
+  PA_COOLDOWN_MS,
 } from './settings';
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';

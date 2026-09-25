@@ -122,7 +122,7 @@ The host chooses how many of each special card to include; everyone else is a **
 | Role | Ability | Timing | Requirement |
 |---|---|---|---|
 | Passenger | None — moves, chats, votes | — | — |
-| Pilot | `seatbelt(target)`: target cannot move or act tonight | `night_move` | Not self; not the same target as the previous night |
+| Pilot (loyal or rogue) | Flies from the flight deck (see M13). Every night: `seatbelt(target)`, `jumpseat(target)`, `watch(startRow)` on the cabin cameras. Once per flight: `roughair(startRow)`, `course(hold/shortcut)`. By day: PA announcements | `night_move` / `night_act` / day | Seatbelt: not self, not the same target two nights running |
 | Nurse | `treat(target)`: target cannot die tonight, existing poison is cured, poison applied tonight fails | `night_act` | Target within distance 1; self-treat once per game |
 | Investigator | `sweep`: finds seat bombs within distance 1 of own seat; or `inspect(cart \| lavatory)` | `night_act` | Inspect requires adjacency to that object (and it must not be destroyed) |
 | Stewardess (loyal) | Works the aisle, not a seat (see M10). `check(side)`: looks under the three seats on the left or right of her row for bombs (misses the Mastermind's); the cart rolls with her | `night_act` | Her own row |

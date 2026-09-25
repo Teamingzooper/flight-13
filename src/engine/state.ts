@@ -1,4 +1,4 @@
-import { allSeats, parsePlace } from './grid';
+import { allSeats, isCockpit, parsePlace } from './grid';
 import { ROLES } from './roles';
 import { normalizeSettings, phaseDurationMs } from './settings';
 import type { Bomb, Cell, DeathCause, GameState, LogAudience, LogTag, PhaseKind, PlayerState, PlayerStats, SeatId } from './types';
@@ -35,6 +35,16 @@ export function cellOf(p: PlayerState): Cell {
 /** Locked in the lavatory tonight: out of everyone's reach, and away from their seat. */
 export function inWashroom(s: GameState, id: string): boolean {
   return s.phase.kind === 'night_act' && s.night.washroom === id;
+}
+
+/** Up in the jump seat tonight. */
+export function isGuest(s: GameState, id: string): boolean {
+  return s.phase.kind === 'night_act' && s.night.jumpseat === id;
+}
+
+/** On the flight deck right now: the Pilot, or his guest in the jump seat tonight. */
+export function onFlightDeck(s: GameState, p: PlayerState): boolean {
+  return isCockpit(p.seat) || isGuest(s, p.id);
 }
 
 export function newId(s: GameState): number {
@@ -94,6 +104,10 @@ export function normalizeGame(s: GameState): GameState {
   s.night.freed ??= {};
   s.night.defused ??= {};
   s.night.washroom ??= null;
+  s.night.jumpseats ??= {};
+  s.night.roughair ??= {};
+  s.night.courses ??= {};
+  s.night.jumpseat ??= null;
   s.day.doubled ??= {};
   for (const b of s.bombs) b.defused ??= false;
   for (const p of s.players) {
@@ -103,6 +117,9 @@ export function normalizeGame(s: GameState): GameState {
     p.usedItems ??= [];
     p.poisonedBy ??= null;
     p.washroomUsed ??= false;
+    p.roughAirUsed ??= false;
+    p.courseUsed ??= false;
+    p.knockedOutNight ??= null;
   }
   return s;
 }
