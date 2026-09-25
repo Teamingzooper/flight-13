@@ -9,6 +9,7 @@ import { ItemIcon } from '../meta/ItemIcon';
 import { useBag } from '../meta/store';
 import type { TVContext } from './context';
 import { morningReport, roleName, teamName, whenLabel } from './format';
+import { PostcardView } from './Postcard';
 import { RecorderView } from './RecorderView';
 import { TutorialCoach } from '../tutorial/Coach';
 import { Tally } from './VoteTab';
@@ -62,8 +63,21 @@ export function usePhaseOverlayOpen(game: PlayerView): boolean {
   return cardShowing(game, closed);
 }
 
-/** `onRecorder`: in 3D, watch the flight recorder in the cabin (the end screen steps aside for it). */
-export function PhaseOverlay({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () => void; onRecorder?: () => void }) {
+/**
+ * `onRecorder`: in 3D, watch the flight recorder in the cabin (the end screen steps aside for it). `onPhoto`: in 3D, a
+ * group photo of the cabin for the postcard.
+ */
+export function PhaseOverlay({
+  ctx,
+  onLeave,
+  onRecorder,
+  onPhoto,
+}: {
+  ctx: TVContext;
+  onLeave: () => void;
+  onRecorder?: () => void;
+  onPhoto?: () => HTMLCanvasElement | null;
+}) {
   const { game } = ctx;
   const [closed, setClosed] = useDismissed();
   if (!cardShowing(game, closed)) return null;
@@ -80,6 +94,7 @@ export function PhaseOverlay({ ctx, onLeave, onRecorder }: { ctx: TVContext; onL
         <EndScreen
           ctx={ctx}
           onLeave={onLeave}
+          onPhoto={onPhoto}
           onRecorder={
             onRecorder &&
             (() => {
@@ -263,9 +278,21 @@ function Earnings({ game }: { game: PlayerView }) {
   );
 }
 
-function EndScreen({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () => void; onRecorder?: () => void }) {
+function EndScreen({
+  ctx,
+  onLeave,
+  onRecorder,
+  onPhoto,
+}: {
+  ctx: TVContext;
+  onLeave: () => void;
+  onRecorder?: () => void;
+  onPhoto?: () => HTMLCanvasElement | null;
+}) {
   const { game, state, flight } = ctx;
-  const [view, setView] = useState<'roles' | 'blackbox' | 'recorder'>('roles');
+  const [view, setView] = useState<'roles' | 'blackbox' | 'recorder' | 'postcard'>('roles');
+  // The group photo is taken as the Postcard tab opens (the 3D view keeps running behind the end screen).
+  const [photo, setPhoto] = useState<HTMLCanvasElement | null>(null);
   const r = game.result;
   const summary = game.log.filter((e) => e.tag === 'gameover').at(-1)?.text ?? '';
   const blackBox = game.log.filter((e) => e.to === 'end');
@@ -290,8 +317,19 @@ function EndScreen({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () =
           <button class={view === 'recorder' ? 'on' : ''} onClick={() => setView('recorder')}>
             Flight recorder
           </button>
+          <button
+            class={view === 'postcard' ? 'on' : ''}
+            onClick={() => {
+              if (view !== 'postcard') setPhoto(onPhoto?.() ?? null);
+              setView('postcard');
+            }}
+          >
+            Postcard
+          </button>
         </div>
-        {view === 'recorder' ? (
+        {view === 'postcard' ? (
+          <PostcardView game={game} code={state.code} faces={flight.client.faces} photo={photo} />
+        ) : view === 'recorder' ? (
           <RecorderView game={game} onWatch3D={onRecorder} />
         ) : view === 'roles' ? (
           <ul class="role-reveal">

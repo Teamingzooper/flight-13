@@ -967,6 +967,24 @@ export class People {
   }
 
   /** Draw for the cabin cameras (true) or for your own eyes (false): swaps camera-only stand-ins and the people they stand in for. */
+  /** Draw with someone's head on, even your own (your view hides it), for a photo of everyone; then hide it again. */
+  withHead(id: string | null, draw: () => void): void {
+    const actor = id ? this.actors.get(id) : undefined;
+    if (!id || !actor?.hideHead) return draw();
+    const redraw = () => {
+      this.write(id, actor);
+      for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    };
+    actor.hideHead = false;
+    redraw();
+    try {
+      draw();
+    } finally {
+      actor.hideHead = true;
+      redraw();
+    }
+  }
+
   cameraView(on: boolean): void {
     if (this.cameraPass === on) return;
     this.cameraPass = on;
