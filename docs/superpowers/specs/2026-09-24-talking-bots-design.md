@@ -165,7 +165,7 @@ They know their team (their view shows it). By default they:
 - **M15:** the brains, chat, votes, night talk and orders, the Pilot's PA reports, the settings, and the engine additions.
 - **M16:** speech bubbles and babble in 3D.
 
-The tutorial, accessories, flight recorder replay and plane types follow as M17–M20.
+Next come M17 (more bombs on longer flights, and custom destinations) and M18 (the Pilot's physical cockpit controls and the camera replay). The tutorial, accessories, flight recorder replay and plane types follow.
 
 ## Out of scope
 
