@@ -1318,3 +1318,37 @@
   color: var(--amber);
   text-transform: uppercase;
 }
+
+/* Accessories: locked wardrobe tiles show their price; Duty Free lists them by slot. */
+.tile.locked {
+  opacity: 0.72;
+}
+
+.tile.locked:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.tile-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.df-lead {
+  margin: 0 0 6px;
+}
+
+.df-section h2 {
+  margin: 18px 0 10px;
+  font: 700 18px var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.df-accessory .df-item-top {
+  justify-content: center;
+}

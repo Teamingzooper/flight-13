@@ -1,17 +1,21 @@
-import { useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import { ITEMS, ITEM_ORDER, type ItemId } from '../../engine';
+import { ACCESSORIES, ACCESSORY_SLOTS } from '../../meta/accessories';
 import { ACHIEVEMENTS } from '../../meta/achievements';
-import { buy, countOf, type ItemCounts } from '../../meta/bag';
+import { buy, buyAccessory, countOf, ownsAccessory, type ItemCounts } from '../../meta/bag';
 import { redeem } from '../../meta/codes';
 import { Credits } from '../../meta/Credits';
 import { ItemIcon } from '../../meta/ItemIcon';
 import { PRICES, whenLabel } from '../../meta/shop';
 import { getBag, updateBag, useBag } from '../../meta/store';
+import { Avatar } from '../Avatar';
+import { loadProfile } from '../profile';
 
-type Tab = 'shop' | 'bag' | 'achievements' | 'code';
+type Tab = 'shop' | 'accessories' | 'bag' | 'achievements' | 'code';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'shop', label: 'Shop' },
+  { id: 'accessories', label: 'Accessories' },
   { id: 'bag', label: 'Your bag' },
   { id: 'achievements', label: 'Achievements' },
   { id: 'code', label: 'Redeem a code' },
@@ -87,6 +91,8 @@ export function DutyFree() {
         </ul>
       )}
 
+      {tab === 'accessories' && <AccessoryShop />}
+
       {tab === 'bag' &&
         (owned.length === 0 ? (
           <p class="df-empty">Your bag is empty. Win flights, unlock achievements or shop here to fill it.</p>
@@ -134,6 +140,50 @@ export function DutyFree() {
 
       <p class="df-note muted">Credits and items are kept in this browser. Clearing site data empties your bag.</p>
     </div>
+  );
+}
+
+/** Hats, eyewear and things for the neck: each card shows your own passenger wearing it. Bought once, worn forever. */
+function AccessoryShop() {
+  const bag = useBag();
+  const profile = useMemo(() => loadProfile(), []);
+  const [flash, setFlash] = useState<{ id: string; at: number } | null>(null);
+  const purchase = (id: string) => {
+    updateBag((b) => buyAccessory(b, id) ?? b);
+    setFlash({ id, at: Date.now() });
+  };
+  return (
+    <>
+      <p class="muted df-lead">Purely for looks. Wear them in the wardrobe (Customize); everyone on your flight sees them.</p>
+      {ACCESSORY_SLOTS.map(({ slot, label }) => (
+        <section key={slot} class="df-section">
+          <h2>{label}</h2>
+          <ul class="df-grid">
+            {ACCESSORIES.filter((a) => a.slot === slot).map((a) => {
+              const owned = ownsAccessory(bag, a.id);
+              return (
+                <li key={flash?.id === a.id ? `${a.id}:${flash.at}` : a.id} class={`df-item df-accessory${flash?.id === a.id ? ' bought' : ''}`}>
+                  <div class="df-item-top">
+                    <Avatar look={{ ...profile.look, [slot]: a.index }} face={profile.face} size={64} />
+                  </div>
+                  <h3>{a.name}</h3>
+                  <p>{a.blurb}</p>
+                  <div class="df-item-foot">
+                    {owned ? (
+                      <span class="df-owned">✓ Owned</span>
+                    ) : (
+                      <button class="btn primary small" disabled={bag.credits < a.price} onClick={() => purchase(a.id)}>
+                        Buy · <Credits amount={a.price} />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </>
   );
 }
 

@@ -23,7 +23,19 @@ export const PROTOCOL_VERSION = 1;
 export const NAME_MAX_LENGTH = 16;
 
 /** Options per look slot; the avatar and 3D palettes are sized to match. */
-export const LOOK_LIMITS: Readonly<Record<keyof Look, number>> = { body: 3, skin: 8, hair: 10, hairColor: 12, top: 12, topStyle: 4, bottom: 8 };
+/** How many choices each part of a look has (accessories count "none" as one of theirs; see meta/accessories.ts). */
+export const LOOK_LIMITS: Readonly<Record<keyof Look, number>> = {
+  body: 3,
+  skin: 8,
+  hair: 10,
+  hairColor: 12,
+  top: 12,
+  topStyle: 4,
+  bottom: 8,
+  hat: 7,
+  eyes: 6,
+  neck: 7,
+};
 
 export interface LobbyPlayer {
   id: string;
@@ -124,11 +136,16 @@ export function cleanLook(raw: unknown): Look {
     top: slot('top'),
     topStyle,
     bottom: slot('bottom'),
+    hat: slot('hat'),
+    eyes: slot('eyes'),
+    neck: slot('neck'),
   };
 }
 
-export function randomLook(random: () => number): Look {
+/** A random look; with `accessories`, each slot is worn half the time (bots dress up, new passengers start plain). */
+export function randomLook(random: () => number, accessories = false): Look {
   const r = (key: keyof Look) => Math.floor(random() * LOOK_LIMITS[key]);
+  const extra = (key: 'hat' | 'eyes' | 'neck') => (accessories && random() < 0.5 ? 1 + Math.floor(random() * (LOOK_LIMITS[key] - 1)) : 0);
   return {
     body: r('body'),
     skin: r('skin'),
@@ -137,10 +154,12 @@ export function randomLook(random: () => number): Look {
     top: r('top'),
     topStyle: r('topStyle'),
     bottom: r('bottom'),
+    hat: extra('hat'),
+    eyes: extra('eyes'),
+    neck: extra('neck'),
   };
 }
 
-/** Rebuild Settings from untrusted input, keeping only known fields (validate separately). */
 /** A host-made destination from untrusted input, or null when it is not a valid one. Unknown effects are dropped. */
 export function cleanCustomDestination(raw: unknown): CustomDestination | null {
   if (!isObj(raw)) return null;
@@ -155,6 +174,7 @@ export function cleanCustomDestination(raw: unknown): CustomDestination | null {
   return validateCustomDestination(c) ? null : c;
 }
 
+/** Rebuild Settings from untrusted input, keeping only known fields (validate separately). */
 export function cleanSettings(raw: unknown): Settings | null {
   if (!isObj(raw) || !isObj(raw.cards)) return null;
   const cards = {} as Cards;

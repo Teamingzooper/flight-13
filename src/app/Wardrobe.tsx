@@ -2,20 +2,72 @@ import type { ComponentChildren } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useEffect, useState } from 'preact/hooks';
 import type { Look } from '../engine';
+import { ACCESSORIES, ACCESSORY_SLOTS } from '../meta/accessories';
+import { buyAccessory, ownsAccessory } from '../meta/bag';
+import { Credits } from '../meta/Credits';
+import { updateBag, useBag } from '../meta/store';
 import { randomLook } from '../net/protocol';
 import { Avatar, BOTTOM, BUILDS, HAIR_COLOR, HAIR_STYLES, SKIN, SKIN_ORDER, TOP, TOP_STYLES } from './Avatar';
 import { CharacterPreview } from './CharacterPreview';
 import { FaceEditor } from './FaceEditor';
 import type { Profile } from './profile';
 
-type Section = 'face' | 'hair' | 'skin' | 'outfit' | 'build';
+type Section = 'face' | 'hair' | 'skin' | 'outfit' | 'build' | 'extras';
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'face', label: 'Face' },
   { id: 'hair', label: 'Hair' },
   { id: 'skin', label: 'Skin' },
   { id: 'outfit', label: 'Outfit' },
   { id: 'build', label: 'Build' },
+  { id: 'extras', label: 'Extras' },
 ];
+
+/** Accessories: a row per slot. Yours to pick; the rest show their price, and can be bought right here. */
+function Extras({ look, face, onPick }: { look: Look; face: string; onPick: (patch: Partial<Look>) => void }) {
+  const bag = useBag();
+  return (
+    <>
+      {ACCESSORY_SLOTS.map(({ slot, label }) => (
+        <div key={slot}>
+          <div class="label">{label}</div>
+          <div class="tile-grid">
+            <Tile on={!look[slot]} onClick={() => onPick({ [slot]: 0 })}>
+              <Avatar look={{ ...look, [slot]: 0 }} face={face} size={56} />
+              <span>None</span>
+            </Tile>
+            {ACCESSORIES.filter((a) => a.slot === slot).map((a) => {
+              const owned = ownsAccessory(bag, a.id);
+              const afford = bag.credits >= a.price;
+              return (
+                <Tile
+                  key={a.id}
+                  on={look[slot] === a.index}
+                  locked={!owned}
+                  disabled={!owned && !afford}
+                  onClick={() => {
+                    if (!owned && !updateBag((b) => buyAccessory(b, a.id) ?? b).wardrobe.includes(a.id)) return;
+                    onPick({ [slot]: a.index });
+                  }}
+                >
+                  <Avatar look={{ ...look, [slot]: a.index }} face={face} size={56} />
+                  <span>{a.name}</span>
+                  {!owned && (
+                    <small class="tile-price">
+                      🔒 <Credits amount={a.price} />
+                    </small>
+                  )}
+                </Tile>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <p class="hint">
+        You have <Credits amount={bag.credits} />. Locked ones are bought (once) as you pick them; earn credits by flying.
+      </p>
+    </>
+  );
+}
 
 function Swatches({ colors, selected, order, onPick, label }: { colors: string[]; selected: number; order?: number[]; onPick: (i: number) => void; label: string }) {
   return (
@@ -36,9 +88,21 @@ function Swatches({ colors, selected, order, onPick, label }: { colors: string[]
   );
 }
 
-function Tile({ on, onClick, children }: { on: boolean; onClick: () => void; children: ComponentChildren }) {
+function Tile({
+  on,
+  onClick,
+  children,
+  locked = false,
+  disabled = false,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: ComponentChildren;
+  locked?: boolean;
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" class={`tile${on ? ' on' : ''}`} aria-pressed={on} onClick={onClick}>
+    <button type="button" class={`tile${on ? ' on' : ''}${locked ? ' locked' : ''}`} aria-pressed={on} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   );
@@ -71,8 +135,12 @@ export function Wardrobe({ profile, onChange, onClose }: { profile: Profile; onC
         </header>
         <div class="wardrobe-body">
           <div class="wardrobe-preview">
-            <CharacterPreview look={look} face={profile.face} framing={section === 'outfit' || section === 'build' ? 'body' : section === 'hair' ? 'hair' : 'face'} />
-            <button type="button" class="btn ghost small" onClick={() => onChange({ ...profile, look: randomLook(Math.random) })}>
+            <CharacterPreview
+              look={look}
+              face={profile.face}
+              framing={section === 'outfit' || section === 'build' ? 'body' : section === 'hair' || section === 'extras' ? 'hair' : 'face'}
+            />
+            <button type="button" class="btn ghost small" onClick={() => onChange({ ...profile, look: { ...randomLook(Math.random), hat: look.hat, eyes: look.eyes, neck: look.neck } })}>
               Surprise me
             </button>
           </div>
@@ -126,6 +194,7 @@ export function Wardrobe({ profile, onChange, onClose }: { profile: Profile; onC
                   <Swatches label="Trouser colour" colors={BOTTOM} selected={look.bottom} onPick={(i) => set({ bottom: i })} />
                 </>
               )}
+              {section === 'extras' && <Extras look={look} face={profile.face} onPick={set} />}
               {section === 'build' && (
                 <>
                   <div class="label">Build</div>
