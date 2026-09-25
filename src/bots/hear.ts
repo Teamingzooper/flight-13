@@ -90,7 +90,7 @@ function roleAtStart(phrase: string): RoleId | null {
 }
 
 /** Name forms a player answers to, longest first: the full name, the name without "(bot)", a unique first name. */
-function nameForms(roster: RosterEntry[]): { form: string; id: string }[] {
+function nameForms(roster: RosterEntry[]): { form: string; index: number }[] {
   const base = (name: string) =>
     name
       .toLowerCase()
@@ -104,8 +104,8 @@ function nameForms(roster: RosterEntry[]): { form: string; id: string }[] {
     bump(b);
     if (b.split(' ')[0] !== b) bump(b.split(' ')[0]);
   }
-  const forms: { form: string; id: string }[] = [];
-  for (const p of roster) {
+  const forms: { form: string; index: number }[] = [];
+  roster.forEach((p, index) => {
     const full = p.name.toLowerCase().trim();
     const b = base(p.name);
     const first = b.split(' ')[0];
@@ -113,19 +113,19 @@ function nameForms(roster: RosterEntry[]): { form: string; id: string }[] {
     const candidates = new Set([full]);
     if (count.get(b) === 1) candidates.add(b);
     if (count.get(first) === 1) candidates.add(first);
-    for (const form of candidates) if (form.length >= 2 && !STOP.has(form)) forms.push({ form, id: p.id });
-  }
+    for (const form of candidates) if (form.length >= 2 && !STOP.has(form)) forms.push({ form, index });
+  });
   // Longest first, so "jo (bot) 2" wins over "jo".
   return forms.sort((a, b) => b.form.length - a.form.length);
 }
 
-/** Lower-case the line and replace seats with "#4C" and names with "@id". */
+/** Lower-case the line and replace seats with "#4C" and names with "@3" (their place in the roster: never a word). */
 export function mask(text: string, roster: RosterEntry[]): string {
   let t = ` ${text.toLowerCase().replace(/[’‘`]/g, "'").replace(/@/g, ' ')} `;
   t = t.replace(/\b(\d{1,2})([a-f])\b/g, (_, row: string, col: string) => ` #${Number(row)}${col.toUpperCase()} `);
-  for (const { form, id } of nameForms(roster)) {
+  for (const { form, index } of nameForms(roster)) {
     const re = new RegExp(`(^|[^a-z0-9#@])(${escapeRe(form)})(?=$|[^a-z0-9])`, 'g');
-    t = t.replace(re, (_, pre: string) => `${pre} @${id} `);
+    t = t.replace(re, (_, pre: string) => `${pre} @${index} `);
   }
   return t.replace(/\s+/g, ' ').trim();
 }
@@ -136,8 +136,8 @@ function roleIn(text: string): RoleId | null {
 }
 
 /** Mentioned ids and seats, in order. */
-function mentions(masked: string): { ids: string[]; seats: SeatId[] } {
-  const ids = [...masked.matchAll(/@([a-z0-9_-]+)/g)].map((m) => m[1]);
+function mentions(masked: string, roster: RosterEntry[]): { ids: string[]; seats: SeatId[] } {
+  const ids = [...masked.matchAll(/@(\d+)/g)].map((m) => roster[Number(m[1])]?.id).filter((id): id is string => !!id);
   const seats = [...masked.matchAll(/#(\d{1,2}[A-F])/g)].map((m) => m[1]);
   return { ids, seats };
 }
@@ -152,18 +152,19 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
   const masked = mask(text, roster);
   const bySeat = new Map(roster.filter((p) => p.seat).map((p) => [p.seat!, p.id]));
   const me = roster.find((p) => p.id === speaker);
-  const { ids, seats } = mentions(masked);
+  const { ids, seats } = mentions(masked, roster);
   const seatPeople = seats.map((s) => bySeat.get(s)).filter((id): id is string => !!id);
   const about = [...new Set([...ids, ...seatPeople])].filter((id) => id !== speaker);
 
   // Who it is said to: names up front followed by a comma or a question ("Jo, …", "Jo what did you find").
   const to: string[] = [];
-  const lead = /^((?:@[a-z0-9_-]+\s*(?:,|and|&)?\s*)+?)(?:[,:!?]|\s(?=(?:what|who|where|why|how|did|do|can|have|are|were)\b))/.exec(masked);
-  if (lead) to.push(...mentions(lead[1]).ids);
+  const lead = /^((?:@\d+\s*(?:,|and|&)?\s*)+?)(?:[,:!?]|\s(?=(?:what|who|where|why|how|did|do|can|have|are|were)\b))/.exec(masked);
+  if (lead) to.push(...mentions(lead[1], roster).ids);
   const question = masked.includes('?');
   if (question) {
-    const tail = /@([a-z0-9_-]+)\s*\?+\s*$/.exec(masked);
-    if (tail) to.push(tail[1]);
+    const tail = /@(\d+)\s*\?+\s*$/.exec(masked);
+    const asked = tail ? roster[Number(tail[1])]?.id : undefined;
+    if (asked) to.push(asked);
     if (to.length === 0 && EVERYONE.test(masked)) to.push('*');
   }
   const addressed = [...new Set(to)].filter((id) => id !== speaker && id !== '*');
@@ -199,10 +200,10 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
 
   // Votes.
   let vote: string | null = null;
-  const voteMatch = /\b(?:vote|voting|votes? for|i vote)\s+(?:for\s+|out\s+)?(@[a-z0-9_-]+|#\d{1,2}[A-F])/.exec(masked);
+  const voteMatch = /\b(?:vote|voting|votes? for|i vote)\s+(?:for\s+|out\s+)?(@\d+|#\d{1,2}[A-F])/.exec(masked);
   if (voteMatch) {
     const token = voteMatch[1];
-    vote = token.startsWith('@') ? token.slice(1) : (bySeat.get(token.slice(1)) ?? null);
+    vote = token.startsWith('@') ? (roster[Number(token.slice(1))]?.id ?? null) : (bySeat.get(token.slice(1)) ?? null);
     if (vote === speaker) vote = null;
   } else if (/\b(skip|skipping|abstain|abstaining|no vote)\b/.test(masked)) {
     vote = 'skip';
@@ -213,11 +214,11 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
   const defend: string[] = [];
   const resultLine = RESULT_VERBS.test(masked);
   for (const clause of masked.split(/[.!;?\n]+|\bbut\b|\bwhile\b|\bwhereas\b/)) {
-    const { ids: cIds, seats: cSeats } = mentions(clause);
+    const { ids: cIds, seats: cSeats } = mentions(clause, roster);
     const people = [...new Set([...cIds, ...cSeats.map((x) => bySeat.get(x)).filter((id): id is string => !!id)])].filter((id) => id !== speaker);
     if (people.length === 0) continue;
     const accuseAt = clause.search(ACCUSE_WORDS);
-    const itsX = /\b(?:it'?s|it is|it was|gotta be|has to be|must be)\s+@/.test(clause) || /@[a-z0-9_-]+\s+did it\b/.test(clause);
+    const itsX = /\b(?:it'?s|it is|it was|gotta be|has to be|must be)\s+@/.test(clause) || /@\d+\s+did it\b/.test(clause);
     // (A clean search result names a seat, but it is a result, not a defense.)
     const defendAt = resultLine ? -1 : clause.search(DEFEND_WORDS);
     const accused = (accuseAt >= 0 && !negatedBefore(clause, accuseAt)) || itsX || (defendAt >= 0 && negatedBefore(clause, defendAt));
@@ -237,7 +238,7 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
   // Questions.
   let ask: Ask | null = null;
   if (question || /^(who|what|where|why|how|did|do|does|have|has|can|anyone|any1)\b/.test(masked)) {
-    if (/\bwhat did (?:you|u|ya|@[a-z0-9_-]+) (?:find|search|check|see|get|do)\b|\bfind anything\b|\bsee anything\b|\bresults?\b|\bwhat'?d you find\b/.test(masked)) {
+    if (/\bwhat did (?:you|u|ya|@\d+) (?:find|search|check|see|get|do)\b|\bfind anything\b|\bsee anything\b|\bresults?\b|\bwhat'?d you find\b/.test(masked)) {
       ask = 'result';
     } else if (/\bwho are (?:you|u)\b|\bwhat'?s (?:your|ur) role\b|\bwhat is (?:your|ur) role\b|\bwhat are (?:you|u)\b|\broles?\?|\bclaim\?|\bwhat'?s your claim\b/.test(masked)) {
       ask = 'role';
@@ -252,8 +253,8 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
   let order: Order | null = null;
   if (channel === 'saboteurs') {
     // "Jo, plant 5C" or just "Jo plant 5C": orders open with who they are for.
-    const orderLead = /^((?:@[a-z0-9_-]+\s*(?:,|and|&)?\s*)+)(?=(?:plant|bomb|place|drop|set|poison|serve|drug|spike|move|switch|sit|go|head|stay|lay|lie|wait|do|chill|hold|knock|ko|take|hit)\b)/.exec(masked);
-    const leaders = orderLead ? mentions(orderLead[1]).ids.filter((id) => id !== speaker) : [];
+    const orderLead = /^((?:@\d+\s*(?:,|and|&)?\s*)+)(?=(?:plant|bomb|place|drop|set|poison|serve|drug|spike|move|switch|sit|go|head|stay|lay|lie|wait|do|chill|hold|knock|ko|take|hit)\b)/.exec(masked);
+    const leaders = orderLead ? mentions(orderLead[1], roster).ids.filter((id) => id !== speaker) : [];
     const who: string[] | 'all' = addressed.length > 0 ? addressed : leaders.length > 0 ? leaders : 'all';
     const firstSeat = seats[0];
     if (/\b(knock|knockout|ko|take out|hit)\b[^.]*\b(pilot|captain|him)\b|\bknock (?:him|the pilot|the captain) out\b/.test(masked)) {

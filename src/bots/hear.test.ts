@@ -13,7 +13,8 @@ const team = (text: string, speaker = 'me') => hear(text, speaker, ROSTER, 'sabo
 
 describe('hearing', () => {
   it('masks names and seats, so a name is never a role', () => {
-    expect(mask('Captain Kay checked 4c', ROSTER)).toBe('@kay checked #4C');
+    // (Names become their place in the roster, which never reads as a word.)
+    expect(mask('Captain Kay checked 4c', ROSTER)).toBe('@3 checked #4C');
     expect(cabin('Captain Kay is on the PA').claim).toBeNull();
     expect(cabin('Captain Kay is on the PA').about).toEqual(['kay']);
   });
