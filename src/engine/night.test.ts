@@ -181,6 +181,10 @@ describe('poison', () => {
     advanceTo(s, 'dawn', 2);
     expect(player(s, 'victim').status).toBe('alive');
     expect(player(s, 'victim').poisonedNight).toBeNull();
+    // Each result says who it was about, as data.
+    const mine = (id: string, tag: string) => s.log.find((e) => e.tag === tag && Array.isArray(e.to) && e.to.includes(id))!;
+    expect(mine('rogue', 'serve').data).toEqual({ target: 'victim' });
+    expect(mine('nurse', 'treat').data).toEqual({ target: 'victim' });
   });
 
   it('fails when the victim is treated the same night', () => {
@@ -211,6 +215,10 @@ describe('investigation', () => {
     advanceTo(s, 'dawn', 1);
     expect(player(s, 'inv').knownBombIds).toEqual([s.bombs[0].id]);
     expect(logTexts(s, 'inv').some((t) => t.includes('under seat 5D'))).toBe(true);
+    // The seats the sweep covered, as data (the eight around 4E, and 4E itself).
+    const entry = s.log.find((e) => e.tag === 'sweep' && Array.isArray(e.to) && e.to.includes('inv'))!;
+    expect(entry.data!.bombs).toEqual([s.bombs[0].id]);
+    expect([...(entry.data!.seats as string[])].sort()).toEqual(['3D', '3E', '3F', '4D', '4E', '4F', '5D', '5E', '5F']);
   });
 
   it('inspecting the cart needs adjacency and finds cart bombs', () => {

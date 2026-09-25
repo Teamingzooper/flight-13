@@ -181,6 +181,14 @@ export type NightAction =
   /** A saboteur in the jump seat knocks the Pilot out cold. */
   | { kind: 'knockout' };
 
+/** Something the Pilot's cabin cameras caught someone doing (for bots and replays; the text says the same). */
+export interface Sighting {
+  actor: string;
+  kind: NightAction['kind'] | 'flashlight' | 'pills';
+  target?: string;
+  seat?: SeatId;
+}
+
 export interface NightChoices {
   moves: Record<string, MoveTarget>;
   /** Pilot id → target id or 'none'. */

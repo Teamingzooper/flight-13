@@ -40,14 +40,17 @@ export function resolveVote(s: GameState, now: number): void {
     }
   }
   const restrained = leader !== null && !tied && leaderVotes > tally.skip ? getPlayer(s, leader)! : null;
+  // Who voted for whom goes on record when votes are open (everyone saw it anyway).
+  const votes = s.settings.anonymousVotes ? {} : { votes: { ...s.day.votes } };
   if (restrained) {
     removeFromPlay(s, restrained, 'restrained', s.phase.night);
     addLog(s, now, 'all', 'verdict', `The passengers restrained ${label(restrained)} and walked them to the rear galley.`, {
       player: restrained.id,
+      ...votes,
     });
     readNote(s, restrained, now);
   } else {
-    addLog(s, now, 'all', 'verdict', 'No one was restrained.');
+    addLog(s, now, 'all', 'verdict', 'No one was restrained.', s.settings.anonymousVotes ? undefined : votes);
   }
   s.verdict = { night: s.phase.night, restrained: restrained?.id ?? null, tally };
 }
