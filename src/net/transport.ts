@@ -18,6 +18,8 @@ export interface MediaChannel {
 export interface Transport {
   readonly selfId: string;
   send(peerId: string, msg: unknown): void;
+  /** The same message to several peers at once, where the network can do that in one go (the relay server). */
+  sendMany?(peerIds: string[], msg: unknown): void;
   onMessage(fn: MessageHandler): Unsubscribe;
   onPeerJoin(fn: PeerHandler): Unsubscribe;
   onPeerLeave(fn: PeerHandler): Unsubscribe;

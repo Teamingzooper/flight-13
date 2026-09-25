@@ -4,7 +4,15 @@ import { newFlightCode } from '../net/code';
 import { HostSession, newHostSnapshot } from '../net/host';
 import { startTicker } from '../net/ticker';
 import { MemoryHub, type MediaChannel } from '../net/transport';
+import { relayTransport, relayUrl } from '../net/relay';
+import type { Transport } from '../net/transport';
 import { trysteroTransport } from '../net/trystero';
+
+/** The flight's network: the relay server when this build has one (any network works), else direct connections. */
+function openNetwork(code: string): Transport {
+  const relay = relayUrl();
+  return relay ? relayTransport(relay, code) : trysteroTransport(code);
+}
 import { stopVoice } from '../net/voice';
 import { acquireHostLock, deleteHostSnapshot, loadHostSnapshot, saveHostSnapshot } from './hosting';
 import { loadProfile, rememberFlight } from './profile';
@@ -60,7 +68,7 @@ export function openFlight(code: string): ActiveFlight {
       return active.flight;
     }
     const hub = new MemoryHub();
-    const network = trysteroTransport(code);
+    const network = openNetwork(code);
     const host = new HostSession({
       network,
       local: hub.join('host'),
@@ -94,7 +102,7 @@ export function openFlight(code: string): ActiveFlight {
     return flight;
   }
 
-  const transport = trysteroTransport(code);
+  const transport = openNetwork(code);
   const client = new ClientSession({
     transport,
     code,
