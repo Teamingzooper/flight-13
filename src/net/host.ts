@@ -341,7 +341,16 @@ export class HostSession {
     for (const [id, pose] of this.poses) {
       poses[id] = [Math.round(pose.yaw * 1000) / 1000, Math.round(pose.pitch * 1000) / 1000, pose.lean && !night ? 1 : 0];
     }
-    for (const [peerId, peer] of this.peers) if (peer.playerId || peer.tower) this.sendTo(peerId, { t: 'poses', poses });
+    // Everyone gets the same poses: one message to the lot where the network can (the relay server).
+    const msg: HostMessage = { t: 'poses', poses };
+    const byTransport = new Map<Transport, string[]>();
+    for (const [peerId, peer] of this.peers) {
+      if (peer.playerId || peer.tower) byTransport.set(peer.transport, [...(byTransport.get(peer.transport) ?? []), peerId]);
+    }
+    for (const [transport, ids] of byTransport) {
+      if (transport.sendMany && ids.length > 1) transport.sendMany(ids, msg);
+      else for (const id of ids) transport.send(id, msg);
+    }
     this.posesSentAt = now;
     this.posesChanged = false;
   }

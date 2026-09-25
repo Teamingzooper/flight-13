@@ -18,6 +18,17 @@ Everyone hears him at the same volume through the cabin speakers, after a ding.
 **M** mutes you. Use headphones so others don't hear themselves echo. Voice uses the same connections
 as the game, so a network that needs a TURN relay (below) needs it for voice too.
 
+## The relay server (recommended)
+
+By default browsers connect to each other directly, which some networks block. The relay server in `server/` (a free
+Cloudflare Worker) carries every message instead, so any network works; the host's browser still runs the game. Voice
+chat needs direct connections, so it is off while playing through the relay.
+
+1. Make a free Cloudflare account, then in `server/` run `npx wrangler login` and `npx wrangler deploy`.
+2. Copy the address it prints (`https://flight13-relay.YOURNAME.workers.dev`) and set it as the repository variable
+   `RELAY_URL`, written with `wss://` (Settings → Secrets and variables → Actions → Variables).
+3. Re-run the deploy (or push): everyone now connects through the relay.
+
 ## Players can't join?
 
 Flight 13 has no game server: the host's browser runs the flight and everyone connects to it directly

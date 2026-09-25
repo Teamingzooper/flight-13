@@ -27,6 +27,10 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
+          # The Flight 13 relay server (server/, a Cloudflare Worker): when set, every player connects through it
+          # instead of directly, so any network works. Set the RELAY_URL variable in the repo settings
+          # (for example wss://flight13-relay.YOURNAME.workers.dev).
+          VITE_RELAY_URL: ${{ vars.RELAY_URL }}
           # Optional relay (TURN) server for players on networks that block direct connections.
           # Set the TURN_URLS variable and the TURN_USERNAME / TURN_CREDENTIAL secrets in the repo settings.
           VITE_TURN_URLS: ${{ vars.TURN_URLS }}

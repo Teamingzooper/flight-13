@@ -4,12 +4,14 @@ import { formatCode } from '../net/code';
 import type { ClientStatus } from '../net/client';
 import { hasRelay } from '../net/ice';
 import { checkNetwork, type NetworkKind } from '../net/natcheck';
+import { relayUrl } from '../net/relay';
 import { navigate } from './router';
 
-/** This network's answer to "can other players reach me directly?" (null while checking). */
-export function useNetwork(): NetworkKind | null {
-  const [kind, setKind] = useState<NetworkKind | null>(null);
+/** This network's answer to "can other players reach me directly?" (null while checking; 'relay': it does not matter). */
+export function useNetwork(): NetworkKind | 'relay' | null {
+  const [kind, setKind] = useState<NetworkKind | 'relay' | null>(() => (relayUrl() ? 'relay' : null));
   useEffect(() => {
+    if (relayUrl()) return;
     let alive = true;
     void checkNetwork().then((k) => alive && setKind(k));
     return () => {
@@ -20,7 +22,8 @@ export function useNetwork(): NetworkKind | null {
 }
 
 /** One line about how well this network can connect to other players. */
-export function NetworkNote({ kind }: { kind: NetworkKind | null }) {
+export function NetworkNote({ kind }: { kind: NetworkKind | 'relay' | null }) {
+  if (kind === 'relay') return <p class="net-note ok">Everyone connects through the Flight 13 server, so any network works.</p>;
   if (kind === null) return <p class="net-note muted">Checking your connection…</p>;
   if (kind === 'open') return <p class="net-note ok">Your network allows direct connections.</p>;
   if (kind === 'unknown') return null;
