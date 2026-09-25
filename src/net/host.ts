@@ -30,6 +30,7 @@ import {
 } from './protocol';
 import { EMOTES, EMOTE_COOLDOWN_MS, canEmote, type EmoteId } from './emotes';
 import { FACE_TEMPLATES } from './face';
+import { BotBrain, TalkLimiter } from '../bots';
 import { canPa } from './voiceRules';
 import type { Transport } from './transport';
 
@@ -100,6 +101,8 @@ const LOBBY_CHAT_COOLDOWN_MS = 1000;
 const POSE_INTERVAL_MS = 120;
 /** Chance per tick (about 4 a second) that a bot gestures during the day: now and then, not constantly. */
 const BOT_EMOTE_CHANCE = 0.004;
+/** Phases in which bots think and talk (not while packing, boarding, taking off or after landing). */
+const BOT_TALK_PHASES: ReadonlySet<string> = new Set(['night_move', 'night_act', 'dawn', 'day_discuss', 'day_vote', 'verdict']);
 const BOT_NAMES = [
   'Ada', 'Bea', 'Cal', 'Dex', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou', 'Max', 'Nia', 'Oz', 'Pip',
   'Ana', 'Ben', 'Dot', 'Gil', 'Kai', 'Liv', 'Moe', 'Ned', 'Ola', 'Rex', 'Sal', 'Tam', 'Uma', 'Vic', 'Wes', 'Zoe',
@@ -114,6 +117,11 @@ export class HostSession {
   private readonly peers = new Map<string, Peer>();
   private readonly disconnectedAt = new Map<string, number>();
   private readonly botPlans = new Map<string, BotPlan>();
+  /** Each bot's mind (for the current game), when it next thinks, and the limiter they all share. */
+  private readonly brains = new Map<string, BotBrain>();
+  private brainsFor = '';
+  private readonly thinkAt = new Map<string, number>();
+  private readonly botTalk = new TalkLimiter();
   private readonly lobbyChatAt = new Map<string, number>();
   private readonly poses = new Map<string, Pose>();
   private readonly emotedAt = new Map<string, number>();
@@ -453,9 +461,27 @@ export class HostSession {
     }
   }
 
+  private brain(game: GameState, id: string): BotBrain {
+    if (this.brainsFor !== game.id) {
+      this.brains.clear();
+      this.thinkAt.clear();
+      this.brainsFor = game.id;
+    }
+    let brain = this.brains.get(id);
+    if (!brain) {
+      brain = new BotBrain(id, Math.floor(this.random() * 2 ** 31));
+      this.brains.set(id, brain);
+    }
+    return brain;
+  }
+
   private runBots(game: GameState, now: number): boolean {
     const key = `${game.phase.kind}:${game.phase.night}`;
+    const talking = BOT_TALK_PHASES.has(game.phase.kind);
     let acted = false;
+    const apply = (id: string, intent: Intent) => {
+      if (applyIntent(game, id, intent, now).ok) acted = true;
+    };
     for (const p of this.snapshot.players) {
       if (!p.bot) continue;
       let plan = this.botPlans.get(p.id);
@@ -464,11 +490,18 @@ export class HostSession {
         plan = { key, at: now + 800 + this.random() * spread, done: false };
         this.botPlans.set(p.id, plan);
       }
-      if (plan.done || now < plan.at) continue;
-      plan.done = true;
-      for (const intent of botIntents(game, p.id, this.botRng)) {
-        if (applyIntent(game, p.id, intent, now).ok) acted = true;
+      // The phase's plan: random legal choices, made smarter by the bot's brain (its vote, its aim, orders).
+      if (!plan.done && now >= plan.at) {
+        plan.done = true;
+        const planned = botIntents(game, p.id, this.botRng);
+        for (const intent of talking ? this.brain(game, p.id).adjust(viewFor(game, p.id, now), planned, now) : planned) apply(p.id, intent);
       }
+      // About once a second the bot thinks: follows orders, answers people, says what it has to say.
+      if (!talking || now < (this.thinkAt.get(p.id) ?? 0)) continue;
+      this.thinkAt.set(p.id, now + 900 + this.random() * 400);
+      const turn = this.brain(game, p.id).think(viewFor(game, p.id, now), now, this.botTalk);
+      for (const intent of turn.intents) apply(p.id, intent);
+      for (const line of turn.chat) apply(p.id, { kind: 'chat', channel: line.channel, text: line.text });
     }
     return acted;
   }
