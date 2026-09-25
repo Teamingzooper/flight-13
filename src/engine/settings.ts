@@ -40,6 +40,8 @@ export const BOT_SKILLS: readonly BotSkill[] = ['easy', 'normal', 'hard'];
 export const VOICE_MODES: readonly VoiceMode[] = ['proximity', 'cabin', 'off'];
 /** How many rows a voice carries in proximity mode. */
 export const VOICE_RANGE = { min: 2, max: 16, default: 8 } as const;
+/** How many seats a whisper carries at night (0: nobody talks at night). */
+export const NIGHT_VOICE_RANGE = { min: 0, max: 4, default: 1 } as const;
 
 export function defaultSettings(): Settings {
   return {
@@ -64,6 +66,7 @@ export function defaultSettings(): Settings {
     listed: true,
     voiceMode: 'proximity',
     voiceRange: VOICE_RANGE.default,
+    nightVoiceRange: NIGHT_VOICE_RANGE.default,
   };
 }
 
@@ -127,6 +130,9 @@ export function validateSettings(s: Settings): string | null {
   if (!VOICE_MODES.includes(s.voiceMode)) return 'Unknown voice chat mode.';
   if (!Number.isInteger(s.voiceRange) || s.voiceRange < VOICE_RANGE.min || s.voiceRange > VOICE_RANGE.max) {
     return `Voices carry ${VOICE_RANGE.min} to ${VOICE_RANGE.max} rows.`;
+  }
+  if (!Number.isInteger(s.nightVoiceRange) || s.nightVoiceRange < NIGHT_VOICE_RANGE.min || s.nightVoiceRange > NIGHT_VOICE_RANGE.max) {
+    return `Night whispers carry ${NIGHT_VOICE_RANGE.min} to ${NIGHT_VOICE_RANGE.max} seats.`;
   }
   const custom = validateCustomRoles(s.customRoles);
   if (custom) return custom;

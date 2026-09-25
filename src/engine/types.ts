@@ -88,6 +88,8 @@ export interface Settings {
   voiceMode: VoiceMode;
   /** Proximity voice: how many rows away you can still hear someone (they fade out towards it). */
   voiceRange: number;
+  /** At night the living may whisper: how many seats a whisper carries (1: the seats all round you; 0: silent nights). */
+  nightVoiceRange: number;
 }
 
 export type PhaseKind =

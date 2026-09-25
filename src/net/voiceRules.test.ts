@@ -3,7 +3,7 @@ import { defaultSettings } from '../engine';
 import { ClientSession } from './client';
 import { HostSession, newHostSnapshot } from './host';
 import { MemoryHub } from './transport';
-import { VOICE_FAR, VOICE_NEAR, canPa, micOpen, proximityGain, sendsTo, voiceFar, voiceRoute } from './voiceRules';
+import { VOICE_FAR, VOICE_NEAR, canPa, channelOpen, channelVisible, micOpen, proximityGain, sendsTo, voiceCarry, voiceReach, voiceRoute } from './voiceRules';
 
 describe('voice rules', () => {
   it('carries living voices through the cabin by day, to the living and the ghosts', () => {
@@ -12,13 +12,19 @@ describe('voice rules', () => {
     expect(voiceRoute('takeoff', true, true)).toBe('cabin');
   });
 
-  it('keeps the cabin silent at night and while packing', () => {
-    expect(voiceRoute('night_move', true, true)).toBeNull();
-    expect(voiceRoute('night_act', true, false)).toBeNull();
-    expect(voiceRoute('packing', true, true)).toBeNull();
-    expect(micOpen('night_act', true)).toBe(false);
-    expect(micOpen('boarding', true)).toBe(false);
+  it('lets the living only whisper at night (or keeps silent, with no night range)', () => {
+    expect(voiceRoute('night_move', true, true)).toBe('whisper');
+    expect(voiceRoute('night_act', true, false)).toBe('whisper');
+    expect(micOpen('night_act', true)).toBe(true);
+    expect(voiceRoute('night_act', true, true, 0)).toBeNull();
+    expect(micOpen('night_act', true, 0)).toBe(false);
     expect(micOpen('day_discuss', true)).toBe(true);
+  });
+
+  it('lets everyone talk before takeoff: packing and at the gate', () => {
+    expect(voiceRoute('packing', true, true)).toBe('everyone');
+    expect(voiceRoute('boarding', true, true)).toBe('everyone');
+    expect(micOpen('boarding', true)).toBe(true);
   });
 
   it('lets ghosts talk among themselves any time, never to the living', () => {
@@ -160,17 +166,55 @@ describe('the PA', () => {
 });
 
 describe("the captain's voice settings", () => {
-  it('proximity carries as many rows as the captain chose', () => {
-    const near = voiceFar({ voiceMode: 'proximity', voiceRange: 3 });
-    const far = voiceFar({ voiceMode: 'proximity', voiceRange: 12 });
-    expect(near).toBeLessThan(far);
-    // Five rows back: silent with a short range, still heard with a long one.
-    expect(proximityGain(5 * 0.82, near)).toBe(0);
-    expect(proximityGain(5 * 0.82, far)).toBeGreaterThan(0.3);
+  const settings = { voiceMode: 'proximity' as const, voiceRange: 3, nightVoiceRange: 1 };
+
+  it('proximity carries as many rows as the captain chose, fading like real speech on the way', () => {
+    const reach = voiceReach(settings, 'cabin');
+    expect(reach).toBe(3);
+    // Two rows back is quieter than one, and five rows back is silent.
+    const one = voiceCarry(0, 0, 0.82, reach);
+    const two = voiceCarry(0, 0, 1.64, reach);
+    expect(one.direct).toBeGreaterThan(two.direct);
+    expect(two.direct).toBeGreaterThan(0);
+    expect(voiceCarry(0, 0, 5 * 0.82, reach).direct).toBe(0);
+    // Farther away sounds duller.
+    expect(two.cutoff).toBeLessThan(one.cutoff);
+    expect(voiceReach({ ...settings, voiceRange: 12 }, 'cabin')).toBe(12);
   });
 
-  it('the whole cabin hears everyone at full volume; off carries nothing', () => {
-    expect(proximityGain(30, voiceFar({ voiceMode: 'cabin', voiceRange: 8 }))).toBe(1);
-    expect(proximityGain(0.5, voiceFar({ voiceMode: 'off', voiceRange: 8 }))).toBe(0);
+  it('at night a whisper reaches the seats all round you, and no further', () => {
+    const reach = voiceReach(settings, 'whisper');
+    expect(voiceCarry(0.46, 0, 0, reach).direct).toBeGreaterThan(0.5);
+    expect(voiceCarry(0, 0, 0.82, reach).direct).toBeGreaterThan(0.5);
+    // The diagonal seat hears it faintly; two seats over hears nothing.
+    expect(voiceCarry(0.46, 0, 0.82, reach).direct).toBeGreaterThan(0);
+    expect(voiceCarry(0.92, 0, 0, reach).direct).toBe(0);
+    expect(voiceCarry(0, 0, 1.64, reach).direct).toBe(0);
+    expect(voiceReach({ ...settings, nightVoiceRange: 0 }, 'whisper')).toBe(0);
+  });
+
+  it('the whole cabin hears everyone by day; off carries nothing', () => {
+    expect(voiceReach({ ...settings, voiceMode: 'cabin' }, 'cabin')).toBe(Infinity);
+    expect(voiceCarry(0, 0, 20, Infinity).direct).toBeGreaterThan(0);
+    expect(voiceReach({ ...settings, voiceMode: 'off' }, 'cabin')).toBe(0);
+    expect(proximityGain(30, Infinity)).toBe(1);
+  });
+});
+
+describe('channel voice', () => {
+  it('follows the chat rules: the cabin channel by day, the saboteur channel at night for saboteurs', () => {
+    expect(channelOpen('cabin', 'day_discuss', true, 'passengers')).toBe(true);
+    expect(channelOpen('cabin', 'night_act', true, 'passengers')).toBe(false);
+    expect(channelOpen('saboteurs', 'night_act', true, 'saboteurs')).toBe(true);
+    expect(channelOpen('saboteurs', 'night_act', true, 'passengers')).toBe(false);
+    expect(channelOpen('saboteurs', 'day_discuss', true, 'saboteurs')).toBe(false);
+    expect(channelOpen('cabin', 'day_discuss', false, 'passengers')).toBe(false);
+  });
+
+  it('only saboteurs learn who is on their channel', () => {
+    expect(channelVisible('cabin', 'passengers', false)).toBe(true);
+    expect(channelVisible('saboteurs', 'passengers', false)).toBe(false);
+    expect(channelVisible('saboteurs', 'saboteurs', false)).toBe(true);
+    expect(channelVisible('saboteurs', null, true)).toBe(true);
   });
 });

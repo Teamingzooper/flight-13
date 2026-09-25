@@ -5,18 +5,24 @@ the browser. Live at https://teamingzooper.github.io/flight-13/.
 
 ## Voice chat
 
-Press **Voice** in the cabin (top right) to talk out loud. Voices go straight between browsers, never
-through a server, and play from where each person sits: you hear your neighbours clearly and the back
-of the plane faintly. Voice follows the chat rules:
-- The living are silent at night.
-- Ghosts only hear each other.
-- After landing, everyone hears everyone.
+Press **Voice** (in the lobby, or top right in the cabin) to talk out loud.
 
-The Pilot can also talk to the whole plane over the PA by day: hold **P** (or the **Hold for PA** button).
-Everyone hears him at the same volume through the cabin speakers, after a ding.
+- **In the lobby**, and while packing and at the gate, everyone hears everyone.
+- **In the cabin**, voices come from where people sit.
+  - They fall off like real speech, and fall silent at the captain's voice range: set in rows when booking, or "whole cabin".
+  - The farther away someone is, the duller they sound, and the more of the room's echo you hear.
+  - Each room echoes differently: the soft cabin, the bright galley, the tiled lavatory, the small flight deck. Walls
+    and doors muffle whatever comes through them.
+- **At night** the living can only whisper. By default a whisper reaches the seats right round you; the captain can
+  widen that or make the nights silent.
+- **Ghosts** only hear each other. After landing, everyone hears everyone.
+- **Channel voice.** With the seatback chat open on the cabin or saboteur channel, your voice goes to everyone else on
+  that channel's screen, like a headset, instead of the people round you. Only saboteurs can tell who is on theirs.
+- **The Pilot's PA.** The Pilot can talk to the whole plane over the PA by day: hold **P** (or the **Hold for PA**
+  button). He comes through the cabin speakers, squeezed and crackling, with a squelch as he keys in and out.
 
-**M** mutes you. Use headphones so others don't hear themselves echo. Voice uses the same connections
-as the game, so a network that needs a TURN relay (below) needs it for voice too.
+**M** mutes you. The settings screen has push-to-talk (hold **V**), your microphone, and per-person volume and mute.
+Use headphones so others don't hear themselves echo.
 
 ## The game server (recommended)
 

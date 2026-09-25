@@ -5,6 +5,7 @@ import {
   BOT_SKILLS,
   VOICE_MODES,
   VOICE_RANGE,
+  NIGHT_VOICE_RANGE,
   CUSTOM_LIMITS,
   DESTINATIONS,
   DESTINATION_ORDER,
@@ -93,8 +94,9 @@ const VOICE_MODE_HINTS: Record<VoiceMode, string> = {
 
 function voiceSummary(s: Settings): string {
   if (s.voiceMode === 'off') return 'No voice chat.';
-  if (s.voiceMode === 'cabin') return 'Voice chat: everyone hears everyone.';
-  return `Voice chat: proximity, carrying ${s.voiceRange} rows.`;
+  const night = s.nightVoiceRange === 0 ? 'silent at night' : `whispers at night carry ${s.nightVoiceRange === 1 ? 'one seat' : `${s.nightVoiceRange} seats`}`;
+  if (s.voiceMode === 'cabin') return `Voice chat: everyone hears everyone by day; ${night}.`;
+  return `Voice chat: proximity, carrying ${s.voiceRange} rows by day; ${night}.`;
 }
 
 export function describeRules(s: Settings): string[] {
@@ -457,6 +459,23 @@ export function SettingsForm({
                 onInput={(e) => set({ voiceRange: Number(e.currentTarget.value) })}
               />
               <small class="hint">You hear people clearly up close, fading out towards this many rows away.</small>
+            </label>
+          )}
+          {s.voiceMode !== 'off' && (
+            <label class="field">
+              <span class="label">
+                Night whispers{' '}
+                <b>{s.nightVoiceRange === 0 ? 'off (silent nights)' : s.nightVoiceRange === 1 ? 'the seats all round you' : `${s.nightVoiceRange} seats`}</b>
+              </span>
+              <input
+                type="range"
+                min={NIGHT_VOICE_RANGE.min}
+                max={NIGHT_VOICE_RANGE.max}
+                step={1}
+                value={s.nightVoiceRange}
+                onInput={(e) => set({ nightVoiceRange: Number(e.currentTarget.value) })}
+              />
+              <small class="hint">In the dark the living can only whisper, to whoever sits this close. Ghosts talk among themselves any time.</small>
             </label>
           )}
           <h2>Rules</h2>

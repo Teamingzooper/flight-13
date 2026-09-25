@@ -9,6 +9,7 @@ import { NetworkNote, useNetwork } from '../Notice';
 import { loadProfile, saveProfile, type Profile } from '../profile';
 import { ProfileEditor } from '../ProfileEditor';
 import { MoveDevice } from '../MoveDevice';
+import { VoiceButton } from '../../tv/VoiceButton';
 import { SettingsPanel } from '../SettingsPanel';
 import { flightLink, navigate } from '../router';
 import { endFlight, type OpenFlight } from '../sessions';
@@ -185,6 +186,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
       </div>
 
       <footer class="boarding-bar">
+        <VoiceButton flight={flight} className="small" />
         {state.isHost ? (
           <>
             <EndButton code={state.code} />

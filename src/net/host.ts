@@ -8,6 +8,7 @@ import {
   isRoleId,
   phaseDue,
   submitDefaults,
+  teamOf,
   tick,
   validateSettings,
   viewFor,
@@ -34,7 +35,7 @@ import {
 import { EMOTES, EMOTE_COOLDOWN_MS, canEmote, type EmoteId } from './emotes';
 import { FACE_TEMPLATES } from './face';
 import { BotBrain, TalkLimiter } from '../bots';
-import { canPa } from './voiceRules';
+import { canPa, channelOpen, channelVisible, type VoiceChannel } from './voiceRules';
 import type { Transport } from './transport';
 import { TUTORIAL_BOMB_NIGHT, TUTORIAL_CAST, TUTORIAL_WAITS, TUTORIAL_YOU, botName, tutorialCues, type TutorialBot } from '../tutorial/script';
 
@@ -120,6 +121,8 @@ interface Peer {
   voice?: boolean;
   /** Holding the PA button (only ever set for a living Pilot by day). */
   pa?: boolean;
+  /** The chat channel whose screen is open (their voice goes there when the rules allow). */
+  tuned?: VoiceChannel | null;
 }
 
 interface BotPlan {
@@ -376,6 +379,12 @@ export class HostSession {
       case 'voice':
         if (peer.voice !== msg.on) {
           peer.voice = msg.on;
+          this.changed();
+        }
+        break;
+      case 'tune':
+        if ((peer.tuned ?? null) !== msg.channel) {
+          peer.tuned = msg.channel;
           this.changed();
         }
         break;
@@ -799,6 +808,7 @@ export class HostSession {
       game: s.game ? viewFor(s.game, peer.tower ? null : peer.playerId, s.pausedAt ?? now) : null,
       rev: 0,
       voice: this.voicePeers(),
+      ...this.tunedFor(peer),
       pa: this.paSpeaker(),
       ...(s.tutorial ? { tutorial: true } : {}),
       // The host's own pick goes to the host alone; everyone else only learns that there is one.
@@ -806,6 +816,26 @@ export class HostSession {
       ...(s.hostRole && !s.tutorial ? { hostPicksRole: true } : {}),
       ...(s.game && s.pausedAt ? { paused: true } : {}),
     };
+  }
+
+  /**
+   * Who is talking on a channel's screen, as this peer may know it: people on the cabin channel for everyone, those on
+   * the saboteur channel for saboteurs (and the tower) only. Only channels the rules allow right now count.
+   */
+  private tunedFor(viewer: Peer): { tuned?: Record<string, VoiceChannel> } {
+    const game = this.snapshot.game;
+    if (!game) return {};
+    const viewerTeam = viewer.playerId ? (game.players.find((p) => p.id === viewer.playerId)?.role ?? null) : null;
+    const team = viewerTeam ? teamOf(viewerTeam) : null;
+    const tuned: Record<string, VoiceChannel> = {};
+    for (const peer of this.peers.values()) {
+      const channel = peer.tuned;
+      const p = channel && peer.playerId ? game.players.find((x) => x.id === peer.playerId) : undefined;
+      if (!channel || !p) continue;
+      if (!channelOpen(channel, game.phase.kind, p.status === 'alive', teamOf(p.role))) continue;
+      if (channelVisible(channel, team, viewer.tower)) tuned[p.id] = channel;
+    }
+    return Object.keys(tuned).length ? { tuned } : {};
   }
 
   /** May this peer's passenger speak on the PA right now? */

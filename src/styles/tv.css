@@ -2006,3 +2006,12 @@ button.sm-num.pick:hover {
   background: var(--green);
   color: #04130a;
 }
+
+.voice-channel-note {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(91, 227, 139, 0.12);
+  color: #a9f2c4;
+  font-size: 13px;
+}

@@ -34,8 +34,8 @@ describe('protocol sanitising', () => {
     expect(cleanSettings({ ...s, extra: 'ignored' })).toEqual(s);
     expect(cleanSettings({ ...s, destination: 'XXX' })).toBeNull();
     // Older clients know nothing of the board or voice settings: the defaults.
-    const { listed: _l, voiceMode: _m, voiceRange: _r, ...beforeVoice } = s;
-    expect(cleanSettings(beforeVoice)).toEqual({ ...s, listed: true, voiceMode: 'proximity', voiceRange: 8 });
+    const { listed: _l, voiceMode: _m, voiceRange: _r, nightVoiceRange: _n, ...beforeVoice } = s;
+    expect(cleanSettings(beforeVoice)).toEqual({ ...s, listed: true, voiceMode: 'proximity', voiceRange: 8, nightVoiceRange: 1 });
     expect(cleanSettings({ ...s, voiceMode: 'loud' })).toBeNull();
     expect(cleanSettings({ ...s, cards: { ...s.cards, bomber: 'lots' } })).toBeNull();
     // Settings from before the Air Marshal and the Pilot rule existed still work.

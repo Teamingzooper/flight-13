@@ -4,6 +4,8 @@ import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerView } from '../engine';
 import type { TVContext } from './context';
 import { LunchBar } from './Lunch';
 import { captainName, nameOf, nameWithSeat, playerById } from './format';
+import { channelOpen, type VoiceChannel } from '../net/voiceRules';
+import { useVoice } from './VoiceButton';
 
 type Channel = 'cabin' | 'saboteurs' | 'ghosts' | 'whisper';
 
@@ -42,6 +44,12 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [shown.length, channel]);
+  // With this screen open on the cabin or saboteur channel, your voice goes to the others on it, not the seats round you.
+  const voice = useVoice(ctx.flight);
+  const voiceChannel: VoiceChannel | null = channel === 'cabin' || channel === 'saboteurs' ? channel : null;
+  useEffect(() => ctx.flight.client.sendTune(voiceChannel), [voiceChannel]);
+  useEffect(() => () => ctx.flight.client.sendTune(null), []);
+  const talkingHere = !!voice && voice.status !== 'off' && !!voiceChannel && !!you && channelOpen(voiceChannel, kind, alive, you.team ?? null);
 
   let blocked: string | null = null;
   if (!you) blocked = 'The control tower listens but cannot talk.';
@@ -76,6 +84,11 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
           </button>
         )}
       </div>
+      {talkingHere && (
+        <p class="voice-channel-note" role="status">
+          🎙️ While this screen is open, your voice goes to everyone else on the {LABEL[channel]} channel, not the seats round you.
+        </p>
+      )}
       {channel === 'whisper' && whisperTargets.length > 0 && (
         <div class="chips whisper-to">
           <span class="label">To</span>
