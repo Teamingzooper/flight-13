@@ -204,5 +204,7 @@ export class ClientSession {
 export function msLeft(snapshot: ClientSnapshot, now: number): number {
   const game = snapshot.state?.game;
   if (!game) return 0;
+  // Paused: the clock stands where the captain stopped it.
+  if (snapshot.state?.paused) return game.phase.endsInMs;
   return Math.max(0, game.phase.endsInMs - (now - snapshot.receivedAt));
 }

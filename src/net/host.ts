@@ -6,6 +6,7 @@ import {
   checkTakeoff,
   createGame,
   isRoleId,
+  phaseDue,
   submitDefaults,
   tick,
   validateSettings,
@@ -63,6 +64,8 @@ export interface HostSnapshot {
   tutorial?: boolean;
   /** The role the host picked for themselves (kept here, never sent to anyone else). */
   hostRole?: RoleId | null;
+  /** When the captain paused the flight (null or missing: running). */
+  pausedAt?: number | null;
 }
 
 export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
@@ -174,7 +177,9 @@ export class HostSession {
     const now = this.now();
     const s = this.snapshot;
     let dirty = false;
-    if (s.game) {
+    if (s.game && s.pausedAt) {
+      // Paused: no phase ends and no bot moves until the captain resumes.
+    } else if (s.game) {
       if (tick(s.game, now)) {
         this.phaseStarted(now);
         // Night hides who is using their screen, so resend poses at every phase change.
@@ -227,7 +232,9 @@ export class HostSession {
         this.sendTo(peerId, { t: 'faces', faces });
       }
       const state = this.stateFor(peer, now);
-      const key = JSON.stringify(state.game ? { ...state, game: { ...state.game, phase: { ...state.game.phase, endsInMs: 0 } } } : state);
+      // The countdown itself changes every tick, so it is left out; when the phase ends is not (time added, a pause over).
+      const due = this.snapshot.game ? phaseDue(this.snapshot.game) : 0;
+      const key = JSON.stringify(state.game ? { ...state, due, game: { ...state.game, phase: { ...state.game.phase, endsInMs: 0 } } } : state);
       if (key === peer.lastSent) continue;
       peer.lastSent = key;
       state.rev = ++this.rev;
@@ -466,9 +473,35 @@ export class HostSession {
         s.hostRole = cmd.role;
         break;
       }
+      case 'pause': {
+        const game = s.game;
+        if (!game || game.phase.kind === 'ended') return fail('There is no flight in the air to pause.');
+        const now = this.now();
+        if (cmd.on && !s.pausedAt) s.pausedAt = now;
+        else if (!cmd.on && s.pausedAt) this.resume(game, now);
+        break;
+      }
+      case 'addTime': {
+        const game = s.game;
+        if (!game || game.phase.kind === 'ended') return fail('There is no flight in the air.');
+        if (!Number.isInteger(cmd.seconds) || cmd.seconds < 1 || cmd.seconds > 600) return fail('Add between 1 and 600 seconds.');
+        game.phase.endsAt += cmd.seconds * 1000;
+        break;
+      }
+      case 'skipPhase': {
+        const game = s.game;
+        if (!game || game.phase.kind === 'ended') return fail('There is no flight in the air.');
+        const now = this.now();
+        if (s.pausedAt) this.resume(game, now);
+        game.phase.endsAt = now;
+        game.phase.earlyEndAt = null;
+        if (tick(game, now)) this.phaseStarted(now);
+        break;
+      }
       case 'boardAgain': {
         if (!s.game || s.game.phase.kind !== 'ended') return fail('The flight has not landed yet.');
         s.game = null;
+        s.pausedAt = null;
         s.players = s.players.filter((p) => p.bot || this.isConnected(p.id));
         break;
       }
@@ -505,6 +538,15 @@ export class HostSession {
         });
       }
     }
+  }
+
+  /** Start the clock again: the phase gets back the time it was paused for. */
+  private resume(game: GameState, now: number): void {
+    const paused = now - (this.snapshot.pausedAt ?? now);
+    game.phase.startedAt += paused;
+    game.phase.endsAt += paused;
+    if (game.phase.earlyEndAt !== null) game.phase.earlyEndAt += paused;
+    this.snapshot.pausedAt = null;
   }
 
   private phaseStarted(now: number): void {
@@ -603,7 +645,8 @@ export class HostSession {
         host: !p.bot && p.token === s.hostToken,
       })),
       lobbyChat: s.lobbyChat,
-      game: s.game ? viewFor(s.game, peer.tower ? null : peer.playerId, now) : null,
+      // (While paused, everyone sees the flight as it stood when the clock stopped.)
+      game: s.game ? viewFor(s.game, peer.tower ? null : peer.playerId, s.pausedAt ?? now) : null,
       rev: 0,
       voice: this.voicePeers(),
       pa: this.paSpeaker(),
@@ -611,6 +654,7 @@ export class HostSession {
       // The host's own pick goes to the host alone; everyone else only learns that there is one.
       ...(peer.trusted ? { myRole: s.hostRole ?? null } : {}),
       ...(s.hostRole && !s.tutorial ? { hostPicksRole: true } : {}),
+      ...(s.game && s.pausedAt ? { paused: true } : {}),
     };
   }
 

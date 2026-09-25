@@ -85,6 +85,8 @@ export interface ClientState {
   myRole?: RoleId | null;
   /** Everyone is told that the captain picked their own role (never which). */
   hostPicksRole?: boolean;
+  /** The captain paused the flight: the clock stands still (and the bots wait) until they resume it. */
+  paused?: boolean;
 }
 
 export type HostCommand =
@@ -94,7 +96,11 @@ export type HostCommand =
   | { kind: 'addBot' }
   | { kind: 'boardAgain' }
   /** The host's own role next flight (null: dealt at random like everyone else's). */
-  | { kind: 'myRole'; role: RoleId | null };
+  | { kind: 'myRole'; role: RoleId | null }
+  /** Mid-flight: pause (or resume) the clock, add time to this phase, or end it now. */
+  | { kind: 'pause'; on: boolean }
+  | { kind: 'addTime'; seconds: number }
+  | { kind: 'skipPhase' };
 
 export type ClientMessage =
   | { t: 'join'; v: number; token: string; name: string; look: Look; face: string; tower: boolean }
