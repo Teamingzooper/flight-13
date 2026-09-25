@@ -3,7 +3,7 @@ import { botIntents } from './bots';
 import { DESTINATION_ORDER } from './destinations';
 import { applyIntent, phaseDue, tick } from './engine';
 import { aisleRow, isSeatInCabin } from './grid';
-import { isStewardess } from './roles';
+import { isPilot, isStewardess } from './roles';
 import { defaultSettings } from './settings';
 import { createGame } from './setup';
 import { TEST_LOOK } from './testkit';
@@ -15,6 +15,7 @@ function assertInvariants(s: GameState): void {
   for (const p of s.players) {
     if (p.status === 'restrained') expect(p.seat).toBeNull();
     else if (isStewardess(p.role)) expect(aisleRow(p.seat)).toBeLessThanOrEqual(s.cabin.rows);
+    else if (isPilot(p.role)) expect(p.seat).toBe('Cockpit');
     else expect(p.seat !== null && isSeatInCabin(p.seat, s.cabin.rows)).toBe(true);
     if (p.status !== 'alive') {
       expect(p.cause).not.toBeNull();

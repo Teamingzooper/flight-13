@@ -1,7 +1,7 @@
 import { DESTINATIONS } from './destinations';
-import { aisleSpot, allSeats, rowsFor } from './grid';
+import { COCKPIT, aisleSpot, allSeats, rowsFor } from './grid';
 import { nextFloat, shuffle, type RngHolder } from './rng';
-import { isSaboteur, isStewardess, presetCards, validateCards } from './roles';
+import { isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
 import { addLog } from './state';
 import type { Cards, DayChoices, GameState, Look, NightChoices, RoleId, Settings } from './types';
@@ -113,6 +113,7 @@ export function createGame(opts: CreateGameOptions): GameState {
   const crew = roles.filter(isStewardess).length;
   let crewPlaced = 0;
   const placeFor = (role: RoleId) => {
+    if (isPilot(role)) return COCKPIT;
     if (!isStewardess(role)) return seats.pop()!;
     const row = crew === 1 ? 1 : 1 + Math.round((crewPlaced * (rows - 1)) / (crew - 1));
     crewPlaced++;

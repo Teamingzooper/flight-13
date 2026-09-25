@@ -1,5 +1,5 @@
-import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSpot, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
-import { canCuff, canPlantBombs, isStewardess } from './roles';
+import { CUFF_RADIUS, aisleRow, aisleSpot, cartBlocks, cartCell, distance, distanceToAny, isAisleSpot, isCockpit, isSeatInCabin, lavatoryCells, parseSeat } from './grid';
+import { canCuff, canPlantBombs, isPilot, isStewardess } from './roles';
 import { activePlayers, cellOf, emptySeats, getPlayer, inWashroom, isActive, occupantOf } from './state';
 import type { GameState, MoveTarget, NightAction, PlayerState, SeatId } from './types';
 
@@ -11,6 +11,7 @@ function cartInTheWay(s: GameState, p: PlayerState, toRow: number): string | nul
 
 /** Once per flight, spend the night locked in the lavatory. */
 export function checkWashroom(s: GameState, p: PlayerState): string | null {
+  if (isPilot(p.role)) return 'You cannot leave the flight deck.';
   if (p.washroomUsed) return 'You already used the washroom on this flight.';
   if (s.cabin.lavatoryDestroyed) return 'The lavatory is destroyed.';
   if (!p.seat) return 'You are out of play.';
@@ -19,6 +20,7 @@ export function checkWashroom(s: GameState, p: PlayerState): string | null {
 
 export function checkMove(s: GameState, p: PlayerState, to: MoveTarget): string | null {
   if (to === 'stay') return null;
+  if (isPilot(p.role)) return 'The Pilot stays on the flight deck.';
   if (to === 'washroom') return checkWashroom(s, p);
   if (typeof to !== 'string') return 'That seat does not exist.';
   if (isStewardess(p.role)) {
@@ -36,6 +38,7 @@ export function checkMove(s: GameState, p: PlayerState, to: MoveTarget): string 
 
 /** Every seat (or, for crew, aisle spot) a player could move to right now. */
 export function possibleMoves(s: GameState, p: PlayerState): SeatId[] {
+  if (isPilot(p.role)) return [];
   const places = isStewardess(p.role) ? Array.from({ length: s.cabin.rows }, (_, i) => aisleSpot(i + 1)) : emptySeats(s);
   return places.filter((to) => checkMove(s, p, to) === null);
 }
@@ -135,7 +138,7 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
       return action.where === 'seat' ? null : 'Unknown place to plant a bomb.';
     }
     case 'search':
-      return p.seat && !isAisleSpot(p.seat) ? null : 'You have no seat to look under.';
+      return p.seat && !isAisleSpot(p.seat) && !isCockpit(p.seat) ? null : 'You have no seat to look under.';
     case 'cuff': {
       if (!canCuff(p.role)) return 'Only the Air Marshal carries handcuffs.';
       if (p.cuffsUsed) return 'You already used your handcuffs.';
