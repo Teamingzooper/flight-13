@@ -196,19 +196,25 @@ export function SettingsForm({
           />
           <h2>Bots</h2>
           <p class="hint">How much bots talk, and how well they reason and lie. Only matters when bots are aboard.</p>
-          <div class="segmented" role="group" aria-label="Bot chatter">
-            {BOT_CHATTERS.map((c) => (
-              <button type="button" key={c} class={s.botChatter === c ? 'on' : ''} onClick={() => set({ botChatter: c })}>
-                {BOT_CHATTER_NAMES[c]}
-              </button>
-            ))}
+          <div class="field">
+            <span class="label">Chatter</span>
+            <div class="segmented" role="group" aria-label="Bot chatter">
+              {BOT_CHATTERS.map((c) => (
+                <button type="button" key={c} class={s.botChatter === c ? 'on' : ''} onClick={() => set({ botChatter: c })}>
+                  {BOT_CHATTER_NAMES[c]}
+                </button>
+              ))}
+            </div>
           </div>
-          <div class="segmented" role="group" aria-label="Bot skill">
-            {BOT_SKILLS.map((k) => (
-              <button type="button" key={k} class={s.botSkill === k ? 'on' : ''} onClick={() => set({ botSkill: k })}>
-                {BOT_SKILL_NAMES[k]}
-              </button>
-            ))}
+          <div class="field">
+            <span class="label">Skill</span>
+            <div class="segmented" role="group" aria-label="Bot skill">
+              {BOT_SKILLS.map((k) => (
+                <button type="button" key={k} class={s.botSkill === k ? 'on' : ''} onClick={() => set({ botSkill: k })}>
+                  {BOT_SKILL_NAMES[k]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>

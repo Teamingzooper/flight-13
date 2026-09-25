@@ -229,8 +229,12 @@ export function hear(text: string, speaker: string, roster: RosterEntry[], chann
     let role = roleIn(clause);
     if (role && !SABOTEUR_ROLES.includes(role)) role = null;
     if (named) {
+      // "It's Jo" accuses Jo; "I doubt it's Jo" stands up for Jo.
       const id = roster[Number(named[1])]?.id;
-      if (id && id !== speaker) accuse.push({ id, role });
+      if (id && id !== speaker) {
+        if (negatedBefore(clause, named.index)) defend.push(id);
+        else accuse.push({ id, role });
+      }
     } else if (accused) {
       for (const id of people) accuse.push({ id, role });
     } else if (cleared) {

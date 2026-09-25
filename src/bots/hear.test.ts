@@ -48,6 +48,7 @@ describe('hearing', () => {
     expect(h.defend).toEqual(['jo']);
     expect(h.accuse).toEqual([]);
     expect(cabin('Ann is with me, I trust her').defend).toEqual(['ann']);
+    expect(cabin("I doubt it's Jo")).toMatchObject({ accuse: [], defend: ['jo'] });
   });
 
   it('keeps clauses apart', () => {
