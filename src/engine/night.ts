@@ -525,20 +525,22 @@ export function resolveNight(s: GameState, now: number): void {
       const target = 'target' in other.action ? playerById(other.action.target) : undefined;
       if (!text || !(inRows(other.actor) || inRows(target))) continue;
       seen.push(text);
-      caught.push({ actor: other.actor.id, kind: looksLike(other.action), ...(target ? { target: target.id } : {}) });
+      caught.push({ actor: other.actor.id, kind: looksLike(other.action), ...(target ? { target: target.id } : {}), text });
     }
     for (const [user, seat] of Object.entries(s.night.flashlights)) {
       const u = playerById(user);
       if (!(inRows(u) || rows.includes(parseSeat(seat)?.row ?? 0))) continue;
-      seen.push(`${u.name} shone a light under ${seat}`);
-      caught.push({ actor: u.id, kind: 'flashlight', seat });
+      const text = `${u.name} shone a light under ${seat}`;
+      seen.push(text);
+      caught.push({ actor: u.id, kind: 'flashlight', seat, text });
     }
     for (const [sleeper, by] of Object.entries(s.night.asleep)) {
       const a = playerById(by);
       const t = playerById(sleeper);
       if (!(inRows(a) || inRows(t))) continue;
-      seen.push(`${a.name} slipped something into ${t.name}\u2019s water`);
-      caught.push({ actor: a.id, kind: 'pills', target: t.id });
+      const text = `${a.name} slipped something into ${t.name}\u2019s water`;
+      seen.push(text);
+      caught.push({ actor: a.id, kind: 'pills', target: t.id, text });
     }
     const where = `rows ${rows[0]}–${rows[2]}`;
     addLog(

@@ -3,7 +3,7 @@ import { NOTE_MAX_LENGTH, ROLES, bombsFor, describeLocation, destinationOf, grid
 import { CarryOn } from './CarryOn';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat, placeLabel, roleName, shortName, teamName, whenLabel } from './format';
-import { CameraPanel, FlightDeckPanel, JumpSeatPanel, PaPanel } from './PilotPanels';
+import { CameraPanel, ControlsCard, FlightDeckPanel, JumpSeatPanel, PaPanel } from './PilotPanels';
 import { SeatMap, type Spot } from './SeatMap';
 
 type TargetAction = Extract<NightAction, { target: string }>;
@@ -30,14 +30,18 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
   const kind = game.phase.kind;
   const pilot = isPilot(you.role);
   const day = kind === 'dawn' || kind === 'day_discuss' || kind === 'day_vote' || kind === 'verdict';
+  // In the 3D cockpit the captain's calls are made on the flight deck itself, not on this screen.
+  const deck = pilot && !!ctx.embedded && grid.isCockpit(you.seat);
   return (
     <div class="tab action-tab">
       <RoleStrip game={game} />
       <BlackBoxNote ctx={ctx} />
-      {pilot && day && <PaPanel ctx={ctx} />}
-      {kind === 'night_move' && (pilot ? <FlightDeckPanel ctx={ctx} /> : you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
+      {deck && (day || kind === 'night_move' || kind === 'night_act') && <ControlsCard ctx={ctx} />}
+      {pilot && day && !deck && <PaPanel ctx={ctx} />}
+      {kind === 'night_move' &&
+        (deck ? null : pilot ? <FlightDeckPanel ctx={ctx} /> : you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
       {kind === 'night_act' &&
-        (pilot ? (
+        (deck ? null : pilot ? (
           <CameraPanel ctx={ctx} />
         ) : you.inJumpSeat ? (
           <JumpSeatPanel ctx={ctx} />

@@ -84,7 +84,7 @@ export class CharacterStage {
   /** Dress the passenger (and paint their face). */
   set(look: Look, face: string): void {
     this.people.sync(
-      [{ id: ID, name: '', look, seat: null, status: 'alive', cause: null, role: null, team: null }],
+      [{ id: ID, name: '', look, seat: null, status: 'alive', cause: null, outNight: null, role: null, team: null }],
       null,
       () => new THREE.Vector3(),
       new Map([[ID, face]]),

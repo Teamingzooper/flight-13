@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
-import { PA_COOLDOWN_MS, PA_MAX_LENGTH, grid, type PlayerView } from '../engine';
+import { PA_COOLDOWN_MS, PA_MAX_LENGTH, grid, isNightPhase, type PlayerView } from '../engine';
+import { CONTROLS, CONTROL_ORDER, controlStatus, tapeReady } from '../world/cockpit';
 import type { TVContext } from './context';
 import { describeAction, nameWithSeat } from './format';
 import { SeatMap } from './SeatMap';
@@ -152,7 +153,7 @@ function RoughAirPicker({ ctx }: { ctx: TVContext }) {
   );
 }
 
-function CoursePicker({ ctx }: { ctx: TVContext }) {
+export function CoursePicker({ ctx }: { ctx: TVContext }) {
   const { game, send } = ctx;
   const you = game.you!;
   const offered = game.options?.course ?? [];
@@ -190,6 +191,45 @@ function CoursePicker({ ctx }: { ctx: TVContext }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** In the 3D cockpit: the captain's calls are made with the controls around him. What is where, and tonight's calls. */
+export function ControlsCard({ ctx }: { ctx: TVContext }) {
+  const { game, state } = ctx;
+  const you = game.you!;
+  const night = isNightPhase(game.phase.kind);
+  if (night && you.buckled) {
+    return (
+      <div class="callout amber">
+        <b>Turbulence.</b> You are fighting the controls all night: no calls tonight.
+      </div>
+    );
+  }
+  if (night && you.knockedOut) {
+    return (
+      <div class="callout red">
+        <b>You are out cold.</b> The plane flies itself tonight: no calls, and no cameras.
+      </div>
+    );
+  }
+  const onAir = state.pa === you.id;
+  const tape = tapeReady(game);
+  return (
+    <div class="ability-card controls-card">
+      <div class="ability-title">Your controls are all around you</div>
+      <p class="muted">Put this screen away (Esc), aim at a control and click it.</p>
+      <ul class="controls-list">
+        {CONTROL_ORDER.map((id) => (
+          <li key={id}>
+            <span>
+              <b>{CONTROLS[id].name}</b> <span class="muted">· {CONTROLS[id].where}</span>
+            </span>
+            <span class="control-state">{controlStatus(game, id, onAir, tape)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

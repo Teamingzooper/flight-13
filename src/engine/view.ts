@@ -37,6 +37,8 @@ export interface PlayerSummary {
   seat: SeatId | null;
   status: PlayerStatus;
   cause: DeathCause | null;
+  /** The night they left play (dawn deaths and the next day's vote both count as that night), or null. Public. */
+  outNight: number | null;
   role: RoleId | null;
   team: Team | null;
 }
@@ -202,6 +204,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     seat: p.seat,
     status: p.status,
     cause: p.cause,
+    outNight: p.outNight,
     role: knowsRole(p) ? p.role : null,
     team: knowsRole(p) ? teamOf(p.role) : null,
   }));

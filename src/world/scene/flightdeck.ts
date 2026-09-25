@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import type { ControlId, DeckLook } from '../cockpit';
 import { CABIN_HALF_WIDTH, FLIGHT_DECK, screenPose } from '../layout';
 import { signTexture } from '../textures';
 import { SCREEN_H, SCREEN_W } from './seats';
@@ -26,8 +27,10 @@ export interface FlightDeck {
   setView(texture: THREE.Texture): void;
   /** The primary flight displays. */
   setDisplay(texture: THREE.Texture): void;
-  /** The overhead seatbelt switch lights up when the sign is on for someone tonight. */
-  setSeatbeltLight(on: boolean): void;
+  /** The captain's controls: invisible boxes to aim at and click, each naming its control in `userData.control`. */
+  controls: THREE.Object3D[];
+  /** Show tonight's calls: the seatbelt switch and lamp, the CALL light, the lever, the dial and the handset. */
+  setLook(look: DeckLook): void;
   /** Swing the door open (true) or shut. */
   setDoor(open: boolean): void;
   update(dt: number): void;
@@ -61,9 +64,45 @@ export function buildFlightDeck(): FlightDeck {
   const lampMat = new THREE.MeshStandardMaterial({ color: '#15181e', emissive: '#9fd6ff', emissiveIntensity: 0.8 });
   const beltOff = new THREE.MeshStandardMaterial({ color: '#3a2c14', emissive: '#000000' });
   const beltOn = new THREE.MeshStandardMaterial({ color: '#3a2c14', emissive: '#ffb547', emissiveIntensity: 2.2 });
+  const callOff = new THREE.MeshStandardMaterial({ color: '#1d3324', emissive: '#08130c', roughness: 0.4 });
+  const callOn = new THREE.MeshStandardMaterial({ color: '#1d3324', emissive: '#58ff9a', emissiveIntensity: 1.8, roughness: 0.4 });
+  const knobMat = new THREE.MeshStandardMaterial({ color: '#d99a2b', emissive: '#3a2406', roughness: 0.35, metalness: 0.3 });
+  const metal = new THREE.MeshStandardMaterial({ color: '#8d939c', emissive: '#15181d', roughness: 0.35, metalness: 0.6 });
+  const handsetMat = new THREE.MeshStandardMaterial({ color: '#1b1d22', emissive: '#07080a', roughness: 0.5 });
+  const hitMat = new THREE.MeshBasicMaterial();
   const signMap = signTexture('FLIGHT DECK', '#e8eefb', '#18314f', 256, 64);
   const sign = new THREE.MeshStandardMaterial({ color: '#000', map: signMap, emissive: '#ffffff', emissiveMap: signMap, emissiveIntensity: 0.9 });
-  const materials: THREE.Material[] = [wall, dark, panelMat, seatMat, doorMat, bezel, glass, displayMat, monitorMat, lampMat, beltOff, beltOn, sign];
+  const maps: THREE.Texture[] = [signMap];
+  /** A little white-on-grey placard, lit from within so it reads in the dark. */
+  const placard = (text: string, w: number, h: number) => {
+    const map = signTexture(text, '#e9eef6', '#2d323b', 256, Math.round((256 * h) / w));
+    maps.push(map);
+    const mat = new THREE.MeshStandardMaterial({ color: '#000', map, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.55 });
+    materials.push(mat);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    return mesh;
+  };
+  const materials: THREE.Material[] = [
+    wall,
+    dark,
+    panelMat,
+    seatMat,
+    doorMat,
+    bezel,
+    glass,
+    displayMat,
+    monitorMat,
+    lampMat,
+    beltOff,
+    beltOn,
+    callOff,
+    callOn,
+    knobMat,
+    metal,
+    handsetMat,
+    hitMat,
+    sign,
+  ];
   const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, parent: THREE.Object3D = group) => {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x, y, z);
@@ -166,6 +205,11 @@ export function buildFlightDeck(): FlightDeck {
   const monitor = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.15), monitorMat);
   monitor.applyMatrix4(monitorAt);
   group.add(monitor);
+  const monitorHit = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.05), hitMat);
+  monitorHit.applyMatrix4(monitorAt);
+  monitorHit.visible = false;
+  monitorHit.userData.control = 'monitor';
+  group.add(monitorHit);
   const labelCanvas = document.createElement('canvas');
   labelCanvas.width = 256;
   labelCanvas.height = 24;
@@ -177,13 +221,99 @@ export function buildFlightDeck(): FlightDeck {
   group.add(label);
   let labelText = '';
 
-  // The overhead panel: rows of little lamps, and the seatbelt switch.
+  // The overhead panel: rows of little lamps.
   add(new RoundedBoxGeometry(0.9, 0.06, 0.55, 2, 0.02), panelMat, 0, CEILING - 0.05, FLIGHT_DECK.seatZ - 0.25, 0.25);
   for (let i = 0; i < 12; i++) {
     const lamp = add(new THREE.BoxGeometry(0.03, 0.01, 0.02), lampMat, -0.33 + (i % 6) * 0.13, CEILING - 0.09, FLIGHT_DECK.seatZ - 0.1 - Math.floor(i / 6) * 0.2, 0.25);
     lamp.castShadow = false;
   }
-  const belt = add(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), beltOff, -0.3, CEILING - 0.09, FLIGHT_DECK.seatZ - 0.42, 0.25);
+
+  // The captain's controls. Each has an invisible box around it to aim at (the Pilot clicks them in 3D).
+  const S = FLIGHT_DECK.seatZ;
+  const controls: THREE.Object3D[] = [];
+  const hitBox = (control: ControlId, parent: THREE.Object3D, w: number, h: number, d: number, x = 0, y = 0, z = 0) => {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat);
+    box.position.set(x, y, z);
+    box.visible = false;
+    box.userData.control = control;
+    parent.add(box);
+    controls.push(box);
+  };
+  /** A group posed at a point, turned to face the captain (its +z points at him). */
+  const mount = (x: number, y: number, z: number, rx: number, ry = 0) => {
+    const g = new THREE.Group();
+    g.position.set(x, y, z);
+    g.rotation.set(rx, ry, 0, 'YXZ');
+    group.add(g);
+    return g;
+  };
+
+  // Overhead, on the forward edge above the captain: the SEAT BELTS switch and its lamp.
+  const beltPanel = mount(-0.26, CEILING - 0.085, S - 0.6, 0.8);
+  // (Drawn a little larger than life: it is the one switch the captain looks up for every night.)
+  beltPanel.scale.setScalar(1.35);
+  add(new RoundedBoxGeometry(0.21, 0.12, 0.014, 2, 0.005), panelMat, 0, 0, 0, 0, 0, beltPanel);
+  const beltSign = placard('SEAT BELTS', 0.15, 0.026);
+  beltSign.position.set(0, 0.037, 0.008);
+  beltPanel.add(beltSign);
+  const belt = add(new THREE.CylinderGeometry(0.013, 0.013, 0.01, 16), beltOff, -0.045, -0.018, 0.009, Math.PI / 2, 0, beltPanel);
+  add(new THREE.BoxGeometry(0.03, 0.03, 0.006), bezel, 0.045, -0.018, 0.009, 0, 0, beltPanel);
+  const beltToggle = new THREE.Group();
+  beltToggle.position.set(0.045, -0.018, 0.012);
+  beltPanel.add(beltToggle);
+  add(new THREE.CylinderGeometry(0.0045, 0.0055, 0.034, 8), metal, 0, 0.017, 0, 0, 0, beltToggle);
+  hitBox('seatbelt', beltPanel, 0.24, 0.14, 0.06);
+
+  // The pedestal between the seats, aft of the thrust levers: the rough air lever on the captain's side...
+  const leverBase = mount(-0.1, 0.63, S - 0.16, 0);
+  add(new THREE.BoxGeometry(0.03, 0.012, 0.12), bezel, 0, 0, 0, 0, 0, leverBase);
+  const lever = new THREE.Group();
+  leverBase.add(lever);
+  add(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 8), metal, 0, 0.06, 0, 0, 0, lever);
+  add(new THREE.SphereGeometry(0.018, 14, 10), knobMat, 0, 0.125, 0, 0, 0, lever);
+  const rideSign = placard('RIDE', 0.05, 0.016);
+  rideSign.position.set(-0.035, 0.007, 0.03);
+  rideSign.rotation.x = -Math.PI / 2;
+  leverBase.add(rideSign);
+  hitBox('roughair', leverBase, 0.08, 0.18, 0.16, 0, 0.07, 0);
+
+  // In the middle of the instrument panel, above the camera monitor: the cabin intercom and its CALL button.
+  const intercom = mount(0.02, 0.93, S - 0.53, -0.35);
+  add(new RoundedBoxGeometry(0.14, 0.09, 0.02, 2, 0.006), panelMat, 0, 0, 0, 0, 0, intercom);
+  const call = add(new THREE.CylinderGeometry(0.018, 0.018, 0.012, 16), callOff, -0.035, -0.008, 0.014, Math.PI / 2, 0, intercom);
+  for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(0.04, 0.004, 0.004), bezel, 0.03, -0.022 + i * 0.01, 0.012, 0, 0, intercom);
+  const callSign = placard('CABIN CALL', 0.1, 0.017);
+  callSign.position.set(0, 0.03, 0.0115);
+  intercom.add(callSign);
+  hitBox('intercom', intercom, 0.16, 0.1, 0.06);
+
+  // On the glareshield in front of the captain: the heading dial (hold, keep course, or take the shortcut).
+  const mcp = mount(-0.06, 1.1, S - 0.535, 0);
+  add(new RoundedBoxGeometry(0.26, 0.07, 0.04, 2, 0.01), panelMat, 0, 0, 0, 0, 0, mcp);
+  const hdgSign = placard('HOLD      HDG      SHORT', 0.2, 0.016);
+  hdgSign.position.set(0, 0.024, 0.021);
+  mcp.add(hdgSign);
+  const dial = new THREE.Group();
+  dial.position.set(0, -0.006, 0.022);
+  mcp.add(dial);
+  add(new THREE.CylinderGeometry(0.02, 0.022, 0.016, 20), metal, 0, 0, 0.008, Math.PI / 2, 0, dial);
+  add(new THREE.BoxGeometry(0.004, 0.016, 0.004), knobMat, 0, 0.011, 0.017, 0, 0, dial);
+  hitBox('course', mcp, 0.1, 0.08, 0.07, 0, -0.004, 0.02);
+
+  // To the captain's left, on a side console by the wall: the PA handset in its cradle.
+  const side = mount(-0.8, 0.6, S - 0.08, 0);
+  add(new RoundedBoxGeometry(0.16, 0.1, 0.42, 2, 0.02), panelMat, 0, -0.05, 0, 0, 0, side);
+  add(new THREE.BoxGeometry(0.07, 0.02, 0.2), bezel, 0.01, 0.01, 0, 0, 0, side);
+  const handset = new THREE.Group();
+  handset.position.set(0.01, 0.035, 0);
+  side.add(handset);
+  add(new RoundedBoxGeometry(0.045, 0.028, 0.19, 2, 0.01), handsetMat, 0, 0, 0, 0, 0, handset);
+  for (const end of [-1, 1]) add(new RoundedBoxGeometry(0.05, 0.04, 0.05, 2, 0.012), handsetMat, 0, -0.006, end * 0.085, 0, 0, handset);
+  const paSign = placard('PA', 0.04, 0.02);
+  paSign.position.set(0.06, 0.001, 0.13);
+  paSign.rotation.x = -Math.PI / 2;
+  side.add(paSign);
+  hitBox('handset', side, 0.16, 0.12, 0.3, 0.01, 0.04, 0);
 
   // The two pilots' seats, facing forward, and the folding jump seat on the back wall behind the first officer.
   for (const x of [FLIGHT_DECK.seatX, -FLIGHT_DECK.seatX]) {
@@ -209,6 +339,11 @@ export function buildFlightDeck(): FlightDeck {
   group.add(dome);
   materials.push(labelMat);
 
+  controls.push(monitorHit);
+
+  // Tonight's calls, eased into place.
+  let look: DeckLook = { belt: false, call: false, lever: false, dial: null, handsetUp: false };
+  const ease = { belt: 0, lever: 0, dial: 0, handset: 0 };
   let open = 0;
   let wanted = 0;
   return {
@@ -220,6 +355,7 @@ export function buildFlightDeck(): FlightDeck {
     door: new THREE.Vector3(0, 0, back + 0.35),
     doorway: new THREE.Vector3(0, 0, back),
     monitor,
+    controls,
     setView(texture) {
       glass.map = texture;
       glass.needsUpdate = true;
@@ -244,8 +380,10 @@ export function buildFlightDeck(): FlightDeck {
       g.fill();
       labelMap.needsUpdate = true;
     },
-    setSeatbeltLight(on) {
-      belt.material = on ? beltOn : beltOff;
+    setLook(next) {
+      look = next;
+      belt.material = next.belt ? beltOn : beltOff;
+      call.material = next.call ? callOn : callOff;
     },
     setDoor(value) {
       wanted = value ? 1 : 0;
@@ -253,13 +391,25 @@ export function buildFlightDeck(): FlightDeck {
     update(dt) {
       open += (wanted - open) * Math.min(1, dt * 5);
       hinge.rotation.y = open * 1.45;
+      const k = Math.min(1, dt * 8);
+      ease.belt += ((look.belt ? 1 : 0) - ease.belt) * k;
+      ease.lever += ((look.lever ? 1 : 0) - ease.lever) * k;
+      ease.dial += ((look.dial === 'hold' ? 1 : look.dial === 'shortcut' ? -1 : 0) - ease.dial) * k;
+      ease.handset += ((look.handsetUp ? 1 : 0) - ease.handset) * Math.min(1, dt * 6);
+      // The switch flips down for ON; the lever comes back; the dial turns to HOLD or SHORT; the handset lifts.
+      beltToggle.rotation.x = 0.55 - ease.belt * 1.1;
+      lever.rotation.x = -0.35 + ease.lever * 0.8;
+      dial.rotation.z = ease.dial * 1.1;
+      handset.position.y = 0.035 + ease.handset * 0.16;
+      handset.position.x = 0.01 + ease.handset * 0.16;
+      handset.rotation.set(ease.handset * -0.5, 0, ease.handset * 0.9);
     },
     dispose() {
       group.traverse((o) => {
         if (o instanceof THREE.Mesh) o.geometry.dispose();
       });
       for (const m of materials) m.dispose();
-      signMap.dispose();
+      for (const map of maps) map.dispose();
       labelMap.dispose();
     },
   };

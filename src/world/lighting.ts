@@ -170,6 +170,20 @@ export class Lighting {
     this.key.shadow.map?.dispose();
   }
 
+  /**
+   * Draw once lit as `mode` (the cabin cameras' tape of last night, by day), then put the lights back. The sun keeps
+   * its direction, so the shadow map drawn for this frame still fits.
+   */
+  withMode(mode: LightMode, draw: () => void): void {
+    const saved = this.snapshot();
+    this.apply({ ...PRESETS[mode], keyDir: this.keyDir.clone() });
+    try {
+      draw();
+    } finally {
+      this.apply(saved);
+    }
+  }
+
   /** Put your screen's glow in front of your face. */
   placeScreenGlow(position: THREE.Vector3): void {
     this.screenGlow.position.copy(position);

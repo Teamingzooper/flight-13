@@ -173,9 +173,9 @@ describe('in the dark on the flight deck', () => {
     expect(entry.data!.seen).toEqual(
       expect.arrayContaining([
         // Planting and searching look the same on camera, in the data too.
-        { actor: 'b2', kind: 'under_seat' },
-        { actor: 'mid', kind: 'under_seat' },
-        { actor: 'nurse', kind: 'lean', target: 'mid' },
+        { actor: 'b2', kind: 'under_seat', text: 'b2 bent down under their seat' },
+        { actor: 'mid', kind: 'under_seat', text: 'mid bent down under their seat' },
+        { actor: 'nurse', kind: 'lean', target: 'mid', text: 'nurse leaned over to mid' },
       ]),
     );
   });

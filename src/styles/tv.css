@@ -1774,3 +1774,33 @@ button.sm-num.pick:hover {
     transform: translateY(-6px);
   }
 }
+
+/* In the 3D cockpit: what the captain's controls are, where, and tonight's calls. */
+.controls-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.controls-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.controls-list li:last-child {
+  border-bottom: 0;
+}
+
+.control-state {
+  font: 600 13px var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--amber);
+}

@@ -3,6 +3,7 @@ import type { OpenFlight } from '../app/sessions';
 import { grid } from '../engine';
 import type { ClientSnapshot } from '../net/client';
 import { EMOTES, canEmote } from '../net/emotes';
+import { CoursePicker, PaPanel } from '../tv/PilotPanels';
 import type { ClientState } from '../net/protocol';
 import { canPa } from '../net/voiceRules';
 import { captainName, clock, phaseTitle } from '../tv/format';
@@ -13,6 +14,8 @@ import { LeaveDialog, TV, useTVContext } from '../tv/TV';
 import { VoiceButton, useVoice } from '../tv/VoiceButton';
 import { cabinAudio } from './audio';
 import { Cabin3D, type SceneKind } from './Cabin3D';
+import { CockpitConsole } from './CockpitConsole';
+import { CONTROLS, atTheControls, controlAction, controlStatus, tapeReady, type ConsoleMode, type ControlId } from './cockpit';
 import { PackingHud } from './PackingHud';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -51,10 +54,17 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const [ending, setEnding] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [caption, setCaption] = useState<{ text: string; who: string; id: number } | null>(null);
+  /** The captain's controls: the one the crosshair is on, the camera console, and the course and PA cards. */
+  const [aimControl, setAimControl] = useState<ControlId | null>(null);
+  const [consoleMode, setConsoleMode] = useState<ConsoleMode | null>(null);
+  const [deckCard, setDeckCard] = useState<'course' | 'pa' | null>(null);
+  const onControl = useRef<(id: ControlId) => void>(() => {});
   const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
   const game = state.game!;
   const kind = game.phase.kind;
+  /** You are the one on the PA right now. */
+  const onAir = !!game.you && state.pa === game.you.id;
   /** Packing in the hotel room and boarding: no seat, no screen, the mouse stays free. */
   const preflight = kind === 'packing' || kind === 'boarding';
   const packing = usePacking(ctx);
@@ -74,7 +84,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const cutscene = ending || (kind === 'ended' && !!cabin.current?.endingAhead(game));
   const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !cutscene && scene !== 'search';
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
-  const windowOpen = leaning || cardOpen || leavingOpen;
+  const windowOpen = leaning || cardOpen || leavingOpen || consoleMode !== null || deckCard !== null;
   const mouseFree = windowOpen || preflight || cutscene;
 
   useEffect(() => {
@@ -92,6 +102,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         onPack: (item) => packingRef.current.add(item),
         onUnpack: (slot) => packingRef.current.remove(slot),
         onEnding: setEnding,
+        onControl: (id) => onControl.current(id),
+        onAimControl: setAimControl,
       });
       c.setPoseSource(flight.client.poses);
       c.setFaceSource(flight.client.faces);
@@ -187,10 +199,23 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     return () => clearTimeout(id);
   }, [caption]);
 
+  const deckOpen = consoleMode !== null || deckCard !== null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (typing || preflight) return;
+      if (preflight) return;
+      // Esc puts away whatever the captain has open on the flight deck (even from the PA text box).
+      if (deckOpen && e.key === 'Escape') {
+        setConsoleMode(null);
+        setDeckCard(null);
+        return;
+      }
+      if (typing || deckOpen) return;
+      // Esc also hangs up the PA handset.
+      if (onAir && !leaning && e.key === 'Escape') {
+        flight.client.sendPa(false);
+        return;
+      }
       if (!leaning && (e.key === 'e' || e.key === 'E' || e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault();
         openScreen();
@@ -200,7 +225,13 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [leaning, preflight]);
+  }, [leaning, preflight, deckOpen, onAir]);
+
+  // A new phase puts the console and the cards away (the calls they make belong to the phase before).
+  useEffect(() => {
+    setConsoleMode(null);
+    setDeckCard(null);
+  }, [kind, game.phase.night]);
 
   // Voice chat plays from where people sit in the 3D cabin; M mutes you.
   const voice = useVoice(flight);
@@ -220,7 +251,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   }, [voice, voice?.status]);
 
   // Gestures by day: the bar at the bottom, or keys 1 to 5.
-  const emoting = !!game.you && canEmote(kind, game.you.status) && !leaning && !scene && !ending && !cardOpen && !leavingOpen;
+  const emoting = !!game.you && canEmote(kind, game.you.status) && !leaning && !scene && !ending && !cardOpen && !leavingOpen && !deckOpen;
   useEffect(() => {
     if (!emoting) return undefined;
     const onKey = (e: KeyboardEvent) => {
@@ -236,7 +267,6 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
 
   // The PA by day: the Pilot holds P (or the PA button) and the whole plane hears him.
   const paReady = voice?.status === 'on' && !voice.muted && !!game.you && canPa(game.you.role, game.you.status, kind) && !ending;
-  const onAir = !!game.you && state.pa === game.you.id;
   const paName = state.pa && !onAir ? game.players.find((p) => p.id === state.pa)?.name : undefined;
   useEffect(() => {
     if (!paReady) return undefined;
@@ -268,6 +298,18 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     };
   }, [paReady]);
 
+  // The captain's controls: open the console or a card, pick up the PA, or say why not.
+  const freshTape = tapeReady(game);
+  onControl.current = (id) => {
+    const use = controlAction(game, id, freshTape);
+    if (use.kind === 'console') setConsoleMode(use.mode);
+    else if (use.kind === 'course') setDeckCard('course');
+    else if (use.kind === 'pa') {
+      if (paReady) flight.client.sendPa(!onAir);
+      else setDeckCard('pa');
+    } else setCaption({ text: use.why, who: CONTROLS[id].name, id: Date.now() });
+  };
+
   if (failed) {
     return (
       <div class="world-failed">
@@ -289,6 +331,17 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
       (kind === 'night_act' && !game.mine?.acted) ||
       (kind === 'day_vote' && game.mine?.vote === null));
   const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
+  // The captain's own reminders: which control wants him now.
+  const captain = atTheControls(game) && !scene && !you?.buckled && !you?.knockedOut;
+  const deckHint = !captain
+    ? null
+    : kind === 'night_move' && game.mine?.seatbelt === null
+      ? 'Your call: look up and flip the seatbelt switch overhead'
+      : kind === 'night_act' && !game.mine?.acted
+        ? 'Aim the cabin cameras: click the monitor on the pedestal'
+        : freshTape && (kind === 'dawn' || kind === 'day_discuss')
+          ? 'Last night’s tape is ready: click the camera monitor'
+          : null;
   const idleHint = TOUCH
     ? 'Use screen · drag to look around'
     : locked
@@ -306,9 +359,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         ? you?.inWashroom
           ? 'Searching the lavatory…'
           : 'Looking under your seat…'
-        : needsInput
-          ? `Your move: ${useIt}`
-          : idleHint;
+        : deckHint
+          ? deckHint
+          : needsInput
+            ? `Your move: ${useIt}`
+            : idleHint;
   const hasScreen = !!you?.seat && !scene;
 
   return (
@@ -345,6 +400,29 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             </div>
           </div>
           {!TOUCH && !preflight && !ending && <div class={`crosshair${aim ? ' on' : ''}`} />}
+          {aimControl && !deckOpen && !ending && (
+            <div class="hud-aim-label" aria-hidden="true">
+              <b>{CONTROLS[aimControl].name}</b>
+              <span>{controlStatus(game, aimControl, onAir, freshTape)}</span>
+            </div>
+          )}
+          {consoleMode && cabin.current && (
+            <div class="hud-overlay deck-overlay">
+              <CockpitConsole ctx={ctx} cabin={cabin.current} mode={consoleMode} onClose={() => setConsoleMode(null)} />
+            </div>
+          )}
+          {deckCard && (
+            <div class="hud-overlay deck-overlay">
+              <div class="deck-card">
+                {deckCard === 'course' ? <CoursePicker ctx={ctx} /> : <PaPanel ctx={ctx} />}
+                <div class="row">
+                  <button type="button" class="btn small" onClick={() => setDeckCard(null)}>
+                    Done (Esc)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {kind === 'packing' && you && !cardOpen && <PackingHud game={game} packing={packing} onRole={reopenPhaseCard} />}
           {caption && (
             <div class="hud-caption" key={caption.id} role="status">
@@ -392,7 +470,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
               ))}
             </div>
           )}
-          {preflight || ending ? null : TOUCH && hasScreen ? (
+          {preflight || ending || deckOpen ? null : TOUCH && hasScreen ? (
             <button class={`hud-hint hud-use${needsInput ? ' urgent' : ''}`} onClick={openScreen}>
               {hint}
             </button>
