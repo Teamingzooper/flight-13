@@ -100,7 +100,10 @@ const LOBBY_CHAT_COOLDOWN_MS = 1000;
 const POSE_INTERVAL_MS = 120;
 /** Chance per tick (about 4 a second) that a bot gestures during the day: now and then, not constantly. */
 const BOT_EMOTE_CHANCE = 0.004;
-const BOT_NAMES = ['Ada', 'Bea', 'Cal', 'Dex', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou', 'Max', 'Nia', 'Oz', 'Pip'];
+const BOT_NAMES = [
+  'Ada', 'Bea', 'Cal', 'Dex', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou', 'Max', 'Nia', 'Oz', 'Pip',
+  'Ana', 'Ben', 'Dot', 'Gil', 'Kai', 'Liv', 'Moe', 'Ned', 'Ola', 'Rex', 'Sal', 'Tam', 'Uma', 'Vic', 'Wes', 'Zoe',
+];
 const OK: IntentResult = { ok: true };
 const fail = (error: string): IntentResult => ({ ok: false, error });
 
@@ -418,7 +421,11 @@ export class HostSession {
       case 'addBot': {
         if (s.game) return fail('The doors are closed.');
         if (s.players.length >= s.settings.maxPassengers) return fail('The flight is full.');
-        const base = BOT_NAMES[Math.floor(this.random() * BOT_NAMES.length)];
+        // A first name nobody aboard has (bots are talked to by name), while there are any left.
+        const taken = new Set(s.players.map((p) => p.name.split(' ')[0].toLowerCase()));
+        const free = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
+        const names = free.length > 0 ? free : BOT_NAMES;
+        const base = names[Math.floor(this.random() * names.length)];
         const face = FACE_TEMPLATES[Math.floor(this.random() * FACE_TEMPLATES.length)].face;
         s.players.push({ id: `p${s.nextId++}`, token: '', name: this.uniqueName(`${base} (bot)`, null), look: randomLook(this.random), face, bot: true });
         break;

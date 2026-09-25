@@ -82,6 +82,16 @@ describe('boarding', () => {
     expect(ann.snapshot.state!.players.filter((p) => p.bot)).toHaveLength(1);
   });
 
+  it('gives every bot a first name nobody else has', async () => {
+    const { captain } = flight({ maxPassengers: 16 });
+    await settle();
+    for (let i = 0; i < 15; i++) expect(await captain.command({ kind: 'addBot' })).toEqual({ ok: true });
+    await settle();
+    expect(captain.snapshot.state!.players).toHaveLength(16);
+    const firsts = captain.snapshot.state!.players.map((p) => p.name.split(' ')[0].toLowerCase());
+    expect(new Set(firsts).size).toBe(16);
+  });
+
   it('gives duplicate names a number', async () => {
     const { board } = flight();
     board('Sam', 'sam-token-0001');
