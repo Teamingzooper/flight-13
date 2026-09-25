@@ -6,6 +6,8 @@ import { BULKHEAD_Z, CABIN_HALF_WIDTH, rowZ } from '../layout';
 import { carpetTexture, seatbeltSignTexture, signTexture, skyTexture } from '../textures';
 import type { LavatoryBox } from './lavatory';
 import { Spring } from '../spring';
+import { withDetail } from '../graphics';
+import type { WindowSpot } from '../shafts';
 
 const WALL_X = CABIN_HALF_WIDTH - 0.02;
 const WINDOW_Y = 1.14;
@@ -22,6 +24,8 @@ export interface CabinParts {
   group: THREE.Group;
   /** Cove and ceiling strips (bright by day, dim at night). */
   cove: THREE.MeshStandardMaterial;
+  /** The ceiling panels, washed by the cove lights (brightest next to them). */
+  ceiling: THREE.MeshStandardMaterial;
   /** Aisle path lighting (off by day, on at night). */
   floorLights: THREE.MeshStandardMaterial;
   exitSigns: THREE.MeshStandardMaterial;
@@ -34,6 +38,8 @@ export interface CabinParts {
   /** Light the seatbelt sign above one row side ("12L" / "12R"), or none. */
   lightSeatbelt(key: string | null): void;
   lavatoryDoor: THREE.Mesh;
+  /** Every window, for the light that comes through them. */
+  windows: WindowSpot[];
   /** The galley curtain: it parts around anyone walking through, then swings back and settles. */
   curtain: { update(dt: number, movers: readonly Mover[]): void };
   /** The lavatory's box (its inside is built separately, for nights spent in there). */
@@ -158,6 +164,25 @@ function clothCurtain(mesh: THREE.Mesh, halfWidth: number, height: number): { up
   };
 }
 
+/** How the cove lights wash a ceiling panel: brightest along both long edges (where the strips are), dimmer between. */
+function coveWashTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 4;
+  const g = canvas.getContext('2d')!;
+  const wash = g.createLinearGradient(0, 0, 64, 0);
+  wash.addColorStop(0, '#ffffff');
+  wash.addColorStop(0.22, '#8a8a8a');
+  wash.addColorStop(0.5, '#5c5c5c');
+  wash.addColorStop(0.78, '#8a8a8a');
+  wash.addColorStop(1, '#ffffff');
+  g.fillStyle = wash;
+  g.fillRect(0, 0, 64, 4);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 export function buildCabin(rows: number): CabinParts {
   const group = new THREE.Group();
   group.name = 'cabin';
@@ -168,18 +193,24 @@ export function buildCabin(rows: number): CabinParts {
   const length = rearZ - startZ;
   const midZ = (startZ + rearZ) / 2;
 
-  const wall = new THREE.MeshStandardMaterial({ color: '#c3c7cf', roughness: 0.6 });
-  const wallLow = new THREE.MeshStandardMaterial({ color: '#9aa1ad', roughness: 0.75 });
-  const binMat = new THREE.MeshStandardMaterial({ color: '#cfd2d8', roughness: 0.45 });
+  const wall = withDetail(new THREE.MeshStandardMaterial({ color: '#c3c7cf', roughness: 0.6 }), 'plastic', [6, 6], 0.18);
+  const wallLow = withDetail(new THREE.MeshStandardMaterial({ color: '#9aa1ad', roughness: 0.75 }), 'plastic', [40, 2], 0.2);
+  const binMat = withDetail(new THREE.MeshStandardMaterial({ color: '#cfd2d8', roughness: 0.45 }), 'plastic', [6, 3], 0.15);
   const trim = new THREE.MeshStandardMaterial({ color: '#7b8492', roughness: 0.35, metalness: 0.4 });
   const seam = new THREE.MeshStandardMaterial({ color: '#8d939e', roughness: 0.8 });
   const frameMat = new THREE.MeshStandardMaterial({ color: '#c4c8cf', roughness: 0.5 });
   const shadeMat = new THREE.MeshStandardMaterial({ color: '#ece8de', roughness: 0.7, side: THREE.DoubleSide });
   const curtain = new THREE.MeshStandardMaterial({ color: '#1f2b4d', roughness: 0.95, side: THREE.DoubleSide });
-  const psuMat = new THREE.MeshStandardMaterial({ color: '#c9cdd4', roughness: 0.55 });
-  const carpet = new THREE.MeshStandardMaterial({ map: carpetTexture(length), roughness: 0.96 });
+  const psuMat = withDetail(new THREE.MeshStandardMaterial({ color: '#c9cdd4', roughness: 0.55 }), 'plastic', [4, 4], 0.15);
+  const carpet = withDetail(new THREE.MeshStandardMaterial({ map: carpetTexture(length), roughness: 0.96 }), 'carpet', [10, Math.max(12, Math.round(length * 3))], 0.7);
 
   const cove = new THREE.MeshStandardMaterial({ color: '#0b0d12', emissive: '#e9f0ff', emissiveIntensity: 1.4 });
+  const ceiling = withDetail(
+    new THREE.MeshStandardMaterial({ color: '#d4d8df', roughness: 0.7, emissive: '#eef3ff', emissiveMap: coveWashTexture(), emissiveIntensity: 0.4 }),
+    'plastic',
+    [4, 12],
+    0.12,
+  );
   const floorLights = new THREE.MeshStandardMaterial({ color: '#0b0d12', emissive: '#bcd3ff', emissiveIntensity: 0.1 });
   const exitSigns = new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ffffff', emissiveIntensity: 1.6, map: signTexture('EXIT', '#6bff9a', '#062812'), emissiveMap: signTexture('EXIT', '#6bff9a', '#062812') });
   const readingMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
@@ -240,6 +271,7 @@ export function buildCabin(rows: number): CabinParts {
     };
   })();
 
+  const windowSpots: WindowSpot[] = [];
   for (let row = 1; row <= rows; row++) {
     const z = rowZ(row) - 0.05;
     for (const side of [-1, 1]) {
@@ -249,6 +281,7 @@ export function buildCabin(rows: number): CabinParts {
       const glassIndex = (row + (side > 0 ? 1 : 0)) % windowGlass.length;
       windowBatches[glassIndex].add(glassGeometry, windowGlass[glassIndex], m4(side * (WALL_X + 0.05), WINDOW_Y, z, ry));
       const drawn = random() < 0.35 ? 0.15 + random() * 0.75 : random() * 0.12;
+      windowSpots.push({ x: side * WALL_X, y: WINDOW_Y, z, side: side as -1 | 1, width: WINDOW_W, height: WINDOW_H, shade: drawn > 0.02 ? drawn : 0 });
       if (drawn > 0.02) {
         const h = (WINDOW_H + 0.02) * drawn;
         const shade = shadeGeometry.clone();
@@ -287,11 +320,11 @@ export function buildCabin(rows: number): CabinParts {
       .makeRotationZ(side * Math.atan2(rise, run))
       .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
       .setPosition(side * (0.6 + run / 2), CEILING_Y - rise / 2, midZ);
-    statics.add(new THREE.PlaneGeometry(Math.hypot(run, rise) + 0.02, length), wall, slopeMatrix);
+    statics.add(new THREE.PlaneGeometry(Math.hypot(run, rise) + 0.02, length), ceiling, slopeMatrix);
     // Wall above the bins (hidden mostly, closes the gap).
     statics.add(new THREE.PlaneGeometry(length, 0.3), wall, m4(side * WALL_X, CEILING_Y - 0.1, midZ, side < 0 ? Math.PI / 2 : -Math.PI / 2));
   }
-  statics.add(new THREE.PlaneGeometry(1.2, length), wall, m4(0, CEILING_Y, midZ, 0, Math.PI / 2));
+  statics.add(new THREE.PlaneGeometry(1.2, length), ceiling, m4(0, CEILING_Y, midZ, 0, Math.PI / 2));
   for (const side of [-1, 1]) {
     statics.add(new THREE.BoxGeometry(0.02, 0.01, length - 0.2), cove, m4(side * 0.58, CEILING_Y - 0.006, midZ));
   }
@@ -379,6 +412,7 @@ export function buildCabin(rows: number): CabinParts {
   return {
     group,
     cove,
+    ceiling,
     floorLights,
     exitSigns,
     windowGlass,
@@ -402,6 +436,7 @@ export function buildCabin(rows: number): CabinParts {
       litSign.matrixWorldNeedsUpdate = true;
     },
     lavatoryDoor,
+    windows: windowSpots,
     curtain: curtainCloth,
     lavatory: { minX: -(0.3 + lavWidth), maxX: -0.3, frontZ: lavFront, backZ: lavFront + REAR_ZONE - 0.1, height: CEILING_Y - 0.02 },
     frontZ,

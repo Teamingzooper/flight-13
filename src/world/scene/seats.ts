@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { grid, type SeatId } from '../../engine';
 import { BULKHEAD_Z, colX, rowZ } from '../layout';
 import { fabricTexture, idleScreenTexture } from '../textures';
+import { withDetail } from '../graphics';
 
 /** Seatbacks lean back (toward +z) by this much. */
 const RECLINE = 0.2;
@@ -47,12 +48,18 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
   const leftEnd = Math.max(...cols.filter((c) => c < grid.AISLE_COL));
   const rightEnd = Math.max(...cols);
 
+  // (Surface detail, when the graphics setting has it: woven cloth or pebbled leather, moulded plastic.)
   const fabric = leather
-    ? new THREE.MeshStandardMaterial({ color: '#e6d8bd', roughness: 0.48 })
-    : new THREE.MeshStandardMaterial({ map: fabricTexture(), roughness: 0.92 });
-  const headrest = new THREE.MeshStandardMaterial({ color: leather ? '#d6c3a0' : '#c9ced8', roughness: leather ? 0.5 : 0.9 });
-  const shell = new THREE.MeshStandardMaterial({ color: '#2b303a', roughness: 0.45 });
-  const armMat = new THREE.MeshStandardMaterial({ color: '#3a404b', roughness: 0.5 });
+    ? withDetail(new THREE.MeshStandardMaterial({ color: '#e6d8bd', roughness: 0.48 }), 'leather', [3, 3], 0.5)
+    : withDetail(new THREE.MeshStandardMaterial({ map: fabricTexture(), roughness: 0.92 }), 'fabric', [3, 3], 0.6);
+  const headrest = withDetail(
+    new THREE.MeshStandardMaterial({ color: leather ? '#d6c3a0' : '#c9ced8', roughness: leather ? 0.5 : 0.9 }),
+    leather ? 'leather' : 'fabric',
+    [2, 2],
+    0.4,
+  );
+  const shell = withDetail(new THREE.MeshStandardMaterial({ color: '#2b303a', roughness: 0.45 }), 'plastic', [2, 2], 0.25);
+  const armMat = withDetail(new THREE.MeshStandardMaterial({ color: '#3a404b', roughness: 0.5 }), 'plastic', [1, 1], 0.25);
   const metal = new THREE.MeshStandardMaterial({ color: '#8b939e', roughness: 0.35, metalness: 0.6 });
   const idle = idleScreenTexture();
   const screenMaterial = new THREE.MeshStandardMaterial({ color: '#000000', emissive: '#ffffff', emissiveMap: idle, emissiveIntensity: 0.9 });

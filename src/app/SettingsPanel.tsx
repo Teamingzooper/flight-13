@@ -3,7 +3,14 @@ import type { ClientState } from '../net/protocol';
 import { FOV_RANGE, QUALITIES, TEXT_SIZES, personVolume, setPersonVolume, setPrefs, usePrefs, type Quality, type TextSize } from './prefs';
 import { Toggle } from './SettingsForm';
 
-const QUALITY_NAMES: Record<Quality, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+const QUALITY_NAMES: Record<Quality, string> = { basic: 'Basic', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' };
+const QUALITY_HINTS: Record<Quality, string> = {
+  basic: 'For older computers and phones: fewer pixels, no shadows, no effects.',
+  low: 'Sharp, with a light colour grade; no shadows.',
+  medium: 'Shadows, surface detail and bloom.',
+  high: 'Soft shadows, ambient occlusion, sunbeams through the windows, and smoother edges.',
+  ultra: 'Everything at full resolution: finer shadows and occlusion, dust in the sunbeams, multisampled edges. For a strong graphics card.',
+};
 const TEXT_NAMES: Record<TextSize, string> = { normal: 'Normal', large: 'Large', larger: 'Larger' };
 
 /** The microphones this browser has (named once you have allowed one). */
@@ -111,7 +118,7 @@ export function SettingsPanel({ state }: { state?: ClientState | null }) {
               </button>
             ))}
           </div>
-          <small class="hint">Lower is smoother on slow computers and phones. Shadows and effects change the next time the cabin loads.</small>
+          <small class="hint">{QUALITY_HINTS[prefs.quality]}</small>
         </div>
         <label class="field pref-slider">
           <span class="label">
