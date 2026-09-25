@@ -222,7 +222,7 @@ export interface Verdict {
   tally: Record<string, number>;
 }
 
-export type ChatChannel = 'cabin' | 'saboteurs' | 'ghosts';
+export type ChatChannel = 'cabin' | 'saboteurs' | 'ghosts' | 'pa';
 
 export interface ChatMessage {
   id: number;

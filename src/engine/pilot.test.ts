@@ -234,3 +234,18 @@ describe('in the dark on the flight deck', () => {
     expect(player(s, 'front').status).toBe('alive');
   });
 });
+
+describe('the PA', () => {
+  it('lets only the Pilot talk to the whole plane, by day, now and then', () => {
+    const s = cabin();
+    const pa = (id: string, text: string, now = 0) => applyIntent(s, id, { kind: 'chat', channel: 'pa', text }, now);
+    advanceTo(s, 'night_move', 1);
+    expect(pa('pilot', 'Hello').ok).toBe(false);
+    advanceTo(s, 'day_discuss', 1);
+    expect(pa('mid', 'Hello')).toEqual({ ok: false, error: 'Only the Pilot can use the PA.' });
+    expect(pa('pilot', 'x'.repeat(141)).ok).toBe(false);
+    expect(pa('pilot', 'Watch row 4.', 100_000)).toEqual({ ok: true });
+    expect(pa('pilot', 'Again.', 105_000)).toEqual({ ok: false, error: 'The PA needs a moment: 10s.' });
+    expect(viewFor(s, 'back', 0).chat.at(-1)).toMatchObject({ channel: 'pa', from: 'pilot', text: 'Watch row 4.' });
+  });
+});

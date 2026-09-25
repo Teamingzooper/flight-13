@@ -11,6 +11,9 @@ export const CHAT_MAX_LENGTH = 200;
 export const CHAT_COOLDOWN_MS = 1000;
 export const CHAT_HISTORY = 300;
 export const NOTE_MAX_LENGTH = 300;
+/** The Pilot's PA: short announcements, a little while apart. */
+export const PA_MAX_LENGTH = 140;
+export const PA_COOLDOWN_MS = 15_000;
 
 export interface TimerSet {
   night_move: number;

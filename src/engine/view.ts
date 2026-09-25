@@ -204,6 +204,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
       (m) =>
         ended ||
         m.channel === 'cabin' ||
+        m.channel === 'pa' ||
         m.channel === 'whisper' ||
         (m.channel === 'saboteurs' && saboteur) ||
         (m.channel === 'ghosts' && ghost),

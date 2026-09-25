@@ -6,7 +6,7 @@ import { MAX_PACKED, checkItemUse, isItemId, useItem } from './items';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isPilot, isSaboteur } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
-import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH } from './settings';
+import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH, PA_COOLDOWN_MS, PA_MAX_LENGTH } from './settings';
 import { clearedForTakeoff } from './setup';
 import { activePlayers, addLog, cellOf, getPlayer, inWashroom, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
@@ -286,6 +286,9 @@ function channelError(s: GameState, p: PlayerState, channel: ChatChannel): strin
       return null;
     case 'ghosts':
       return isActive(p) && kind !== 'ended' ? 'Only ghosts can use that channel.' : null;
+    case 'pa':
+      if (!isPilot(p.role) || !isActive(p)) return 'Only the Pilot can use the PA.';
+      return PA_PHASES.has(kind) ? null : 'The PA is for announcements by day.';
     default:
       return 'Unknown channel.';
   }
@@ -297,11 +300,21 @@ function pushChat(s: GameState, message: Omit<ChatMessage, 'id'>): void {
 }
 
 function postChat(s: GameState, p: PlayerState, channel: ChatChannel, text: string, now: number): IntentResult {
-  const error = textError(s, p, text, now) ?? channelError(s, p, channel);
+  const error = textError(s, p, text, now) ?? channelError(s, p, channel) ?? (channel === 'pa' ? paError(s, p, text, now) : null);
   if (error) return fail(error);
   pushChat(s, { t: now, channel, from: p.id, to: null, text: text.trim() });
   s.lastChatAt[p.id] = now;
+  if (channel === 'pa') s.lastChatAt[`pa:${p.id}`] = now;
   return OK;
+}
+
+const PA_PHASES: ReadonlySet<PhaseKind> = new Set(['dawn', 'day_discuss', 'day_vote', 'verdict']);
+
+/** Announcements are short, and the PA needs a moment between them. */
+function paError(s: GameState, p: PlayerState, text: string, now: number): string | null {
+  if (text.trim().length > PA_MAX_LENGTH) return `Keep announcements under ${PA_MAX_LENGTH} characters.`;
+  const wait = PA_COOLDOWN_MS - (now - (s.lastChatAt[`pa:${p.id}`] ?? -Infinity));
+  return wait > 0 ? `The PA needs a moment: ${Math.ceil(wait / 1000)}s.` : null;
 }
 
 function postWhisper(s: GameState, p: PlayerState, to: string, text: string, now: number): IntentResult {
