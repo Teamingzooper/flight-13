@@ -75,6 +75,8 @@ export {
   PA_COOLDOWN_MS,
   BOT_CHATTERS,
   BOT_SKILLS,
+  VOICE_MODES,
+  VOICE_RANGE,
 } from './settings';
 export { possibleActions, checkAction, checkMove, checkSeatbelt } from './rules';
 export { botIntents } from './bots';

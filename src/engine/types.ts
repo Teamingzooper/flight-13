@@ -56,6 +56,8 @@ export type Anomaly = 'turbulence' | 'runaway_cart' | 'blackout';
 
 export type TimerPreset = 'quick' | 'standard' | 'relaxed';
 export type VoteMode = 'daily' | 'afterIncident';
+/** Voice chat on a flight: louder the closer (proximity), everyone alike (cabin), or none. */
+export type VoiceMode = 'proximity' | 'cabin' | 'off';
 
 export interface Settings {
   plane: PlaneId;
@@ -83,6 +85,9 @@ export interface Settings {
   botSkill: BotSkill;
   /** Shown on the public departures board while boarding (flights the server runs). */
   listed: boolean;
+  voiceMode: VoiceMode;
+  /** Proximity voice: how many rows away you can still hear someone (they fade out towards it). */
+  voiceRange: number;
 }
 
 export type PhaseKind =

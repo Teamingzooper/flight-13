@@ -1,4 +1,4 @@
-import { isPaPhase, isPilot, type PhaseKind, type PlayerStatus, type RoleId } from '../engine';
+import { isPaPhase, isPilot, type PhaseKind, type PlayerStatus, type RoleId, type Settings } from '../engine';
 
 /**
  * Voice chat follows the chat rules. Out loud in the cabin while the lights are on, and you hear people
@@ -37,10 +37,22 @@ export const VOICE_NEAR = 1.6;
 /** ...and silent from this far (about eight rows back). */
 export const VOICE_FAR = 7;
 
-/** How loud someone in the cabin sounds from `meters` away. */
-export function proximityGain(meters: number): number {
-  if (meters <= VOICE_NEAR) return 1;
-  if (meters >= VOICE_FAR) return 0;
-  const t = (VOICE_FAR - meters) / (VOICE_FAR - VOICE_NEAR);
+/** How loud someone in the cabin sounds from `meters` away (silent from `far`: the flight's voice range). */
+export function proximityGain(meters: number, far = VOICE_FAR): number {
+  if (far === Infinity) return 1;
+  const near = Math.min(VOICE_NEAR, far * 0.5);
+  if (meters <= near) return 1;
+  if (meters >= far) return 0;
+  const t = (far - meters) / (far - near);
   return t * t;
+}
+
+/** A seat row is this deep: the flight's voice range, in rows, becomes metres with it. */
+const ROW_DEPTH = 0.82;
+
+/** How far a voice carries on this flight, in metres ('cabin' mode: the whole plane). */
+export function voiceFar(settings: Pick<Settings, 'voiceMode' | 'voiceRange'>): number {
+  if (settings.voiceMode === 'cabin') return Infinity;
+  if (settings.voiceMode === 'off') return 0;
+  return (settings.voiceRange ?? 8) * ROW_DEPTH + 0.5;
 }

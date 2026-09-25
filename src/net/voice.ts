@@ -3,7 +3,7 @@ import type { PlayerSummary, PlayerView } from '../engine';
 import { eyePosition, rowZ } from '../world/layout';
 import type { ClientSession } from './client';
 import type { MediaChannel } from './transport';
-import { micOpen, proximityGain, sendsTo, voiceRoute } from './voiceRules';
+import { micOpen, proximityGain, sendsTo, voiceFar, voiceRoute } from './voiceRules';
 
 export type Vec3 = [number, number, number];
 
@@ -61,6 +61,11 @@ function seatPosition(p: PlayerSummary, rows: number): Vec3 {
  * never through the host), and every voice you receive plays from where that person sits, louder the
  * closer they are, following the chat rules (see voiceRules).
  */
+/** Voice chat is on for this flight (the captain can turn it off). */
+export function voiceAllowed(client: ClientSession): boolean {
+  return client.snapshot.state?.settings.voiceMode !== 'off';
+}
+
 export class VoiceChat {
   status: VoiceStatus = 'off';
   muted = false;
@@ -94,7 +99,7 @@ export class VoiceChat {
 
   /** Turn voice on (call from a click: browsers only allow sound and microphones after one). */
   async start(): Promise<void> {
-    if (this.status !== 'off') return;
+    if (this.status !== 'off' || !voiceAllowed(this.client)) return;
     this.setStatus('starting');
     const ctx = new AudioContext();
     this.ctx = ctx;
@@ -261,6 +266,12 @@ export class VoiceChat {
     const ctx = this.ctx;
     if (!ctx) return;
     const state = this.client.snapshot.state;
+    // The captain turned voice chat off for this flight.
+    if (state && state.settings.voiceMode === 'off') {
+      this.stop();
+      return;
+    }
+    const far = state ? voiceFar(state.settings) : Infinity;
     const voice = state?.voice ?? {};
     const game = state?.game ?? null;
     const selfId = this.media.selfId;
@@ -339,7 +350,7 @@ export class VoiceChat {
         } else if (route === 'cabin' && listener) {
           at = this.positionOf?.(speaker.id) ?? seatPosition(speaker, game.cabin.rows);
           const [x, y, z] = listener.position;
-          gain = proximityGain(Math.hypot(at[0] - x, at[1] - y, at[2] - z));
+          gain = proximityGain(Math.hypot(at[0] - x, at[1] - y, at[2] - z), far);
         }
       }
       // Your settings: everyone's volume, and each person's (0 for someone you muted).
