@@ -17,6 +17,7 @@ import { msLeft, type ClientSnapshot } from '../net/client';
 import { EMOTE_BY_ID, type EmoteId } from '../net/emotes';
 import type { VoiceChat } from '../net/voice';
 import type { ClientState, Pose } from '../net/protocol';
+import { getPrefs, subscribePrefs, type Quality } from '../app/prefs';
 import { cabinAudio } from './audio';
 import { SeatControls } from './controls';
 import { directorCues, type Cue } from './director';
@@ -133,6 +134,12 @@ function rearSpot(rows: number, i: number): THREE.Vector3 {
 }
 
 /** The 3D cabin seen from your seat. Framework-free; the World component drives it. */
+/** How sharp the cabin renders: fewer pixels on low settings (and on phones and tablets). */
+function pixelRatioFor(quality: Quality): number {
+  const most = { low: 1, medium: 1.25, high: 1.75 }[quality];
+  return Math.min(devicePixelRatio, TOUCH ? Math.min(most, 1.25) : most);
+}
+
 export class Cabin3D {
   static supported(): boolean {
     try {
@@ -224,6 +231,7 @@ export class Cabin3D {
   private captionAt = 0;
   private flash = 0;
   private readonly flashEl = document.createElement('div');
+  private readonly offPrefs: () => void;
   private turbulentNight: number | null = null;
   private nextBump = 0;
   /** Storm lightning, 0..1, and when the next strike comes. */
@@ -273,8 +281,10 @@ export class Cabin3D {
     private readonly opts: Cabin3DOptions,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.25 : 1.75));
-    this.renderer.shadowMap.enabled = !TOUCH;
+    // Graphics quality (the settings screen): sharpness now; shadows and effects when the cabin is next built.
+    const quality = getPrefs().quality;
+    this.renderer.setPixelRatio(pixelRatioFor(quality));
+    this.renderer.shadowMap.enabled = !TOUCH && quality !== 'low';
     // Not PCFSoftShadowMap: three.js dropped it and swaps in PCF at the first shadow pass, but shaders compiled
     // before then keep the old shadow code, and draws with them go dark (the camera monitor was nearly black).
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -302,8 +312,13 @@ export class Cabin3D {
     const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
     noise.blendMode.opacity.value = 0.07;
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
-    this.composer.addPass(new EffectPass(this.camera, bloom, vignette, noise, tone));
-    this.composer.addPass(new EffectPass(this.camera, new SMAAEffect()));
+    if (quality === 'low') this.composer.addPass(new EffectPass(this.camera, vignette, tone));
+    else this.composer.addPass(new EffectPass(this.camera, bloom, vignette, noise, tone));
+    if (quality === 'high') this.composer.addPass(new EffectPass(this.camera, new SMAAEffect()));
+    this.offPrefs = subscribePrefs((prefs) => {
+      this.renderer.setPixelRatio(pixelRatioFor(prefs.quality));
+      this.resize();
+    });
 
     this.controls = new SeatControls(this.camera, this.renderer.domElement, {
       onTap: (ndc) => this.tap(ndc),
@@ -620,6 +635,7 @@ export class Cabin3D {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
+    this.offPrefs();
     cabinAudio.stop();
     removeEventListener('pointerdown', this.unlockAudio);
     removeEventListener('keydown', this.unlockAudio);
@@ -765,7 +781,7 @@ export class Cabin3D {
     this.renderer.setSize(width, height, false);
     this.composer.setSize(width, height, false);
     this.camera.aspect = width / height;
-    this.camera.fov = width < height ? 76 : 68;
+    this.camera.fov = (width < height ? 76 : 68) + getPrefs().fov;
     this.camera.updateProjectionMatrix();
     this.hotel?.resize(width, height);
     this.gate?.resize(width, height);
@@ -912,7 +928,9 @@ export class Cabin3D {
       built.effects.update(dt, time, this.cart.group.position.z);
     }
     this.flash *= Math.exp(-dt * 5);
-    this.flashEl.style.opacity = this.flash > 0.01 ? String(this.flash) : '0';
+    // (Fewer flashes: a blast still shows, but only as a soft glow.)
+    const flash = getPrefs().fewerFlashes ? Math.min(this.flash, 0.2) : this.flash;
+    this.flashEl.style.opacity = flash > 0.01 ? String(flash) : '0';
     if (this.ending) {
       // The ending drives everyone and the camera; no seat controls, no network poses.
       this.cart.update(dt, time);
@@ -1283,9 +1301,10 @@ export class Cabin3D {
       }
     } else this.lightning = 0;
     this.lightning *= Math.exp(-dt * 7);
-    windows.flash = this.lightning;
-    built.lighting.lightning.intensity = this.lightning * 1.8;
-    this.forwardView.flash = this.lightning;
+    const bolt = getPrefs().fewerFlashes ? this.lightning * 0.25 : this.lightning;
+    windows.flash = bolt;
+    built.lighting.lightning.intensity = bolt * 1.8;
+    this.forwardView.flash = bolt;
     // (A faint white wash over the whole view, like the blast flash but softer.)
     if (this.lightning > 0.05) this.flash = Math.max(this.flash, this.lightning * 0.1);
   }

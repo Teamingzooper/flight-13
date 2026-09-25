@@ -197,7 +197,7 @@ function CustomRolesEditor({ roles, nights, onChange }: { roles: CustomRole[]; n
   );
 }
 
-function Toggle({ checked, onChange, title, hint }: { checked: boolean; onChange: (v: boolean) => void; title: string; hint?: string }) {
+export function Toggle({ checked, onChange, title, hint }: { checked: boolean; onChange: (v: boolean) => void; title: string; hint?: string }) {
   return (
     <label class="toggle">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.currentTarget.checked)} />

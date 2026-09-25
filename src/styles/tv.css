@@ -154,7 +154,8 @@
 
 .tv-tabs {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   border-top: 1px solid rgba(120, 160, 255, 0.1);
   background: rgba(6, 12, 24, 0.85);
 }
@@ -1993,4 +1994,15 @@ button.sm-num.pick:hover {
 
 .lunch-row {
   margin-top: 8px;
+}
+
+.tv-settings {
+  height: 100%;
+  overflow-y: auto;
+  padding: 4px 2px 12px;
+}
+
+.voice-button.talk.on {
+  background: var(--green);
+  color: #04130a;
 }

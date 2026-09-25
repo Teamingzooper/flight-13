@@ -94,11 +94,16 @@ export function Home() {
               <span>Duty Free</span>
               <Credits amount={bag.credits} />
             </a>
-            {accountsAvailable() && (
-              <a class="account-link" href="#/account">
-                {account ? 'Your account & stats' : 'Sign in to keep your progress'}
+            <div class="home-links">
+              {accountsAvailable() && (
+                <a class="account-link" href="#/account">
+                  {account ? 'Your account & stats' : 'Sign in to keep your progress'}
+                </a>
+              )}
+              <a class="account-link" href="#/settings">
+                Settings
               </a>
-            )}
+            </div>
             {error && <p class="error-text">{error}</p>}
           </div>
         </div>

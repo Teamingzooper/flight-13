@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { usePrefs } from '../app/prefs';
 import type { OpenFlight } from '../app/sessions';
 import { voiceFor, type VoiceChat } from '../net/voice';
 
@@ -13,6 +14,7 @@ export function useVoice(flight: OpenFlight): VoiceChat | null {
 /** Join proximity voice chat, mute yourself, or leave it. */
 export function VoiceButton({ flight, className = '' }: { flight: OpenFlight; className?: string }) {
   const voice = useVoice(flight);
+  const { pushToTalk } = usePrefs();
   if (!voice) return null;
   const status = voice.status;
   if (status === 'off' || status === 'starting') {
@@ -40,6 +42,20 @@ export function VoiceButton({ flight, className = '' }: { flight: OpenFlight; cl
         <span aria-hidden="true">{listening ? '🎧' : voice.muted ? '🔇' : '🎙️'}</span>
         {listening ? ' Listening' : voice.muted ? ' Muted' : ' On'}
       </button>
+      {pushToTalk && !listening && !voice.muted && (
+        <button
+          class={`voice-button talk${voice.talking ? ' on' : ''}`}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            voice.setTalking(true);
+          }}
+          onPointerUp={() => voice.setTalking(false)}
+          onPointerCancel={() => voice.setTalking(false)}
+          title="Hold to talk (or hold V)"
+        >
+          {voice.talking ? 'Talking…' : 'Hold to talk'}
+        </button>
+      )}
       <button class="voice-button leave" onClick={() => voice.stop()} title="Leave voice chat" aria-label="Leave voice chat">
         ✕
       </button>

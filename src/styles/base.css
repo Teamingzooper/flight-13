@@ -586,3 +586,97 @@ input[type='range'] {
 .tv-paused {
   margin: 8px 12px 0;
 }
+
+/* ---------- Your settings (prefs.ts) ---------- */
+/* Text size: the pages and the seatback screen's contents scale (inside their frames); the 3D cabin does not. */
+.page,
+.home,
+.tv-body,
+.tv-overlay > .tv-card {
+  zoom: var(--ui-zoom, 1);
+}
+
+/* High contrast: brighter secondary text and outlines, darker panels. */
+html.high-contrast {
+  --ink: #ffffff;
+  --dim: #d4def0;
+  --faint: #aebcd6;
+  --line: #5b7196;
+  --panel: #060b16;
+  --panel-2: #0b1426;
+}
+
+html.high-contrast .muted,
+html.high-contrast .hint,
+html.high-contrast small {
+  color: #d4def0;
+}
+
+html.high-contrast .btn,
+html.high-contrast .input {
+  outline: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+/* Reduced motion: nothing blinks, slides or spins. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+.prefs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 22px 28px;
+  width: 100%;
+}
+
+.prefs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prefs-section h3 {
+  margin: 0;
+  font: 700 20px var(--display);
+  letter-spacing: 0.04em;
+  color: var(--amber);
+}
+
+.pref-slider .label b {
+  float: right;
+  color: var(--ink);
+}
+
+.people-volumes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.people-volumes li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 1.2fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.person-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.home-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}

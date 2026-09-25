@@ -1,3 +1,4 @@
+import { getPrefs, personVolume, subscribePrefs } from '../app/prefs';
 import type { PlayerSummary, PlayerView } from '../engine';
 import { eyePosition, rowZ } from '../world/layout';
 import type { ClientSession } from './client';
@@ -63,6 +64,10 @@ function seatPosition(p: PlayerSummary, rows: number): Vec3 {
 export class VoiceChat {
   status: VoiceStatus = 'off';
   muted = false;
+  /** Holding the talk key or button (push to talk, in the settings). */
+  talking = false;
+  private micId = '';
+  private offPrefs: (() => void) | null = null;
   private ctx: AudioContext | null = null;
   private mic: MediaStream | null = null;
   private micAnalyser: AnalyserNode | null = null;
@@ -97,8 +102,11 @@ export class VoiceChat {
     try {
       // (Development builds can stand in a test tone for the microphone.)
       const fake = import.meta.env.DEV ? (globalThis as { __fakeMic?: (ctx: AudioContext) => MediaStream }).__fakeMic?.(ctx) : undefined;
+      this.micId = getPrefs().mic;
+      const device = this.micId ? { deviceId: { ideal: this.micId } } : {};
       this.mic =
-        fake ?? (await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }));
+        fake ??
+        (await navigator.mediaDevices.getUserMedia({ audio: { ...device, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }));
       this.micAnalyser = ctx.createAnalyser();
       this.micAnalyser.fftSize = 512;
       ctx.createMediaStreamSource(this.mic).connect(this.micAnalyser);
@@ -110,9 +118,36 @@ export class VoiceChat {
     this.client.sendVoice(true);
     this.announcedAt = performance.now();
     this.timer = setInterval(() => this.tick(), TICK_MS);
+    addEventListener('keydown', this.onKey);
+    addEventListener('keyup', this.onKey);
+    addEventListener('blur', this.onBlur);
+    // A different microphone picked in the settings: start again with it.
+    this.offPrefs = subscribePrefs((prefs) => {
+      if (prefs.mic !== this.micId && this.status !== 'off' && this.status !== 'starting') {
+        this.stop();
+        void this.start();
+      } else this.tick();
+    });
     this.setStatus(this.mic ? 'on' : 'listening');
     this.tick();
   }
+
+  /** Push to talk: hold to speak (the V key, or the Talk button). */
+  setTalking(on: boolean): void {
+    if (this.talking === on) return;
+    this.talking = on;
+    this.tick();
+    this.emit();
+  }
+
+  private readonly onKey = (e: KeyboardEvent) => {
+    if (e.code !== 'KeyV' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    const el = e.target as HTMLElement | null;
+    if (el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+    this.setTalking(e.type === 'keydown');
+  };
+
+  private readonly onBlur = () => this.setTalking(false);
 
   /** Turn voice off: stop sending, stop listening, release the microphone. */
   stop(): void {
@@ -120,6 +155,12 @@ export class VoiceChat {
     this.client.sendVoice(false);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    removeEventListener('keydown', this.onKey);
+    removeEventListener('keyup', this.onKey);
+    removeEventListener('blur', this.onBlur);
+    this.offPrefs?.();
+    this.offPrefs = null;
+    this.talking = false;
     this.offStream?.();
     this.offStream = null;
     if (this.mic) for (const peerId of this.sentTo) this.media.channel.removeStream(this.mic, peerId);
@@ -234,7 +275,8 @@ export class VoiceChat {
 
     // Your microphone: open only while the rules let you talk.
     const track = this.mic?.getAudioTracks()[0];
-    if (track) track.enabled = !this.muted && !!game && !!you && micOpen(game.phase.kind, youAlive);
+    const prefs = getPrefs();
+    if (track) track.enabled = !this.muted && (!prefs.pushToTalk || this.talking) && !!game && !!you && micOpen(game.phase.kind, youAlive);
 
     // Who gets your voice (the living never receive a ghost's).
     if (this.mic) {
@@ -300,8 +342,10 @@ export class VoiceChat {
           gain = proximityGain(Math.hypot(at[0] - x, at[1] - y, at[2] - z));
         }
       }
-      remote.gain.gain.setTargetAtTime(gain, ctx.currentTime, 0.08);
-      remote.paGain.gain.setTargetAtTime(onAir ? PA_GAIN : 0, ctx.currentTime, 0.05);
+      // Your settings: everyone's volume, and each person's (0 for someone you muted).
+      const volume = prefs.voice * (playerId && state ? personVolume(prefs, state.code, playerId) : 1);
+      remote.gain.gain.setTargetAtTime(gain * volume, ctx.currentTime, 0.08);
+      remote.paGain.gain.setTargetAtTime(onAir ? PA_GAIN * volume : 0, ctx.currentTime, 0.05);
       // Voices without a place in the cabin sound from right where you are.
       const [x, y, z] = at ?? listener?.position ?? [0, 0, 0];
       remote.panner.positionX.setTargetAtTime(x, ctx.currentTime, 0.05);
