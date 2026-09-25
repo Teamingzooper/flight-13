@@ -1341,6 +1341,58 @@ export class Cabin3D {
     return this.tape ? this.time - this.tape.start : null;
   }
 
+  /**
+   * A group photo for the landing postcard: the cabin from the front, up by the ceiling looking down the aisle, lights
+   * up and your own head back on. It goes through the game's own picture chain into the main canvas and is copied out,
+   * and the normal frame is drawn again straight after (all at once, so nothing flickers). Cropped to `aspect` (width
+   * over height). Null unless the cabin is on show.
+   */
+  groupShot(aspect: number): HTMLCanvasElement | null {
+    const built = this.built;
+    if (!built || this.showing !== 'cabin' || this.shownScene !== this.scene || this.ending) return null;
+    const cam = this.camera;
+    const saved = { position: cam.position.clone(), quaternion: cam.quaternion.clone(), fov: cam.fov };
+    // Up by the ceiling a row or so ahead of the first row a survivor is in (nobody left sits in front of it), looking
+    // down the rest.
+    const rowsOf = (players: PlayerView['players']) =>
+      players.flatMap((p) => {
+        // (Not the Pilot: the flight deck is a place on the grid too, ahead of row 1.)
+        const cell = p.seat ? grid.parsePlace(p.seat) : null;
+        return cell && cell.row >= 1 ? [cell.row] : [];
+      });
+    const everyone = this.lastView?.players ?? [];
+    const survivors = rowsOf(everyone.filter((p) => p.status === 'alive'));
+    const rows = survivors.length ? survivors : rowsOf(everyone);
+    const first = rows.length ? Math.min(...rows) : 1;
+    const last = rows.length ? Math.max(...rows) : built.rows;
+    cam.position.set(0, 1.95, Math.max(BULKHEAD_Z + 0.12, rowZ(first) - 1.3));
+    cam.lookAt(0, 0.75, rowZ(Math.min(Math.max(last, first + 2), first + 5)));
+    // At least 84° across, whatever the window's shape (the picture is cropped to `aspect`).
+    const across = Math.tan(THREE.MathUtils.degToRad(42));
+    cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(across / aspect, across / cam.aspect)));
+    cam.updateProjectionMatrix();
+    const canvas = this.renderer.domElement;
+    const shot = document.createElement('canvas');
+    shot.width = Math.min(canvas.width, Math.round(canvas.height * aspect));
+    shot.height = Math.min(canvas.height, Math.round(canvas.width / aspect));
+    try {
+      this.people.withHead(this.youId, () =>
+        built.lighting.withMode('day', () => {
+          this.composer.render(0);
+          const { width: w, height: h } = shot;
+          shot.getContext('2d')!.drawImage(canvas, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h, 0, 0, w, h);
+        }),
+      );
+    } finally {
+      cam.position.copy(saved.position);
+      cam.quaternion.copy(saved.quaternion);
+      cam.fov = saved.fov;
+      cam.updateProjectionMatrix();
+      this.composer.render(0);
+    }
+    return shot;
+  }
+
   /** Where everyone sat on a night, as this view saw it (null if it did not see that night). */
   seatsOn(night: number): ReadonlyMap<string, SeatId> | null {
     return this.nightSeats?.night === night ? this.nightSeats.seats : null;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { PHOTO_ASPECT } from '../app/postcard';
 import type { OpenFlight } from '../app/sessions';
 import { grid, isNightPhase, type PlayerView } from '../engine';
 import type { ClientSnapshot } from '../net/client';
@@ -524,7 +525,12 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           )}
           {!holdReport && !cutscene && scene !== 'search' && (
             <div class="hud-overlay">
-              <PhaseOverlay ctx={ctx} onLeave={() => setLeavingOpen(true)} onRecorder={() => setRecorderOpen(true)} />
+              <PhaseOverlay
+                ctx={ctx}
+                onLeave={() => setLeavingOpen(true)}
+                onRecorder={() => setRecorderOpen(true)}
+                onPhoto={() => cabin.current?.groupShot(PHOTO_ASPECT) ?? null}
+              />
             </div>
           )}
           {leavingOpen && (
