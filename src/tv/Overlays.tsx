@@ -10,6 +10,7 @@ import { useBag } from '../meta/store';
 import type { TVContext } from './context';
 import { morningReport, roleName, teamName, whenLabel } from './format';
 import { RecorderView } from './RecorderView';
+import { TutorialCoach } from '../tutorial/Coach';
 import { Tally } from './VoteTab';
 
 /** Which phase overlay was dismissed, shared by the 3D view and the TV so it only shows once. */
@@ -277,6 +278,7 @@ function EndScreen({ ctx, onLeave, onRecorder }: { ctx: TVContext; onLeave: () =
         <h2 class={`end-title ${r?.winner ?? ''}`}>{r ? (r.winner === 'draw' ? 'No survivors' : `${teamName(r.winner)} win`) : 'Flight over'}</h2>
         {game.you && r && r.winner !== 'draw' && <p class="end-you">{r.winner === game.you.team ? 'Your team won' : 'Your team lost'}</p>}
         <p>{summary}</p>
+        <TutorialCoach state={state} className="end-coach" />
         {game.you && <Earnings game={game} />}
         <div class="segmented">
           <button class={view === 'roles' ? 'on' : ''} onClick={() => setView('roles')}>

@@ -8,6 +8,7 @@ import { trysteroTransport } from '../net/trystero';
 import { stopVoice } from '../net/voice';
 import { acquireHostLock, deleteHostSnapshot, loadHostSnapshot, saveHostSnapshot } from './hosting';
 import { loadProfile, rememberFlight } from './profile';
+import { tutorialSettings } from '../tutorial/script';
 
 export interface OpenFlight {
   kind: 'ok';
@@ -32,6 +33,15 @@ export function bookFlight(settings: Settings, controlTower: boolean): string {
   let code = newFlightCode();
   while (loadHostSnapshot(code)) code = newFlightCode();
   saveHostSnapshot(newHostSnapshot(code, profile.token, settings, controlTower), true);
+  return code;
+}
+
+/** Book the tutorial flight (you and five scripted bots) and return its flight number. */
+export function bookTutorial(): string {
+  const profile = loadProfile();
+  let code = newFlightCode();
+  while (loadHostSnapshot(code)) code = newFlightCode();
+  saveHostSnapshot(newHostSnapshot(code, profile.token, tutorialSettings(), false, true), true);
   return code;
 }
 

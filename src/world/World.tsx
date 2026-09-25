@@ -18,6 +18,7 @@ import { CockpitConsole } from './CockpitConsole';
 import { RecorderScreen } from './RecorderScreen';
 import { CONTROLS, atTheControls, controlAction, controlStatus, tapeReady, type ConsoleMode, type ControlId } from './cockpit';
 import { PackingHud } from './PackingHud';
+import { TutorialCoach, tutorialWaits } from '../tutorial/Coach';
 
 const TOUCH = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const CAPTION_MS = 5200;
@@ -393,7 +394,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           <div class={`hud-top${(kind === 'boarding' && !skipped) || ending ? ' hidden' : ''}`}>
             <div class="hud-chip hud-phase">
               <span class="hud-title">{phaseTitle(game)}</span>
-              {kind !== 'ended' && <span class={`hud-clock${ctx.left < 10_000 ? ' urgent' : ''}`}>{clock(ctx.left)}</span>}
+              {kind !== 'ended' && !tutorialWaits(state) && <span class={`hud-clock${ctx.left < 10_000 ? ' urgent' : ''}`}>{clock(ctx.left)}</span>}
             </div>
             <div class="hud-actions">
               <button class="hud-chip hud-button hud-icon" onClick={toggleMute} aria-label={muted ? 'Sound off' : 'Sound on'} title={muted ? 'Sound off' : 'Sound on'}>
@@ -409,6 +410,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             </div>
           </div>
           {!TOUCH && !preflight && !ending && <div class={`crosshair${aim ? ' on' : ''}`} />}
+          {!ending && !cardOpen && <TutorialCoach state={state} className="hud-coach" />}
           {aimControl && !deckOpen && !ending && (
             <div class="hud-aim-label" aria-hidden="true">
               <b>{CONTROLS[aimControl].name}</b>

@@ -33,6 +33,7 @@ import { FACE_TEMPLATES } from './face';
 import { BotBrain, TalkLimiter } from '../bots';
 import { canPa } from './voiceRules';
 import type { Transport } from './transport';
+import { TUTORIAL_BOMB_NIGHT, TUTORIAL_CAST, TUTORIAL_WAITS, TUTORIAL_YOU, botName, tutorialCues, type TutorialBot } from '../tutorial/script';
 
 export interface HostPlayer {
   id: string;
@@ -56,10 +57,20 @@ export interface HostSnapshot {
   game: GameState | null;
   lobbyChat: LobbyMessage[];
   nextId: number;
+  /** The tutorial flight: scripted bots, fixed roles and seats, and clocks that wait for you (tutorial/script.ts). */
+  tutorial?: boolean;
 }
 
-export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean): HostSnapshot {
-  return { v: 1, code, hostToken, controlTower, settings: structuredClone(settings), players: [], game: null, lobbyChat: [], nextId: 1 };
+export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
+  const s: HostSnapshot = { v: 1, code, hostToken, controlTower, settings: structuredClone(settings), players: [], game: null, lobbyChat: [], nextId: 1 };
+  if (tutorial) {
+    s.tutorial = true;
+    // The cast boards first; you take the last seat.
+    TUTORIAL_CAST.forEach((member, i) => {
+      s.players.push({ id: `p${s.nextId++}`, token: '', name: botName(member.name), look: member.look, face: FACE_TEMPLATES[i % FACE_TEMPLATES.length].face, bot: true });
+    });
+  }
+  return s;
 }
 
 export interface HostOptions {
@@ -122,6 +133,9 @@ export class HostSession {
   private brainsFor = '';
   private readonly thinkAt = new Map<string, number>();
   private readonly botTalk = new TalkLimiter();
+  /** The tutorial's cues already played this phase. */
+  private cueKey = '';
+  private readonly cuesPlayed = new Set<number>();
   private readonly lobbyChatAt = new Map<string, number>();
   private readonly poses = new Map<string, Pose>();
   private readonly emotedAt = new Map<string, number>();
@@ -409,6 +423,7 @@ export class HostSession {
         if (error) return fail(error);
         const now = this.now();
         s.game = createGame({ settings: s.settings, players: roster, seed: Math.floor(this.random() * 2 ** 31), now });
+        if (s.tutorial) this.castTutorial(s.game);
         this.botPlans.clear();
         this.phaseStarted(now);
         break;
@@ -451,9 +466,39 @@ export class HostSession {
     return OK;
   }
 
+  /**
+   * The tutorial's cast: everyone gets their scripted role and seat (you: a Passenger, next to the Bomber), and the
+   * Bomber boards with her bomb already under her seat, so your flashlight can find it on the first night.
+   */
+  private castTutorial(game: GameState): void {
+    for (const p of game.players) {
+      const member = TUTORIAL_CAST.find((m) => botName(m.name) === p.name);
+      const bot = this.player(p.id)?.bot;
+      const place = member ?? (bot ? null : TUTORIAL_YOU);
+      if (!place) continue;
+      p.role = place.role;
+      p.seat = place.seat;
+      if (p.role === 'bomber') {
+        p.bombsPlanted = 1;
+        game.bombs.push({
+          id: 'bomb-tutorial',
+          planterId: p.id,
+          location: { kind: 'seat', seat: p.seat },
+          plantedNight: 0,
+          detonateNight: TUTORIAL_BOMB_NIGHT,
+          exploded: false,
+          explodedAt: null,
+          defused: false,
+        });
+      }
+    }
+  }
+
   private phaseStarted(now: number): void {
     const game = this.snapshot.game;
     if (!game) return;
+    // The tutorial waits for you: no clock runs out on a step you are still reading (you, and the bots' cues, end it).
+    if (this.snapshot.tutorial && TUTORIAL_WAITS.has(game.phase.kind)) game.phase.endsAt = Math.max(game.phase.endsAt, now + 30 * 60_000);
     // A new phase ends any announcement: the Pilot presses the PA button again to speak.
     for (const peer of this.peers.values()) peer.pa = false;
     for (const p of this.snapshot.players) {
@@ -475,7 +520,29 @@ export class HostSession {
     return brain;
   }
 
+  /** The tutorial's bots play their cues (tutorial/script.ts), each once, at its time into the phase. */
+  private runTutorialBots(game: GameState, now: number): boolean {
+    const key = `${game.id}:${game.phase.kind}:${game.phase.night}`;
+    if (this.cueKey !== key) {
+      this.cueKey = key;
+      this.cuesPlayed.clear();
+    }
+    const ids = (who: TutorialBot | 'you') =>
+      who === 'you' ? (this.snapshot.players.find((p) => !p.bot)?.id ?? '') : (this.snapshot.players.find((p) => p.name === botName(who))?.id ?? '');
+    let acted = false;
+    tutorialCues(game.phase.kind, game.phase.night).forEach((cue, i) => {
+      if (this.cuesPlayed.has(i) || now < game.phase.startedAt + cue.after) return;
+      this.cuesPlayed.add(i);
+      const id = ids(cue.bot);
+      if (!id) return;
+      if (cue.intent && applyIntent(game, id, cue.intent(ids), now).ok) acted = true;
+      if (cue.say && applyIntent(game, id, { kind: 'chat', channel: cue.say.channel, text: cue.say.text }, now).ok) acted = true;
+    });
+    return acted;
+  }
+
   private runBots(game: GameState, now: number): boolean {
+    if (this.snapshot.tutorial) return this.runTutorialBots(game, now);
     const key = `${game.phase.kind}:${game.phase.night}`;
     const talking = BOT_TALK_PHASES.has(game.phase.kind);
     let acted = false;
@@ -527,6 +594,7 @@ export class HostSession {
       rev: 0,
       voice: this.voicePeers(),
       pa: this.paSpeaker(),
+      ...(s.tutorial ? { tutorial: true } : {}),
     };
   }
 

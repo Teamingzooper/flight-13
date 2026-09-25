@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { destinationOf } from '../engine';
+import { tutorialWaits } from '../tutorial/Coach';
 import { formatCode } from '../net/code';
 import type { TVContext } from './context';
 import { clock, phaseHint, phaseTitle } from './format';
@@ -36,7 +37,7 @@ export function Header({
         <div class="tv-phase-hint">{phaseHint(game)}</div>
       </div>
       <div class="tv-clock">
-        {!ended && <div class={`tv-time${left < 10_000 ? ' urgent' : ''}`}>{clock(left)}</div>}
+        {!ended && !tutorialWaits(ctx.state) && <div class={`tv-time${left < 10_000 ? ' urgent' : ''}`}>{clock(left)}</div>}
         <div class="label">{game.phase.night > 0 ? `Night ${game.phase.night} of ${game.phase.nights}` : 'Climbing'}</div>
       </div>
       <div class="tv-tools">
