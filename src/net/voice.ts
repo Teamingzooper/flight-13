@@ -24,11 +24,27 @@ interface Remote {
   analyser: AnalyserNode;
   gain: GainNode;
   panner: PannerNode;
+  /** The PA path: the same voice through the cabin speakers (a thin band, a little grit, no direction). */
+  paBand: BiquadFilterNode;
+  paGrit: WaveShaperNode;
+  paGain: GainNode;
   playerId: string | null;
 }
 
 const TICK_MS = 100;
 const SPEAKING_LEVEL = 0.035;
+/** The PA band loses a lot of the voice's energy; this brings it back up to talking level. */
+const PA_GAIN = 1.6;
+/** A soft clip for the PA's cheap speakers. */
+const PA_CURVE = (() => {
+  const curve = new Float32Array(1024);
+  const drive = 2.5;
+  for (let i = 0; i < curve.length; i++) {
+    const x = (i / (curve.length - 1)) * 2 - 1;
+    curve[i] = Math.tanh(drive * x) / Math.tanh(drive);
+  }
+  return curve;
+})();
 
 /** Your head in the cabin when the 3D view is not telling us: your seat, or the rear galley once restrained. */
 function seatPosition(p: PlayerSummary, rows: number): Vec3 {
@@ -139,7 +155,8 @@ export class VoiceChat {
     const out = new Set<string>();
     if (!this.ctx) return out;
     for (const remote of this.remotes.values()) {
-      if (remote.playerId && remote.gain.gain.value > 0.02 && this.level(remote.analyser) > SPEAKING_LEVEL) out.add(remote.playerId);
+      const heard = remote.gain.gain.value > 0.02 || remote.paGain.gain.value > 0.02;
+      if (remote.playerId && heard && this.level(remote.analyser) > SPEAKING_LEVEL) out.add(remote.playerId);
     }
     const you = this.client.playerId;
     if (you && this.micAnalyser && this.mic?.getAudioTracks()[0]?.enabled && this.level(this.micAnalyser) > SPEAKING_LEVEL) out.add(you);
@@ -172,7 +189,11 @@ export class VoiceChat {
     const panner = new PannerNode(ctx, { panningModel: 'HRTF', distanceModel: 'linear', rolloffFactor: 0 });
     source.connect(analyser);
     source.connect(gain).connect(panner).connect(ctx.destination);
-    const remote: Remote = { stream, element, source, analyser, gain, panner, playerId: null };
+    const paBand = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1700, Q: 0.8 });
+    const paGrit = new WaveShaperNode(ctx, { curve: PA_CURVE, oversample: '2x' });
+    const paGain = new GainNode(ctx, { gain: 0 });
+    source.connect(paBand).connect(paGrit).connect(paGain).connect(ctx.destination);
+    const remote: Remote = { stream, element, source, analyser, gain, panner, paBand, paGrit, paGain, playerId: null };
     this.remotes.set(peerId, remote);
     for (const track of stream.getAudioTracks()) {
       track.addEventListener('ended', () => {
@@ -188,6 +209,9 @@ export class VoiceChat {
     remote.source.disconnect();
     remote.gain.disconnect();
     remote.panner.disconnect();
+    remote.paBand.disconnect();
+    remote.paGrit.disconnect();
+    remote.paGain.disconnect();
     remote.element.srcObject = null;
   }
 
@@ -263,7 +287,9 @@ export class VoiceChat {
       const speaker = playerId ? byId.get(playerId) : undefined;
       let gain = 0;
       let at: Vec3 | null = null;
-      if (game && speaker) {
+      // The Pilot on the PA: everyone on board hears him the same, through the cabin speakers.
+      const onAir = !!game && !!speaker && state?.pa === speaker.id;
+      if (game && speaker && !onAir) {
         // The control tower listens in on the cabin as if it were everywhere at once.
         const route = you ? voiceRoute(game.phase.kind, speaker.status === 'alive', youAlive) : voiceRoute(game.phase.kind, speaker.status === 'alive', true);
         if (route === 'ghosts' || route === 'everyone' || (route === 'cabin' && !you)) {
@@ -275,6 +301,7 @@ export class VoiceChat {
         }
       }
       remote.gain.gain.setTargetAtTime(gain, ctx.currentTime, 0.08);
+      remote.paGain.gain.setTargetAtTime(onAir ? PA_GAIN : 0, ctx.currentTime, 0.05);
       // Voices without a place in the cabin sound from right where you are.
       const [x, y, z] = at ?? listener?.position ?? [0, 0, 0];
       remote.panner.positionX.setTargetAtTime(x, ctx.currentTime, 0.05);

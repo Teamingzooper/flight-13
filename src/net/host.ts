@@ -30,6 +30,7 @@ import {
 } from './protocol';
 import { EMOTES, EMOTE_COOLDOWN_MS, canEmote, type EmoteId } from './emotes';
 import { FACE_TEMPLATES } from './face';
+import { canPa } from './voiceRules';
 import type { Transport } from './transport';
 
 export interface HostPlayer {
@@ -83,6 +84,8 @@ interface Peer {
   facesSent: string;
   /** Voice chat is on in this peer's browser. */
   voice?: boolean;
+  /** Holding the PA button (only ever set for a living Pilot by day). */
+  pa?: boolean;
 }
 
 interface BotPlan {
@@ -265,6 +268,14 @@ export class HostSession {
           this.changed();
         }
         break;
+      case 'pa': {
+        const on = msg.on && this.mayPa(peer);
+        if (!!peer.pa !== on) {
+          peer.pa = on;
+          this.changed();
+        }
+        break;
+      }
     }
   }
 
@@ -428,6 +439,8 @@ export class HostSession {
   private phaseStarted(now: number): void {
     const game = this.snapshot.game;
     if (!game) return;
+    // A new phase ends any announcement: the Pilot presses the PA button again to speak.
+    for (const peer of this.peers.values()) peer.pa = false;
     for (const p of this.snapshot.players) {
       if (!p.bot && !this.isConnected(p.id)) submitDefaults(game, p.id, now);
     }
@@ -473,7 +486,21 @@ export class HostSession {
       game: s.game ? viewFor(s.game, peer.tower ? null : peer.playerId, now) : null,
       rev: 0,
       voice: this.voicePeers(),
+      pa: this.paSpeaker(),
     };
+  }
+
+  /** May this peer's passenger speak on the PA right now? */
+  private mayPa(peer: Peer): boolean {
+    const game = this.snapshot.game;
+    const p = game?.players.find((x) => x.id === peer.playerId);
+    return !!game && !!p && canPa(p.role, p.status, game.phase.kind);
+  }
+
+  /** Who is on the PA (the rules are checked again, in case he died or the day ended since he pressed it). */
+  private paSpeaker(): string | null {
+    for (const peer of this.peers.values()) if (peer.pa && this.mayPa(peer)) return peer.playerId;
+    return null;
   }
 
   /** Everyone with voice on, by the id their browser has on the network (this browser's own seat included). */

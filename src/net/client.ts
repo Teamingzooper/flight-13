@@ -85,6 +85,11 @@ export class ClientSession {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pose', ...pose } satisfies ClientMessage);
   }
 
+  /** The Pilot pressed or let go of the PA button. */
+  sendPa(on: boolean): void {
+    if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'pa', on } satisfies ClientMessage);
+  }
+
   /** Tell the host you turned voice chat on or off (so others know to send you their voices). */
   sendVoice(on: boolean): void {
     if (this.hostPeer && this.snapshot.status === 'joined') this.opts.transport.send(this.hostPeer, { t: 'voice', on } satisfies ClientMessage);

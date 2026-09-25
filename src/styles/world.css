@@ -675,3 +675,66 @@
     transform: scaleY(0.3);
   }
 }
+
+/* ---------- The PA ---------- */
+/* The Pilot's press-and-hold PA button, bottom right; red while he is on the air. */
+.pa-button {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  gap: 8px;
+  font: 600 14px var(--display, sans-serif);
+  letter-spacing: 0.02em;
+  pointer-events: auto;
+  user-select: none;
+  touch-action: none;
+}
+
+.pa-button kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--dim, #93a4c4);
+  font: 600 11px var(--display, sans-serif);
+}
+
+/* Narrow screens: above the gesture bar rather than beside it. */
+@media (max-width: 720px) {
+  .pa-button {
+    bottom: calc(124px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.pa-button.on-air {
+  border-color: rgba(255, 110, 110, 0.6);
+  background: rgba(150, 24, 24, 0.75);
+  color: #fff;
+}
+
+/* Everyone else sees who is talking on the PA, just under the top bar. */
+.pa-live {
+  position: absolute;
+  top: calc(max(12px, env(safe-area-inset-top)) + 58px);
+  left: 50%;
+  gap: 8px;
+  transform: translateX(-50%);
+  font: 600 14px var(--display, sans-serif);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.pa-button .rec,
+.pa-live .rec {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff5a5a;
+  box-shadow: 0 0 8px rgba(255, 90, 90, 0.8);
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

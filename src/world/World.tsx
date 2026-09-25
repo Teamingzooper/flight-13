@@ -4,7 +4,8 @@ import { grid } from '../engine';
 import type { ClientSnapshot } from '../net/client';
 import { EMOTES, canEmote } from '../net/emotes';
 import type { ClientState } from '../net/protocol';
-import { clock, phaseTitle } from '../tv/format';
+import { canPa } from '../net/voiceRules';
+import { captainName, clock, phaseTitle } from '../tv/format';
 import { IconSound } from '../tv/icons';
 import { PhaseOverlay, reopenPhaseCard, usePhaseOverlayOpen } from '../tv/Overlays';
 import { usePacking } from '../tv/packing';
@@ -226,6 +227,40 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
     return () => removeEventListener('keydown', onKey);
   }, [emoting]);
 
+  // The PA by day: the Pilot holds P (or the PA button) and the whole plane hears him.
+  const paReady = voice?.status === 'on' && !voice.muted && !!game.you && canPa(game.you.role, game.you.status, kind) && !ending;
+  const onAir = !!game.you && state.pa === game.you.id;
+  const paName = state.pa && !onAir ? game.players.find((p) => p.id === state.pa)?.name : undefined;
+  useEffect(() => {
+    if (!paReady) return undefined;
+    let held = false;
+    const hold = (on: boolean) => {
+      if (held === on) return;
+      held = on;
+      flight.client.sendPa(on);
+    };
+    const down = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (typing || e.repeat || e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'p' && e.key !== 'P')) return;
+      e.preventDefault();
+      hold(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 'p' || e.key === 'P') hold(false);
+    };
+    // Letting go anywhere (or leaving the tab) takes you off the air.
+    const release = () => hold(false);
+    addEventListener('keydown', down);
+    addEventListener('keyup', up);
+    addEventListener('blur', release);
+    return () => {
+      removeEventListener('keydown', down);
+      removeEventListener('keyup', up);
+      removeEventListener('blur', release);
+      release();
+    };
+  }, [paReady]);
+
   if (failed) {
     return (
       <div class="world-failed">
@@ -308,6 +343,36 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
             <div class="hud-caption" key={caption.id} role="status">
               <span class="who">{caption.who}</span>
               {caption.text}
+            </div>
+          )}
+          {paReady && (
+            <button
+              type="button"
+              class={`hud-chip hud-button pa-button${onAir ? ' on-air' : ''}`}
+              title="Hold to talk to the whole plane"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                flight.client.sendPa(true);
+              }}
+              onPointerUp={() => flight.client.sendPa(false)}
+              onPointerCancel={() => flight.client.sendPa(false)}
+              onLostPointerCapture={() => flight.client.sendPa(false)}
+            >
+              {onAir ? (
+                <>
+                  <i class="rec" aria-hidden="true" /> On air
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">📢</span> Hold for PA{!TOUCH && <kbd>P</kbd>}
+                </>
+              )}
+            </button>
+          )}
+          {paName && (
+            <div class="hud-chip pa-live" role="status">
+              <i class="rec" aria-hidden="true" /> {captainName(paName)} on the PA
             </div>
           )}
           {emoting && (

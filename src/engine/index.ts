@@ -1,6 +1,6 @@
 export * from './types';
 export { createGame, checkTakeoff, cardsForGame, type NewPlayer } from './setup';
-export { applyIntent, tick, phaseDue, submitDefaults, isNightPhase, isWhisperPhase } from './engine';
+export { applyIntent, tick, phaseDue, submitDefaults, isNightPhase, isWhisperPhase, isPaPhase } from './engine';
 export {
   viewFor,
   type PlayerView,

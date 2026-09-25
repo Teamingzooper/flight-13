@@ -141,6 +141,8 @@ export class Cabin3D {
   private attitude: Attitude = { speed: 0, altitude: 0, pitch: 0, roll: 0 };
   private viewMode: ViewMode = 'runway';
   private viewSpeed = 0;
+  /** Who was on the PA at the last update (to ding once when someone goes on the air). */
+  private onAir: string | null = null;
   /** The cabin camera the Pilot's monitor shows: a small render from the ceiling over three rows. */
   private readonly cctv = {
     target: new THREE.WebGLRenderTarget(256, 160),
@@ -282,6 +284,9 @@ export class Cabin3D {
   update(state: ClientState, snap: ClientSnapshot): void {
     this.state = state;
     this.snap = snap;
+    // Ding-dong before the captain speaks on the PA.
+    if (state.pa && state.pa !== this.onAir) cabinAudio.ding();
+    this.onAir = state.pa ?? null;
     const game = state.game;
     if (!game) return;
     const fresh = !this.built || this.built.rows !== game.cabin.rows;

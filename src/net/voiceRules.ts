@@ -1,4 +1,4 @@
-import type { PhaseKind } from '../engine';
+import { isPaPhase, isPilot, type PhaseKind, type PlayerStatus, type RoleId } from '../engine';
 
 /**
  * Voice chat follows the chat rules. Out loud in the cabin while the lights are on, and you hear people
@@ -25,6 +25,11 @@ export function micOpen(phase: PhaseKind, alive: boolean): boolean {
 /** Whether to send your voice to a peer at all: the living never get a ghost's voice (until landing). */
 export function sendsTo(phase: PhaseKind, youAlive: boolean, theyAlive: boolean): boolean {
   return youAlive || !theyAlive || phase === 'ended';
+}
+
+/** The Pilot's PA carries his voice to the whole plane: a living Pilot, by day (when typed announcements work too). */
+export function canPa(role: RoleId | null | undefined, status: PlayerStatus | undefined, phase: PhaseKind): boolean {
+  return !!role && isPilot(role) && status === 'alive' && isPaPhase(phase);
 }
 
 /** Full volume within this many metres of you... */
