@@ -853,7 +853,18 @@ export class Actor {
       const dir = this.pointAt.clone().sub(from).normalize();
       const parentInverse = new THREE.Quaternion().setFromRotationMatrix(shoulder.parent!.matrixWorld).invert();
       dir.applyQuaternion(parentInverse);
-      this.aim.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+      // The arm (its -y) along the aim, rolled so the hand's back (+z) faces the sky: a pistol held upright, grip
+      // down. (The shortest turn onto the aim left the roll to chance, and aiming ahead held the pistol upside down.)
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(parentInverse);
+      const yAxis = dir.clone().negate();
+      const zAxis = up.sub(yAxis.clone().multiplyScalar(up.dot(yAxis)));
+      if (zAxis.lengthSq() > 1e-4) {
+        zAxis.normalize();
+        const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis);
+        this.aim.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
+      } else {
+        this.aim.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+      }
       shoulder.quaternion.slerp(this.aim, this.point);
       j.elbow1.rotation.x = lerp(j.elbow1.rotation.x, 0.05, this.point);
     }

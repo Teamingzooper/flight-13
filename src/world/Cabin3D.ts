@@ -364,8 +364,11 @@ export class Cabin3D {
 
     // Before the flight: packing in the hotel room, then boarding. The control tower just waits.
     if (kind === 'packing') {
-      if (game.you) this.enterHotel();
-      else this.fade(1, 0, 'The passengers are packing their bags');
+      if (game.you) {
+        this.enterHotel();
+        const look = game.players.find((p) => p.id === game.you!.id)?.look;
+        if (look) this.hotel?.setLook(look);
+      } else this.fade(1, 0, 'The passengers are packing their bags');
     } else if (kind === 'boarding') {
       // The boarding sequence plays frame by frame from the phase clock (see boardingFrame).
       this.hotel?.close();

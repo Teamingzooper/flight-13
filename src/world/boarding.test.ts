@@ -11,8 +11,8 @@ describe('boarding sequence', () => {
 
   it('plays the bag, the queue, the scanner and the aisle, black in between', () => {
     expect(boardingMoment(0)).toMatchObject({ shot: 'pack', t: 0, black: 0 });
-    expect(boardingMoment(2.19).black).toBeCloseTo(1, 1);
-    expect(boardingMoment(2.2)).toMatchObject({ shot: 'queue', t: 0, black: 1 });
+    expect(boardingMoment(3.19).black).toBeCloseTo(1, 1);
+    expect(boardingMoment(3.2)).toMatchObject({ shot: 'queue', t: 0, black: 1 });
     expect(boardingMoment(5)).toMatchObject({ shot: 'queue', black: 0 });
     expect(boardingMoment(10)).toMatchObject({ shot: 'scan', black: 0 });
     expect(boardingMoment(16).shot).toBe('aisle');
