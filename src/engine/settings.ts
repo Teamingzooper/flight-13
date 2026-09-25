@@ -58,6 +58,7 @@ export function defaultSettings(): Settings {
     mealService: true,
     botChatter: 'normal',
     botSkill: 'normal',
+    listed: true,
   };
 }
 
@@ -117,6 +118,7 @@ export function validateSettings(s: Settings): string | null {
   if (s.rolesMode !== 'auto' && s.rolesMode !== 'custom') return 'Unknown roles mode.';
   if (s.voteMode !== 'daily' && s.voteMode !== 'afterIncident') return 'Unknown vote mode.';
   if (typeof s.mealService !== 'boolean') return 'Meal service is on or off.';
+  if (typeof s.listed !== 'boolean') return 'The flight is listed or not.';
   const custom = validateCustomRoles(s.customRoles);
   if (custom) return custom;
   if (!BOT_CHATTERS.includes(s.botChatter)) return 'Unknown bot chatter.';

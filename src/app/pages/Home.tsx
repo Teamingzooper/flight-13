@@ -7,6 +7,7 @@ import { ProfileEditor } from '../ProfileEditor';
 import { navigate } from '../router';
 import { bookTutorial } from '../sessions';
 import { Credits } from '../../meta/Credits';
+import { Departures } from '../Departures';
 
 export function Home() {
   const [profile, setProfile] = useState(loadProfile);
@@ -102,9 +103,12 @@ export function Home() {
           <li>Passengers win if every saboteur is caught before landing.</li>
         </ol>
       </section>
-      <div class="home-window" aria-hidden="true">
-        <div class="window-glass" />
-      </div>
+      <aside class="home-side">
+        <Departures onBoard={(flight) => named() && navigate(`/f/${flight}`)} />
+        <div class="home-window" aria-hidden="true">
+          <div class="window-glass" />
+        </div>
+      </aside>
     </div>
   );
 }

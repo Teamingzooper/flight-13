@@ -9,10 +9,11 @@
  *
  * Client to room: {t:'send', to: peerId | peerId[], m}  ·  {t:'ping'}
  * Room to client: {t:'hello', self, peers}  ·  {t:'join', peer}  ·  {t:'leave', peer}  ·  {t:'msg', from, m}  ·  {t:'pong'}
- * HTTP: POST /flights {settings, controlTower, token} → {code}
+ * HTTP: POST /flights {settings, controlTower, token} → {code}  ·  GET /board → the departures board (BoardFlight[])
  */
 
 import { validateSettings } from '../../src/engine';
+import { BOARD_STALE_MS, boardRow, isBoardFlight, sortBoard, type BoardFlight } from '../../src/net/board';
 import { newFlightCode } from '../../src/net/code';
 import { HostSession, newHostSnapshot, type HostSnapshot } from '../../src/net/host';
 import { cleanSettings } from '../../src/net/protocol';
@@ -20,6 +21,7 @@ import { Emitter, type MessageHandler, type PeerHandler, type Transport } from '
 
 interface Env {
   ROOMS: DurableObjectNamespace;
+  BOARD: DurableObjectNamespace;
 }
 
 const ROOM_PATH = /^\/room\/([A-Za-z0-9-]{1,40})$/;
@@ -39,6 +41,9 @@ const SAVE_MS = 5_000;
 const KEEPALIVE_MS = 30_000;
 /** A flight nobody has been aboard for this long is forgotten. */
 const EXPIRE_MS = 3 * 60 * 60_000;
+/** A listed flight tells the board when its row changes (at most this often), and every minute that it is still there. */
+const BOARD_CHANGE_MS = 5_000;
+const BOARD_REFRESH_MS = 60_000;
 
 const CORS: Record<string, string> = {
   'access-control-allow-origin': '*',
@@ -56,12 +61,20 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === '/flights' && request.method === 'POST') return bookFlight(request, env);
+    if (url.pathname === '/board' && request.method === 'GET') {
+      const res = await board(env).fetch('https://board/list');
+      return new Response(res.body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=5', ...CORS } });
+    }
     const room = url.pathname.match(ROOM_PATH);
     if (!room) return new Response('Flight 13 relay: up and running.', { headers: { 'content-type': 'text/plain', ...CORS } });
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected a WebSocket.', { status: 426 });
     return env.ROOMS.get(env.ROOMS.idFromName(room[1].toUpperCase())).fetch(request);
   },
 };
+
+function board(env: Env): DurableObjectStub {
+  return env.BOARD.get(env.BOARD.idFromName('board'));
+}
 
 /** Book a flight run by the server: check the settings, find a free flight number, and set up its room. */
 async function bookFlight(request: Request, env: Env): Promise<Response> {
@@ -157,8 +170,16 @@ export class Room implements DurableObject {
   private ticker: ReturnType<typeof setInterval> | null = null;
   private dirty = false;
   private savedAt = 0;
+  /** What the board last heard from this flight ('' never, 'null' not listed), and when. */
+  private boardSent = '';
+  private boardAt = 0;
+  /** The flight's code after it is forgotten (to take it off the board). */
+  private lastCode = '';
 
-  constructor(private readonly state: DurableObjectState) {
+  constructor(
+    private readonly state: DurableObjectState,
+    private readonly env: Env,
+  ) {
     // Keep-alive pings are answered without waking the room.
     state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
     // Back from a restart (or evicted while empty): pick the flight up where it was saved.
@@ -300,6 +321,31 @@ export class Room implements DurableObject {
     if (!this.host) return;
     this.host.tickNow();
     if (this.dirty && Date.now() - this.savedAt >= SAVE_MS) void this.save();
+    this.report();
+  }
+
+  /** Keep the departures board up to date: this flight's row while it is listed and boarding, nothing otherwise. */
+  private report(): void {
+    const now = Date.now();
+    const row = this.host ? boardRow(this.host.snapshot, this.clients().length) : null;
+    const key = JSON.stringify(row);
+    if (row) {
+      const changed = key !== this.boardSent;
+      if (changed ? now - this.boardAt < BOARD_CHANGE_MS : now - this.boardAt < BOARD_REFRESH_MS) return;
+    } else if (this.boardSent === '' || this.boardSent === key) {
+      this.boardSent = key;
+      return;
+    }
+    const code = this.host?.snapshot.code ?? this.lastCode;
+    this.boardSent = key;
+    this.boardAt = now;
+    if (!code) return;
+    void board(this.env)
+      .fetch(row ? 'https://board/put' : 'https://board/drop', { method: 'POST', body: JSON.stringify(row ?? { code }) })
+      .catch(() => {
+        // The board is only a convenience: next time.
+        this.boardAt = 0;
+      });
   }
 
   private stopTicker(): void {
@@ -317,10 +363,12 @@ export class Room implements DurableObject {
   /** The flight is over (ended by its captain, or abandoned): the room goes back to being a plain relay. */
   private async forget(): Promise<void> {
     this.stopTicker();
+    this.lastCode = this.host?.snapshot.code ?? this.lastCode;
     // (The host sends everyone its goodbye before it shuts; the sockets stay until each browser leaves.)
     const host = this.host;
     this.host = null;
     this.transport = null;
+    this.report();
     if (host) setTimeout(() => host.close(), 1000);
     await this.state.storage.deleteAlarm();
     await this.state.storage.deleteAll();
@@ -352,6 +400,7 @@ export class Room implements DurableObject {
     // The last one out: the flight waits for someone to come back (and is forgotten if nobody does).
     this.host.idle(true);
     this.stopTicker();
+    this.report();
     await this.save();
     await this.state.storage.put(LAST_SEEN_KEY, Date.now());
     await this.state.storage.setAlarm(Date.now() + EXPIRE_MS);
@@ -367,5 +416,27 @@ export class Room implements DurableObject {
         // Closing.
       }
     }
+  }
+}
+
+/** The departures board: one row per listed flight still boarding, kept in memory (rooms report every minute). */
+export class Board implements DurableObject {
+  private readonly rows = new Map<string, { row: BoardFlight; at: number }>();
+
+  async fetch(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname;
+    if (path === '/put') {
+      const row: unknown = await request.json();
+      if (isBoardFlight(row)) this.rows.set(row.code, { row, at: Date.now() });
+      return new Response('Listed.');
+    }
+    if (path === '/drop') {
+      const { code } = (await request.json()) as { code?: unknown };
+      if (typeof code === 'string') this.rows.delete(code);
+      return new Response('Dropped.');
+    }
+    const now = Date.now();
+    for (const [code, { at }] of this.rows) if (now - at > BOARD_STALE_MS) this.rows.delete(code);
+    return Response.json(sortBoard([...this.rows.values()].map((r) => r.row)).slice(0, 40));
   }
 }
