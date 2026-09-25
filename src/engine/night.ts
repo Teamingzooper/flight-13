@@ -239,7 +239,7 @@ function sighting(s: GameState, actor: PlayerState, action: NightAction): string
       return target ? `${actor.name} handed ${target.name} a drink` : null;
     case 'check': {
       const row = aisleRow(actor.seat);
-      return row === null ? null : `${actor.name} checked under ${rowSeats(row, action.side).join(', ')}`;
+      return row === null ? null : `${actor.name} checked under ${rowSeats(row, action.side, s.cabin.cols).join(', ')}`;
     }
     case 'sweep':
       return `${actor.name} looked around the seats nearby`;
@@ -477,7 +477,7 @@ export function resolveNight(s: GameState, now: number): void {
   for (const { actor, action } of acts) {
     if (action.kind !== 'check') continue;
     const row = aisleRow(actor.seat)!;
-    const seats = rowSeats(row, action.side);
+    const seats = rowSeats(row, action.side, s.cabin.cols);
     // The Mastermind hides a bomb too well for a glance from the aisle.
     const found = live.filter(
       (b) => b.location.kind === 'seat' && seats.includes(b.location.seat) && getPlayer(s, b.planterId)?.role !== 'mastermind',
@@ -507,7 +507,7 @@ export function resolveNight(s: GameState, now: number): void {
       const here = cellOf(actor);
       found = live.filter((b) => b.location.kind === 'seat' && distance(parseSeat(b.location.seat)!, here) <= SWEEP_RADIUS);
       what = `the seats around ${actor.seat}`;
-      covered = { seats: seatsWithin([here], SWEEP_RADIUS, s.cabin.rows) };
+      covered = { seats: seatsWithin([here], SWEEP_RADIUS, s.cabin.rows, s.cabin.cols) };
     } else {
       found = live.filter((b) => b.location.kind === action.what);
       what = action.what === 'cart' ? `the drink cart at row ${cartRowAtAct}` : 'the lavatory';

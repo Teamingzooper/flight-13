@@ -58,6 +58,7 @@ export function SeatMap({
 }) {
   const vertical = useMediaQuery('(max-aspect-ratio: 1/1)');
   const { rows, cartRow, cartDestroyed, lavatoryDestroyed } = game.cabin;
+  const seatCols: readonly number[] = game.cabin.cols ?? grid.SEAT_COLS;
   const youId = game.you?.id ?? null;
   const saboteurView = game.you?.team === 'saboteurs';
   const occupant = new Map<SeatId, PlayerSummary>();
@@ -99,7 +100,7 @@ export function SeatMap({
     );
   }
   LETTERS.forEach((letter, c) => {
-    if (letter) {
+    if (letter && seatCols.includes(c)) {
       cells.push(
         <div key={`l${c}`} class="sm-letter" style={at(-2, c)}>
           {letter}
@@ -219,6 +220,8 @@ export function SeatMap({
         );
         continue;
       }
+      // (The private jet has no middle seats: its wide aisle stays empty.)
+      if (!seatCols.includes(c)) continue;
       const seat = grid.seatId({ row: r, col: c });
       const p = occupant.get(seat);
       const you = !!p && p.id === youId;

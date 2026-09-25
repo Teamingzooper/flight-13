@@ -8,6 +8,8 @@ import {
   DESTINATION_ORDER,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  PLANES,
+  PLANE_ORDER,
   SPECIAL_CARDS,
   TIMERS,
   TWISTS,
@@ -55,7 +57,8 @@ export function describeCards(cards: Cards): string {
 
 /** Smallest passenger count these settings can take off with, or null if never. */
 export function minPlayersFor(settings: Settings): number | null {
-  for (let n = MIN_PLAYERS; n <= MAX_PLAYERS; n++) {
+  const plane = PLANES[settings.plane] ?? PLANES.airliner;
+  for (let n = Math.max(MIN_PLAYERS, plane.minPlayers); n <= plane.maxPlayers; n++) {
     const cards = settings.rolesMode === 'auto' ? presetCards(n) : settings.cards;
     if (validateCards(cards, n, settings.stewardessRogueChance) === null) return n;
   }
@@ -70,7 +73,9 @@ export function describeRules(s: Settings): string[] {
   const t = TIMERS[s.timers];
   const discuss = Math.round(t.day_discuss * (hasTwist(d, 'redeye') ? 0.6 : 1));
   const bombs = bombsFor(d.nights);
+  const plane = PLANES[s.plane] ?? PLANES.airliner;
   return [
+    `${plane.name}, up to ${s.maxPassengers} passengers. ${plane.blurb}`,
     `${d.city} (${d.code}): ${d.nights} nights. ${d.blurb}`,
     `Each Bomber carries ${bombs === 1 ? 'one bomb' : `${bombs} bombs`} (one for every three nights) and plants at most one a night.`,
     s.rolesMode === 'auto'
@@ -212,6 +217,30 @@ export function SettingsForm({
   return (
     <form class="settings" onSubmit={submit}>
       <section class="settings-section">
+        <h2>Plane</h2>
+        <div class="destinations planes">
+          {PLANE_ORDER.map((id) => {
+            const p = PLANES[id];
+            return (
+              <button
+                type="button"
+                key={id}
+                class={`dest plane${s.plane === id ? ' on' : ''}`}
+                aria-pressed={s.plane === id}
+                onClick={() => set({ plane: id, maxPassengers: Math.min(p.maxPlayers, Math.max(p.minPlayers, s.maxPassengers)) })}
+              >
+                <span class="dest-city">{p.name}</span>
+                <span class="dest-nights">
+                  {p.minPlayers}–{p.maxPlayers} passengers
+                </span>
+                <span class="dest-blurb">{p.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section class="settings-section">
         <h2>Destination</h2>
         <div class="destinations">
           {DESTINATION_ORDER.map((id) => {
@@ -245,7 +274,13 @@ export function SettingsForm({
           <h2>Cabin</h2>
           <label class="field">
             <span class="label">Max passengers: {s.maxPassengers}</span>
-            <input type="range" min={MIN_PLAYERS} max={MAX_PLAYERS} value={s.maxPassengers} onInput={(e) => set({ maxPassengers: Number(e.currentTarget.value) })} />
+            <input
+              type="range"
+              min={PLANES[s.plane].minPlayers}
+              max={PLANES[s.plane].maxPlayers}
+              value={s.maxPassengers}
+              onInput={(e) => set({ maxPassengers: Number(e.currentTarget.value) })}
+            />
           </label>
           <div class="field">
             <span class="label">Pace</span>

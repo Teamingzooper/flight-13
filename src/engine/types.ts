@@ -36,6 +36,7 @@ export type TimerPreset = 'quick' | 'standard' | 'relaxed';
 export type VoteMode = 'daily' | 'afterIncident';
 
 export interface Settings {
+  plane: PlaneId;
   destination: DestinationId | 'custom';
   /** The host's own destination, when `destination` is 'custom'. */
   customDestination: CustomDestination | null;
@@ -170,8 +171,13 @@ export interface Bomb {
   defused: boolean;
 }
 
+/** What the flight is flown in (engine/planes.ts). */
+export type PlaneId = 'airliner' | 'jet' | 'jumbo';
+
 export interface Cabin {
   rows: number;
+  /** Grid columns with seats (the airliner's six, or the private jet's four). */
+  cols: number[];
   cartRow: number;
   cartDestroyed: boolean;
   lavatoryDestroyed: boolean;

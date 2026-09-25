@@ -1,5 +1,6 @@
 import { destinationOf } from './destinations';
-import { COCKPIT, aisleSpot, allSeats, rowsFor } from './grid';
+import { COCKPIT, aisleSpot, allSeats } from './grid';
+import { PLANES, rowsFor } from './planes';
 import { nextFloat, shuffle, type RngHolder } from './rng';
 import { isPilot, isSaboteur, isStewardess, presetCards, validateCards } from './roles';
 import { MIN_PLAYERS, phaseDurationMs, validateSettings } from './settings';
@@ -75,7 +76,8 @@ export function dealRoles(h: RngHolder, cards: Cards, players: number, rogueChan
 export function checkTakeoff(settings: Settings, players: NewPlayer[]): string | null {
   const settingsError = validateSettings(settings);
   if (settingsError) return settingsError;
-  if (players.length < MIN_PLAYERS) return `Need at least ${MIN_PLAYERS} passengers to take off.`;
+  const least = Math.max(MIN_PLAYERS, PLANES[settings.plane].minPlayers);
+  if (players.length < least) return `Need at least ${least} passengers to take off${least > MIN_PLAYERS ? ` in the ${PLANES[settings.plane].name.toLowerCase()}` : ''}.`;
   if (players.length > settings.maxPassengers) return 'More passengers than seats booked.';
   if (new Set(players.map((p) => p.id)).size !== players.length) return 'Duplicate passenger ids.';
   return validateCards(cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance);
@@ -86,7 +88,8 @@ export function createGame(opts: CreateGameOptions): GameState {
   const error = checkTakeoff(settings, players);
   if (error) throw new Error(error);
   const destination = destinationOf(settings);
-  const rows = rowsFor(settings.maxPassengers);
+  const rows = rowsFor(settings.maxPassengers, settings.plane);
+  const cols = [...PLANES[settings.plane].cols];
   const s: GameState = {
     v: 1,
     id: `${Math.floor(now).toString(36)}-${(seed >>> 0).toString(36)}`,
@@ -94,7 +97,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     settings: structuredClone(settings),
     nights: destination.nights,
     players: [],
-    cabin: { rows, cartRow: 1, cartDestroyed: false, lavatoryDestroyed: false, scorched: [] },
+    cabin: { rows, cols, cartRow: 1, cartDestroyed: false, lavatoryDestroyed: false, scorched: [] },
     bombs: [],
     phase: { kind: 'packing', night: 0, startedAt: now, endsAt: now + phaseDurationMs(settings, 'packing'), earlyEndAt: null },
     night: emptyNight(),
@@ -113,7 +116,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     recorder: [],
   };
   const roles = dealRoles(s, cardsForGame(settings, players.length), players.length, settings.stewardessRogueChance, settings.pilotRogueChance);
-  const seats = shuffle(s, allSeats(rows));
+  const seats = shuffle(s, allSeats(rows, cols));
   // Crew work the aisle instead of sitting: the first starts at the front with the cart, the rest spread out behind.
   const crew = roles.filter(isStewardess).length;
   let crewPlaced = 0;

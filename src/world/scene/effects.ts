@@ -275,9 +275,9 @@ class OxygenMasks {
   private readonly tmp = new THREE.Object3D();
   private readonly zero = new THREE.Matrix4().makeScale(0, 0, 0);
 
-  constructor(rows: number) {
+  constructor(rows: number, cols: readonly number[]) {
     for (let row = 1; row <= rows; row++) {
-      for (const col of [0, 1, 2, 4, 5, 6]) {
+      for (const col of cols) {
         const side = col < grid.AISLE_COL ? -1 : 1;
         const fromAisle = side < 0 ? 2 - col : col - 4;
         // Hang from the service panel above the row (where the reading lights are), in front of the face.
@@ -479,9 +479,10 @@ export class Effects {
     private readonly rows: number,
     private readonly seats: SeatParts,
     private readonly lavatory: THREE.Vector3,
+    private readonly cols: readonly number[] = grid.SEAT_COLS,
   ) {
     this.group.name = 'effects';
-    this.masks = new OxygenMasks(rows);
+    this.masks = new OxygenMasks(rows, cols);
     this.group.add(this.masks.group, this.devices.group, this.lights.flash, this.lights.fire);
   }
 
@@ -539,7 +540,7 @@ export class Effects {
   /** Lasting damage: blackened seats within two cells of each blast and a mark on the floor. */
   setScorched(cells: Cell[], where: (cell: Cell) => THREE.Vector3): void {
     const shades = new Map<string, number>();
-    for (const seat of grid.allSeats(this.rows)) {
+    for (const seat of grid.allSeats(this.rows, this.cols)) {
       const cell = grid.parseSeat(seat)!;
       let shade = 1;
       for (const c of cells) {

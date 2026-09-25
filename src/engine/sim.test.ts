@@ -16,7 +16,7 @@ function assertInvariants(s: GameState): void {
     if (p.status === 'restrained') expect(p.seat).toBeNull();
     else if (isStewardess(p.role)) expect(aisleRow(p.seat)).toBeLessThanOrEqual(s.cabin.rows);
     else if (isPilot(p.role)) expect(p.seat).toBe('Cockpit');
-    else expect(p.seat !== null && isSeatInCabin(p.seat, s.cabin.rows)).toBe(true);
+    else expect(p.seat !== null && isSeatInCabin(p.seat, s.cabin.rows, s.cabin.cols)).toBe(true);
     if (p.status !== 'alive') {
       expect(p.cause).not.toBeNull();
       expect(p.outNight).not.toBeNull();
@@ -86,5 +86,25 @@ describe('bot simulation', () => {
     if (process.env.SIM_REPORT) process.stderr.write(`${report.join('\n')}\nby reason: ${JSON.stringify(reasons)}\n`);
     expect(games).toBe(13 * (5 * 6 + 3));
     // 429 whole games: allow for a busy machine running the other test files alongside.
+  }, 60_000);
+
+  it('flies the private jet and the jumbo end to end', () => {
+    let games = 0;
+    for (let players = 4; players <= 6; players++) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const s = simulate(seed * 77 + players, players, { plane: 'jet' });
+        expect(s.phase.kind).toBe('ended');
+        for (const p of s.players) if (p.seat && /^\d/.test(p.seat)) expect(p.seat).toMatch(/[ABEF]$/);
+        games++;
+      }
+    }
+    for (const players of [10, 13, 17, 20, 24]) {
+      for (let seed = 1; seed <= 3; seed++) {
+        const s = simulate(seed * 91 + players, players, { plane: 'jumbo' });
+        expect(s.phase.kind).toBe('ended');
+        games++;
+      }
+    }
+    expect(games).toBe(18 + 15);
   }, 60_000);
 });

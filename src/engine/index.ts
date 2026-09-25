@@ -24,6 +24,7 @@ export {
   countSpecials,
   type RoleInfo,
 } from './roles';
+export { PLANES, PLANE_ORDER, isPlaneId, rowsFor, type Plane } from './planes';
 export {
   DESTINATIONS,
   DESTINATION_ORDER,

@@ -32,8 +32,14 @@ describe('settings', () => {
   });
 
   it('rejects out-of-range passenger counts', () => {
-    expect(validateSettings({ ...defaultSettings(), maxPassengers: 3 })).toMatch(/Max passengers/);
-    expect(validateSettings({ ...defaultSettings(), maxPassengers: 17 })).toMatch(/Max passengers/);
+    expect(validateSettings({ ...defaultSettings(), maxPassengers: 3 })).toBe('The airliner takes 4 to 16 passengers.');
+    expect(validateSettings({ ...defaultSettings(), maxPassengers: 17 })).toBe('The airliner takes 4 to 16 passengers.');
+    // Each plane has its own range.
+    expect(validateSettings({ ...defaultSettings(), plane: 'jet', maxPassengers: 7 })).toBe('The private jet takes 4 to 6 passengers.');
+    expect(validateSettings({ ...defaultSettings(), plane: 'jet', maxPassengers: 6 })).toBeNull();
+    expect(validateSettings({ ...defaultSettings(), plane: 'jumbo', maxPassengers: 24 })).toBeNull();
+    expect(validateSettings({ ...defaultSettings(), plane: 'jumbo', maxPassengers: 9 })).toBe('The jumbo takes 10 to 24 passengers.');
+    expect(validateSettings({ ...defaultSettings(), plane: 'glider' as never })).toBe('Unknown plane.');
   });
 
   it('the red-eye to Tokyo shortens discussion', () => {

@@ -1,4 +1,4 @@
-import { allSeats, isCockpit, parsePlace } from './grid';
+import { SEAT_COLS, allSeats, isCockpit, parsePlace } from './grid';
 import { bombsFor, destinationOf } from './destinations';
 import { ROLES, canPlantBombs } from './roles';
 import { normalizeSettings, phaseDurationMs } from './settings';
@@ -23,7 +23,7 @@ export function occupantOf(s: GameState, seat: SeatId): PlayerState | undefined 
 
 export function emptySeats(s: GameState): SeatId[] {
   const taken = new Set(s.players.map((p) => p.seat));
-  return allSeats(s.cabin.rows).filter((id) => !taken.has(id));
+  return allSeats(s.cabin.rows, s.cabin.cols).filter((id) => !taken.has(id));
 }
 
 /** Where a player is on the grid: their seat, or the Stewardess's aisle spot. */
@@ -112,6 +112,7 @@ export function normalizeGame(s: GameState): GameState {
   s.stats ??= {};
   s.awards ??= null;
   s.recorder ??= [];
+  s.cabin.cols ??= [...SEAT_COLS];
   s.night.searched ??= {};
   s.night.asleep ??= {};
   s.night.mirrors ??= {};
