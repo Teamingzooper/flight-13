@@ -27,6 +27,14 @@ export interface SpotPick {
   onPick: (spot: Spot) => void;
 }
 
+/** Pick three rows at once (the Pilot's cameras and rough air): tap any seat or row number. */
+export interface RowPick {
+  /** Valid first rows of a three-row section. */
+  options: ReadonlySet<number>;
+  selected: number | null;
+  onPick: (startRow: number) => void;
+}
+
 const LETTERS = ['A', 'B', 'C', '', 'D', 'E', 'F'];
 
 /** The cabin as the seatback TV draws it: front on the left (top when the screen is tall). */
@@ -35,6 +43,7 @@ export function SeatMap({
   seatPick,
   playerPick,
   spotPick,
+  rowPick,
   preview,
   tone,
 }: {
@@ -42,6 +51,7 @@ export function SeatMap({
   seatPick?: SeatPick;
   playerPick?: PlayerPick;
   spotPick?: SpotPick;
+  rowPick?: RowPick;
   preview?: ReadonlySet<SeatId>;
   /** What the highlighted seats mean: somewhere being checked, or a blast. */
   tone?: 'check' | 'blast';
@@ -59,10 +69,17 @@ export function SeatMap({
   const lavBomb = live.some((b) => b.location.kind === 'lavatory');
   const away = game.washroom;
   const inLav = away ? game.players.find((p) => p.id === away) : undefined;
+  // The flight deck: the Pilot, and tonight's guest in the jump seat.
+  const pilot = game.players.find((p) => grid.isCockpit(p.seat));
+  const guest = game.jumpseat ? game.players.find((p) => p.id === game.jumpseat) : undefined;
+  // A tapped row picks the three-row section around it.
+  const rowStarts = rowPick ? [...rowPick.options] : [];
+  const startFor = (r: number) => Math.min(Math.max(r - 1, Math.min(...rowStarts)), Math.max(...rowStarts));
+  const pickRow = rowPick && rowStarts.length > 0 ? (r: number) => rowPick.onPick(startFor(r)) : null;
 
-  /** Cabin row r (0 = galley, rows + 1 = rear) and column c (-1 = labels) on the CSS grid. */
+  /** Cabin row r (-1 = flight deck, 0 = galley, rows + 1 = rear) and column c (-1 = labels) on the CSS grid. */
   const at = (r: number, c: number, span = 1) => {
-    const along = `${r + 2}`;
+    const along = `${r + 3}`;
     const across = span > 1 ? `${c + 2} / span ${span}` : `${c + 2}`;
     return vertical ? { gridRow: along, gridColumn: across } : { gridColumn: along, gridRow: across };
   };
@@ -70,15 +87,21 @@ export function SeatMap({
   const cells: VNode[] = [];
   for (let r = 1; r <= rows; r++) {
     cells.push(
-      <div key={`n${r}`} class="sm-num" style={at(r, -1)}>
-        {r}
-      </div>,
+      pickRow ? (
+        <button key={`n${r}`} type="button" class="sm-num pick" style={at(r, -1)} aria-label={`Rows around ${r}`} onClick={() => pickRow(r)}>
+          {r}
+        </button>
+      ) : (
+        <div key={`n${r}`} class="sm-num" style={at(r, -1)}>
+          {r}
+        </div>
+      ),
     );
   }
   LETTERS.forEach((letter, c) => {
     if (letter) {
       cells.push(
-        <div key={`l${c}`} class="sm-letter" style={at(-1, c)}>
+        <div key={`l${c}`} class="sm-letter" style={at(-2, c)}>
           {letter}
         </div>,
       );
@@ -94,7 +117,25 @@ export function SeatMap({
       {lavBomb && <IconBomb />}
     </>
   );
+  const pilotYou = !!pilot && pilot.id === youId;
   cells.push(
+    <div
+      key="cockpit"
+      class="sm-block sm-cockpit"
+      style={at(-1, 0, 7)}
+      title={pilot ? `Flight deck · ${pilot.name}${pilotYou ? ' (you)' : ''}, Pilot${guest ? ` · ${guest.name} in the jump seat` : ''}` : 'Flight deck'}
+    >
+      <span class="sm-cockpit-label">Flight deck</span>
+      {pilot && (
+        <span
+          class={`sm-crew-dot${pilot.status === 'dead' ? ' dead' : ''}${pilotYou ? ' you' : ''}`}
+          style={{ background: pilot.status === 'dead' ? undefined : TOP[pilot.look.top] ?? TOP[0] }}
+        >
+          {pilot.status === 'dead' ? '✕' : pilot.name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      {guest && <span class="sm-cockpit-guest">{guest.id === youId ? 'You' : shortName(guest.name)}</span>}
+    </div>,
     <div key="galley" class="sm-block sm-galley" style={at(0, 0, 7)}>
       <span>Galley</span>
     </div>,
@@ -181,7 +222,7 @@ export function SeatMap({
       const seat = grid.seatId({ row: r, col: c });
       const p = occupant.get(seat);
       const you = !!p && p.id === youId;
-      const gone = !!p && p.id === away;
+      const gone = !!p && (p.id === away || p.id === game.jumpseat);
       const hidden = game.blackout && !!p && !you;
       const pickSeat = seatPick?.options.has(seat) ?? false;
       const pickPlayer = !!p && (playerPick?.options.has(p.id) ?? false);
@@ -199,14 +240,17 @@ export function SeatMap({
         ? 'empty'
         : hidden
           ? 'someone'
-          : `${p.name}${p.status === 'dead' ? ' (dead)' : ''}${you ? ' (you)' : ''}${gone ? ' (in the lavatory tonight)' : ''}`;
+          : `${p.name}${p.status === 'dead' ? ' (dead)' : ''}${you ? ' (you)' : ''}${gone ? (p.id === away ? ' (in the lavatory tonight)' : ' (on the flight deck tonight)') : ''}`;
       const onPick = pickSeat
         ? () => seatPick!.onPick(seat)
         : pickPlayer
           ? () => playerPick!.onPick(p!.id)
           : pickOwn
             ? () => spotPick!.onPick('seat')
-            : undefined;
+            : pickRow
+              ? () => pickRow(r)
+              : undefined;
+      if (pickRow) classes.push('row-pick');
       cells.push(
         <button
           key={seat}
