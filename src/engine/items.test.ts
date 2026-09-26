@@ -247,6 +247,8 @@ describe('carry-on items', () => {
     expect(player(s, 'bomber')).toMatchObject({ status: 'restrained', cuffedFrom: '4B', items: ['bobbypin'], bombsPlanted: 0 });
     expect(logTexts(s, 'bomber')).toContain('You are in handcuffs, but you still have your bobby pin. Pick the lock from your carry-on.');
     expect(viewFor(s, 'bomber', 0).options?.items).toEqual([{ item: 'bobbypin' }]);
+    // Not one of the ghosts while the pin might still get them out.
+    expect(applyIntent(s, 'bomber', { kind: 'chat', channel: 'ghosts', text: 'hello' }, 0)).toMatchObject({ ok: false });
     // The only saboteur in cuffs: the passengers' win waits on the morning...
     expect(s.result).toMatchObject({ winner: 'passengers' });
     // ...and the pin calls it off.

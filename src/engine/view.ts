@@ -227,12 +227,18 @@ function optionsFor(s: GameState, me: PlayerState): OptionsView {
   };
 }
 
+/** In the Air Marshal's handcuffs, with a bobby pin still in the carry-on. */
+function mayPickLock(p: PlayerState): boolean {
+  return p.cuffedFrom !== null && p.items.includes('bobbypin');
+}
+
 /** Everything `playerId` may know right now. `null` is a spectator (the control tower). */
 export function viewFor(s: GameState, playerId: string | null, now: number): PlayerView {
   const me = playerId === null ? null : getPlayer(s, playerId) ?? null;
   const ended = s.phase.kind === 'ended';
   const saboteur = me !== null && isSaboteur(me.role);
-  const ghost = me === null || !isActive(me);
+  // (Someone in the Air Marshal's cuffs with a bobby pin may yet come back: not one of the ghosts.)
+  const ghost = me === null || (!isActive(me) && !mayPickLock(me));
   const privileged = ended || saboteur;
 
   const knowsRole = (p: PlayerState) => ended || p.id === me?.id || p.revealed || (saboteur && isSaboteur(p.role));

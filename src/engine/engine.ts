@@ -303,7 +303,9 @@ function channelError(s: GameState, p: PlayerState, channel: ChatChannel): strin
       if (!isNightPhase(kind)) return 'The saboteur channel only works at night.';
       return null;
     case 'ghosts':
-      return isActive(p) && kind !== 'ended' ? 'Only ghosts can use that channel.' : null;
+      if (kind === 'ended') return null;
+      // (In cuffs with a bobby pin, you might yet come back: not a ghost.)
+      return isActive(p) || (p.cuffedFrom !== null && p.items.includes('bobbypin')) ? 'Only ghosts can use that channel.' : null;
     case 'pa':
       if (!isPilot(p.role) || !isActive(p)) return 'Only the Pilot can use the PA.';
       return PA_PHASES.has(kind) ? null : 'The PA is for announcements by day.';
