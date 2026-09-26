@@ -252,6 +252,11 @@ export class EndingDirector {
 
   // ---------- Shared pieces ----------
 
+  /** Footsteps on the aisle carpet from `from` for `seconds`, one every `pace` seconds. */
+  private footsteps(from: number, seconds: number, pace: number): void {
+    for (let t = from + pace / 2; t < from + seconds; t += pace) this.at(t, () => cabinAudio.step());
+  }
+
   private at(seconds: number, fn: () => void): void {
     this.beats.push({ at: seconds, fn });
   }
@@ -394,8 +399,9 @@ export class EndingDirector {
     this.at(0.9, () => ctx.caption('Cabin crew, seats for landing.'));
     this.stowCart(1.1);
     this.at(3.6, () => {
+      // Touchdown: the tyres bite, the gear takes the weight, and the engines roar into reverse.
       ctx.shake(0.05);
-      cabinAudio.thunk();
+      cabinAudio.squeal();
       cabinAudio.rumble(1.2);
       cabinAudio.setEngine(1.1, 0.4);
     });
@@ -445,6 +451,7 @@ export class EndingDirector {
           cabinAudio.clunk();
         }
         cop.walkAlong(route, pathLength([start, ...route]) / walk);
+        if (i === 0) this.footsteps(0, pathLength([start, ...route]) / walk, 0.55);
       });
       if (!prisoner || !pActor) continue;
       // The prisoner turns to see who has come for them; the officer takes hold of their shoulder.
@@ -455,7 +462,10 @@ export class EndingDirector {
         if (!cop) return;
         cop.gaze = pActor.eyes();
         cop.reachTo = shoulder;
-        if (i === 0) ctx.caption('You are coming with us.', 'Police');
+        if (i === 0) {
+          ctx.caption('You are coming with us.', 'Police');
+          this.at(arrive + 0.6, () => cabinAudio.cuff());
+        }
       });
       // Up the aisle and off the plane, the officer a step behind with a hand on their shoulder.
       const out = [new THREE.Vector3(0, 0, spot.z - 0.45), AISLE_FRONT.clone(), FRONT_EXIT.clone()];
@@ -517,6 +527,8 @@ export class EndingDirector {
       // Up out of the seat, then a sprint for the door.
       const seconds = RISE + pathLength([from, ...path]) / speed;
       last = Math.max(last, go + seconds);
+      // Running feet down the aisle.
+      if (i < 2) this.footsteps(go + RISE, seconds - RISE, 0.3);
       this.at(go, () => {
         actor.walkAlong(path, seconds, true);
         this.tagged.add(p.id);
@@ -580,8 +592,9 @@ export class EndingDirector {
     this.at(0, () => {
       ctx.setLights('blackout');
       ctx.setCockpitDoor(false);
-      for (let i = 0; i < 3; i++) setTimeout(() => cabinAudio.beep(0.5 + i * 0.2), i * 220);
     });
+    // (On the ending's own clock, so skipping it stops them.)
+    for (let i = 0; i < 3; i++) this.at(i * 0.22, () => cabinAudio.beep(0.5 + i * 0.2));
     // Up out of their seats, pistols drawn from the waistband on the way up, and out into the aisle.
     gunmen.forEach((g, i) => {
       const actor = this.actor(g.id);
@@ -780,7 +793,10 @@ export class EndingDirector {
     this.at(0, () => {
       ctx.masksDown();
       ctx.setLights('blackout');
+      cabinAudio.masks();
+      cabinAudio.wind(8.5);
     });
+    this.at(0.4, () => cabinAudio.alarm(5));
     this.at(1.2, () => ctx.caption('Flight 13 flies on through the dark. Nobody is left to land it.', 'Flight 13'));
     this.cameraFn = (t) => {
       const k = span(t, 0, 7.5);

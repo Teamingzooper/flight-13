@@ -1,4 +1,5 @@
 import { getPrefs, personVolume, subscribePrefs } from '../app/prefs';
+import { cabinAudio } from '../world/audio';
 import type { PlayerSummary, PlayerView } from '../engine';
 import { eyePosition, rowZ } from '../world/layout';
 import type { ClientSession } from './client';
@@ -217,7 +218,9 @@ export class VoiceChat {
     if (!ctx || !this.squelch || !this.rooms) return;
     const burst = new AudioBufferSourceNode(ctx, { buffer: this.squelch });
     const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 1800, Q: 0.7 });
-    const gain = new GainNode(ctx, { gain: 0.5 * volume });
+    const level = cabinAudio.muted ? 0 : getPrefs().sound;
+    if (level <= 0) return;
+    const gain = new GainNode(ctx, { gain: 0.5 * volume * level });
     burst.connect(band).connect(gain).connect(ctx.destination);
     gain.connect(this.rooms.cabin);
     burst.start();
@@ -538,7 +541,7 @@ export class VoiceChat {
       remote.panner.positionY.setTargetAtTime(y, t, 0.05);
       remote.panner.positionZ.setTargetAtTime(z, t, 0.05);
     }
-    this.crackle?.gain.setTargetAtTime(crackle, t, 0.03);
+    this.crackle?.gain.setTargetAtTime(cabinAudio.muted ? 0 : crackle * getPrefs().sound, t, 0.03);
   }
 
   /** Listening from your seat, facing forward (when there is no 3D view). */

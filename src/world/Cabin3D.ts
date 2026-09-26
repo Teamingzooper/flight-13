@@ -193,6 +193,7 @@ export class Cabin3D {
   /** The night's work last acted out (so each choice plays once). */
   private crewActionKey: string | null = null;
   private crewLook = '';
+  private lastCrewSeat: SeatId | null = null;
   /** The flight deck: the view through the windscreen, the flight displays, and how the plane is flying. */
   private readonly forwardView = new ForwardView();
   private readonly display = new FlightDisplay();
@@ -236,7 +237,7 @@ export class Cabin3D {
   /** After a blast the cabin stays dark for a moment before the lights stutter on. */
   private darkUntil = 0;
   private time = 0;
-  private readonly timers: { at: number; fn: () => void }[] = [];
+  private readonly timers: { at: number; fn: () => void; wall: number | null }[] = [];
   private captionAt = 0;
   private flash = 0;
   private readonly flashEl = document.createElement('div');
@@ -253,6 +254,8 @@ export class Cabin3D {
   private nextStretch = 0;
   private nextLamp = 0;
   private gearUp = false;
+  /** The takeoff roll has started (its runway rumble is playing). */
+  private rolling = false;
   private engine = CRUISE;
   /** Your phone flashlight, for looking under your seat. */
   private readonly flashlight = new THREE.SpotLight('#fff1dc', 0, 5, 0.5, 0.55, 1.6);
@@ -264,6 +267,9 @@ export class Cabin3D {
   /** With several blasts at once, the one everyone turns to (the nearest). */
   private glanceAt: THREE.Vector3 | null = null;
   private readonly unlockAudio = () => cabinAudio.unlock();
+  private lastPaDing = -Infinity;
+  /** A blast is about to play: the damage it does (scorch, a cart or lavatory gone) waits for it. */
+  private blastPending = false;
   /** The hotel room you pack in before the flight (only while packing and zipping up). */
   private hotel: HotelSet | null = null;
   /** Gate 13, for the boarding queue and the boarding pass scan. */
@@ -366,8 +372,11 @@ export class Cabin3D {
   update(state: ClientState, snap: ClientSnapshot): void {
     this.state = state;
     this.snap = snap;
-    // Ding-dong before the captain speaks on the PA.
-    if (state.pa && state.pa !== this.onAir) cabinAudio.ding();
+    // Ding-dong before the captain speaks on the PA (once in a while: not every press of the key).
+    if (state.pa && state.pa !== this.onAir && performance.now() - this.lastPaDing > 20_000) {
+      this.lastPaDing = performance.now();
+      cabinAudio.ding();
+    }
     this.onAir = state.pa ?? null;
     const game = state.game;
     if (!game) return;
@@ -462,7 +471,16 @@ export class Cabin3D {
       const first = this.seatKey === null;
       const animate = !first && !away && !wasAway && seat !== null && this.seatKey !== 'aft' && this.seatKey !== 'tower';
       this.seatKey = key;
-      if ((away || wasAway) && !first) {
+      const led = key === 'aft' && !first && this.seatKey !== 'aft' && this.seatKey !== 'tower';
+      if (led) {
+        // Restrained: led away to the rear galley.
+        this.fade(1, 0.5, 'You are led to the rear galley.');
+        this.later(1.3, () => {
+          if (this.seatKey !== key) return;
+          this.placeCamera(seat, false, away);
+          this.fade(0, 0.8);
+        });
+      } else if ((away || wasAway) && !first) {
         // Off for the night (or back to your seat at dawn) behind a quick fade.
         const text = away === 'wc' ? 'You slip into the lavatory and lock the door.' : away === 'deck' ? 'The captain calls you up to the flight deck.' : '';
         this.fade(1, 0.45, text);
@@ -474,10 +492,15 @@ export class Cabin3D {
       } else {
         // Walking the cart to your new row: it rolls where your hands push (or pull) it.
         this.cartWalk = animate && withCart && hadCart;
-        if (this.cartWalk) this.crew.cancel();
+        if (this.cartWalk) {
+          this.crew.cancel();
+          const from = grid.aisleRow(this.lastCrewSeat ?? '') ?? crewRow!;
+          cabinAudio.roll(Math.abs(crewRow! - from) * 0.75 + 1.4, 0.75);
+        }
         this.placeCamera(seat, animate, away);
       }
     }
+    this.lastCrewSeat = crewRow !== null ? seat : null;
     // Your hands as crew wear your own skin and sleeves.
     const mine = game.players.find((p) => p.id === game.you?.id);
     const lookKey = mine ? JSON.stringify(mine.look) : '';
@@ -487,8 +510,10 @@ export class Cabin3D {
     }
     this.actOutCrewWork(game, !!prev, withCart);
     const runaway = cues.some((c) => c.kind === 'cartRoll' && c.runaway);
-    this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed, runaway);
-    cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
+    if (cues.some((c) => c.kind === 'explosion')) this.blastPending = true;
+    // (What a blast destroys stays whole until the blast has played.)
+    this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed && !this.blastPending, runaway);
+    if (!this.blastPending) cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
 
     // Only your own seatbelt sign lights up for you (who else is buckled stays secret; crew have none).
     const buckledSeat = seat && game.you?.buckled ? grid.parseSeat(seat) : null;
@@ -497,6 +522,7 @@ export class Cabin3D {
     // The ending tells its own story: no end-of-flight announcements over it.
     const narrated = kind === 'ended' && !!prev && !this.endingSettled;
     for (const cue of cues) if (!(narrated && cue.kind === 'pa')) this.play(cue, game);
+    if (prev && prev !== game) this.hearOwn(prev, game);
     // The game is over: play how it ended (unless you only just arrived, on the end screen).
     if (kind === 'ended' && game.result && !this.ending && !this.endingSettled) {
       if (prev) this.startEnding(game);
@@ -512,7 +538,7 @@ export class Cabin3D {
     }
     if (prev?.you?.status === 'alive' && game.you?.status === 'dead' && !this.holdAlive.has(game.you.id)) this.dieOnScreen();
     // Lasting damage comes from the state, so a reload shows the same cabin.
-    effects.setScorched(game.cabin.scorched, (cell) => this.cellPoint(cell));
+    if (!this.blastPending) effects.setScorched(game.cabin.scorched, (cell) => this.cellPoint(cell));
     const blasted = game.bombs.some((b) => b.exploded);
     if (blasted && !effects.masks.down && !cues.some((c) => c.kind === 'explosion')) effects.masks.setDown();
   }
@@ -595,6 +621,8 @@ export class Cabin3D {
   private finishEnding(): void {
     this.ending?.dispose();
     this.ending = null;
+    // (Whatever the ending left the engines at, back to the level the flight wants.)
+    this.engine = -1;
     this.cockpitDoor = null;
     this.endingSettled = true;
     this.opts.onEnding?.(false);
@@ -871,7 +899,7 @@ export class Cabin3D {
       this.controls.releaseLock();
       this.controls.suspended = true;
       this.show(this.hotel.scene, this.hotel.camera);
-      cabinAudio.setEngine(0, 0.5);
+      cabinAudio.setRoomTone(true);
     }
   }
 
@@ -942,6 +970,7 @@ export class Cabin3D {
     this.dropHotel();
     this.dropGate();
     this.showing = 'cabin';
+    cabinAudio.setRoomTone(false);
     this.controls.suspended = false;
     this.show(this.scene, this.camera);
     if (this.lastView?.phase.kind !== 'boarding') {
@@ -983,6 +1012,7 @@ export class Cabin3D {
           }
         }
         this.showing = 'gate';
+        cabinAudio.setRoomTone(true);
         this.show(this.gate.scene, this.gate.camera);
         this.gate.show(moment.shot, moment.t, dt, time);
         this.present(dt);
@@ -992,6 +1022,7 @@ export class Cabin3D {
         this.dropHotel();
         this.dropGate();
         this.showing = 'cabin';
+        cabinAudio.setRoomTone(false);
         this.show(this.scene, this.camera);
         const seat = game.you.seat;
         if (!this.walkedIn && seat && this.built) {
@@ -1022,6 +1053,7 @@ export class Cabin3D {
     for (let i = this.timers.length - 1; i >= 0; i--) {
       if (this.timers[i].at > time) continue;
       const [due] = this.timers.splice(i, 1);
+      if (due.wall !== null && performance.now() - due.wall > 2500) continue;
       due.fn();
     }
     if (this.lastView?.phase.kind === 'boarding' && this.snap && this.boardingFrame(dt, time)) return;
@@ -1128,6 +1160,7 @@ export class Cabin3D {
       if (!actor) continue;
       const info = EMOTE_BY_ID[emote];
       actor.playEmote(emote, time);
+      if (emote === 'clap') cabinAudio.clap(clamp01(1.1 - this.camera.position.distanceTo(actor.root.position) / 9));
       let bubble = this.bubbleEls.get(id);
       if (!bubble) {
         bubble = { el: document.createElement('div'), until: 0 };
@@ -1370,6 +1403,10 @@ export class Cabin3D {
       engine = p < 0.08 ? 0.35 : p < 0.7 ? 1 : 0.8;
       const onGround = p > 0.1 && p < 0.64;
       if (onGround) this.controls.shake(0.003 + roll * 0.009);
+      if (onGround && !this.rolling) {
+        this.rolling = true;
+        cabinAudio.runway(Math.max(1, (0.64 - p) * (total / 1000)));
+      }
       if (p >= 0.74 && !this.gearUp) {
         this.gearUp = true;
         cabinAudio.thunk();
@@ -1377,10 +1414,12 @@ export class Cabin3D {
       }
     } else if (!this.ending) {
       this.gearUp = false;
+      this.rolling = false;
       windows.speed = isNightPhase(kind) ? 0.002 : 0.006;
       windows.lift = 0;
     }
-    if (Math.abs(engine - this.engine) > 0.01) {
+    // (An ending plays its own engines.)
+    if (!this.ending && Math.abs(engine - this.engine) > 0.01) {
       this.engine = engine;
       cabinAudio.setEngine(engine, kind === 'takeoff' ? 2.5 : 4);
     }
@@ -1435,7 +1474,7 @@ export class Cabin3D {
         this.lightning = Math.max(this.lightning, strength * 0.5);
         this.later(0.09, () => (this.lightning = Math.max(this.lightning, strength)));
         if (Math.random() < 0.45) this.later(rand(0.25, 0.45), () => (this.lightning = Math.max(this.lightning, strength * 0.7)));
-        this.later(rand(0.8, 2.6), () => cabinAudio.rumble(0.35 + strength * 0.4));
+        this.later(rand(0.8, 2.6), () => cabinAudio.thunder(0.35 + strength * 0.4), true);
       }
     } else this.lightning = 0;
     this.lightning *= Math.exp(-dt * 7);
@@ -1889,27 +1928,95 @@ export class Cabin3D {
       case 'turbulence':
         this.turbulentNight = game.phase.night;
         this.nextBump = this.time + 2.5;
-        this.later(0.4, () => cabinAudio.chime());
+        // (The seatbelt chime after the announcement, not over its ding-dong.)
+        this.later(Math.max(0.4, this.captionAt - this.time + 0.3), () => cabinAudio.chime(), true);
         break;
-      case 'cartRoll':
+      case 'cartRoll': {
         if (cue.runaway) cabinAudio.rattle();
+        // Someone else walking it (you hear your own push as you go).
+        else if (!this.cartWalk) {
+          const near = clamp01(1 - Math.abs(this.camera.position.z - rowZ(cue.to)) / 9);
+          cabinAudio.roll(Math.min(4, Math.abs(cue.to - cue.from) * 0.75 + 1), 0.25 + near * 0.6);
+        }
         break;
+      }
       case 'restrained':
-        this.later(0.6, () => cabinAudio.zip());
+        cabinAudio.zip();
         break;
       case 'landing':
-        this.later(1.2, () => cabinAudio.chime());
+        // (The ending tells its own story, sound and all.)
+        break;
+      case 'poisoned': {
+        const actor = this.people.actor(cue.playerId);
+        const d = actor ? this.camera.position.distanceTo(actor.root.position) : 6;
+        cabinAudio.cough(clamp01(1.1 - d / 9));
+        break;
+      }
+      case 'roughAir': {
+        // The plane bucks over three rows: hardest right there, felt all down the cabin.
+        const mid = rowZ(cue.rows[1] ?? cue.rows[0] ?? 1);
+        const near = clamp01(1 - Math.abs(this.camera.position.z - mid) / 7);
+        cabinAudio.rumble(0.5 + near);
+        this.controls.shake(0.02 + near * 0.06);
+        this.later(0.8, () => cabinAudio.rumble(0.3 + near * 0.6));
+        break;
+      }
+      case 'item':
+        this.showBubble(cue.playerId, cue.item === 'bobbypin' ? '🔓' : cue.item === 'ffcard' ? '💳' : '🎒', cue.item === 'bobbypin' ? 'Picked the lock' : 'Used an item', 4);
+        if (cue.item === 'bobbypin') cabinAudio.lockpick();
+        else cabinAudio.paper();
+        break;
+      case 'voteOpen':
+      case 'defused':
         break;
       case 'pa': {
         // One ding per announcement, captions one after another (after any blast).
         const at = Math.max(this.time + 0.2 + this.batchDelay, this.captionAt);
         this.captionAt = at + 4.5;
         // (Announcements still queued when an ending starts are dropped: the ending tells its own story.)
-        this.later(at - this.time, () => !this.ending && cabinAudio.ding());
-        this.later(at - this.time + 0.9, () => !this.ending && this.opts.onCaption?.(cue.text, cue.who ?? 'Flight deck'));
+        this.later(at - this.time, () => !this.ending && cabinAudio.ding(), true);
+        this.later(at - this.time + 0.9, () => !this.ending && this.opts.onCaption?.(cue.text, cue.who ?? 'Flight deck'), true);
         break;
       }
     }
+  }
+
+  /**
+   * Sounds for you alone: the seatbelt sign lighting over your seat, a bomb turning up under you, your own items and
+   * the defuser's snip, a whisper or your team's word, votes coming in (yours brighter), doors, and lunch arriving.
+   */
+  private hearOwn(prev: PlayerView, game: PlayerView): void {
+    const you = game.you;
+    if (!you) return;
+    if (you.buckled && !prev.you?.buckled) cabinAudio.chime();
+    // A bomb you did not plant, just found (after the crouch, if you were looking under your seat).
+    const known = new Set(prev.bombs.map((b) => b.id));
+    if (game.bombs.some((b) => !known.has(b.id) && !b.exploded && !b.defused && b.planterId !== you.id)) this.later(this.searching ? 2 : 0.3, () => cabinAudio.sting(), true);
+    const seen = new Set(prev.log.map((e) => e.id));
+    for (const e of game.log) {
+      if (seen.has(e.id) || !Array.isArray(e.to) || !e.to.includes(you.id) || e.tag !== 'item') continue;
+      if (e.text.startsWith('You cut the wires')) cabinAudio.snip();
+      else if (e.text.includes('sleeping pill')) cabinAudio.pop();
+      else if (e.text.includes('mirror') || e.text.includes('extender')) cabinAudio.click();
+    }
+    // A whisper to you, or your team's channel.
+    const said = new Set(prev.chat.map((m) => m.id));
+    if (game.chat.some((m) => !said.has(m.id) && m.from !== you.id && ((m.channel === 'whisper' && m.to === you.id) || m.channel === 'saboteurs'))) cabinAudio.ping();
+    // Votes coming in.
+    const count = (v: PlayerView) => Object.values(v.votes?.counts ?? {}).reduce((a, b) => a + b, 0);
+    if (game.mine?.vote && game.mine.vote !== prev.mine?.vote) cabinAudio.tick(true);
+    else if (count(game) > count(prev)) cabinAudio.tick();
+    // Someone slipping into the lavatory, or called up to the flight deck: a door opens and shuts.
+    if (game.washroom && game.washroom !== prev.washroom) {
+      this.later(1.8, () => cabinAudio.door(true), true);
+      this.later(2.7, () => cabinAudio.door(false), true);
+    }
+    if (game.jumpseat && game.jumpseat !== prev.jumpseat) {
+      this.later(2.2, () => cabinAudio.door(true), true);
+      this.later(3.4, () => cabinAudio.door(false), true);
+    }
+    // Lunch coming round.
+    if (game.meal && !prev.meal) cabinAudio.clink();
   }
 
   /** The blast itself: effects, sound, shake, the victims fall, the masks drop. */
@@ -1926,15 +2033,30 @@ export class Cabin3D {
     }
     for (const id of victims) this.holdAlive.delete(id);
     if (this.lastView) this.syncPeople(this.lastView);
+    // Now the damage shows.
+    this.blastPending = false;
+    const view = this.lastView;
+    if (view) {
+      this.cart.setRow(view.cabin.cartRow, view.cabin.cartDestroyed);
+      built.cabin.lavatoryDoor.visible = !view.cabin.lavatoryDestroyed;
+      built.effects.setScorched(view.cabin.scorched, (cell) => this.cellPoint(cell));
+    }
     if (this.youId && victims.includes(this.youId)) this.dieOnScreen();
-    this.later(0.35, () => built.effects.masks.drop());
+    this.later(0.35, () => {
+      built.effects.masks.drop();
+      cabinAudio.masks();
+    });
     this.later(1.3, () => this.opts.onScene?.('glance', false));
   }
 
   /** You died: slump in your seat, then straighten up again as a ghost. */
   private dieOnScreen(): void {
     this.controls.slump(true);
-    this.later(4.5, () => this.controls.slump(false));
+    cabinAudio.heartbeat();
+    this.later(4.5, () => {
+      this.controls.slump(false);
+      cabinAudio.swell();
+    });
   }
 
   /** Seat, walk, slump or restrain everyone, keeping blast victims upright until their blast. */
@@ -1964,8 +2086,12 @@ export class Cabin3D {
     );
   }
 
-  private later(seconds: number, fn: () => void): void {
-    this.timers.push({ at: this.time + seconds, fn });
+  /**
+   * Run `fn` in `seconds` of cabin time. `droppable` for a sound or a caption: if the tab was hidden and it comes due
+   * long after it should have (wall clock), it is skipped instead of piling up with the others.
+   */
+  private later(seconds: number, fn: () => void, droppable = false): void {
+    this.timers.push({ at: this.time + seconds, fn, wall: droppable ? performance.now() + seconds * 1000 : null });
   }
 
   /** The floor under a grid cell. */

@@ -1,6 +1,6 @@
 # Release pass (2026-09-26)
 
-The goal is a public release. This list comes from two read-only audits (gameplay and UI flows; audio and 3D feedback), plus playtest reports. A tick means fixed and verified; the notes say how.
+The goal is a public release. This list comes from two read-only audits (gameplay and UI flows; audio and 3D feedback), plus playtest reports. A tick means fixed and verified; `~` means partly done (the note says what is left).
 
 ## Gameplay and UI
 
@@ -28,43 +28,43 @@ The goal is a public release. This list comes from two read-only audits (gamepla
 
 ## Audio and 3D feedback
 
-- [ ] A1 **The 2D screen (and no-WebGL players) has no sound at all.**
-- [ ] A2 **The engine drone gets stuck at full power after the hijack or landing endings, and spools down too early.**
-- [ ] A3 **Blast damage (scorch, cart and lavatory gone) shows about 1.25 s before the blast.**
-- [ ] A4 **The tutorial picker is silent on a first visit.** The audio is never unlocked.
-- [ ] A5 **Defused devices keep blinking.** There's no snip sound and no PA.
-- [ ] A6 **Restrained players cut to the rear galley with no fade.**
-- [ ] A7 **The seatbelt sign lights over you with no chime.**
-- [ ] A8 **Poison deaths have no sound, no PA, and turn grey instantly.**
-- [ ] A9 **Nothing marks the vote opening, and there's no PA for "no one restrained".**
-- [ ] A10 **A stray chime plays at 1.2 s into every ending, including the hijack and ghost ones.**
-- [ ] A11 **The PA ding-dong overlaps the turbulence chime and the restraint zip.**
-- [ ] A12 **Every PA key press plays a 1.9 s ding-dong for everyone.** It needs a cooldown.
-- [ ] A13 **Rough air makes no sound or shake.**
-- [ ] A14 **A course change has no announcement.**
-- [ ] A15 **Thunder uses the turbulence rumble, which is a gameplay signal.**
-- [ ] A16 **The engine drone and cabin air play in the hotel and the gate.**
-- [ ] A17 **Finding a bomb under your own seat makes no sound.**
-- [ ] A18 **The cart rolls silently.** Only a runaway makes noise.
-- [ ] A19 **The lavatory door never opens, and people pop in and out.**
-- [ ] A20 **The flight deck door is silent in play.**
-- [ ] A21 **Human chat is silent in 3D, and there's no private notification for whispers and team chat.**
-- [ ] A22 **Your own death and rising as a ghost are silent,** as are the poison and sleep vignettes.
-- [ ] A23 **Oxygen masks drop silently.**
-- [ ] A24 **`thud` and `setEngine` cap at 1, so the hijack crescendo and reverse thrust flatten.**
-- [ ] A25 **The ghost ending is silent.**
-- [ ] A26 **The hijack opens with bomb beeps.** They use `setTimeout`, so skipping doesn't cancel them.
-- [ ] A27 **The arrest and escape endings have almost no sound.**
-- [ ] A28 **There's no runway rumble on takeoff and no tyre chirp at touchdown.**
-- [ ] A29 **Lunch trays pop in and out, with no clinks.**
-- [ ] A30 **Votes make no sound, and yours has no confirmation.**
-- [ ] A31 **No clock tick in the last seconds when you still need to act.**
-- [ ] A32 **Flight deck controls don't click, and a refused control makes no sound.**
-- [ ] A33 **Other people's footsteps and claps are silent.**
-- [ ] A34 **The voice PA squelch ignores Sound off, and blast muffling doesn't reach voices.**
-- [ ] A35 **Items give no feedback in 3D** (frequent-flyer card, pills, mirror and the rest).
-- [ ] A36 **Hotel: unpacking is silent, and there's no "full" blip.**
-- [ ] A37 **Safety card: no hover or pick sounds.**
-- [ ] A38 **Gate scan: no scanner chirp.** Success reuses the bomb beep.
-- [ ] A39 **Cues pile up and all fire late after switching tabs.**
-- [ ] A40 **The sound slider plays no preview.**
+- [x] A1 **The 2D screen (and no-WebGL players) has no sound at all.**
+- [x] A2 **The engine drone gets stuck at full power after the hijack or landing endings, and spools down too early.**
+- [x] A3 **Blast damage (scorch, cart and lavatory gone) shows about 1.25 s before the blast.**
+- [x] A4 **The tutorial picker is silent on a first visit.** The audio is never unlocked.
+- [x] A5 **Defused devices keep blinking.** There's no snip sound and no PA.
+- [x] A6 **Restrained players cut to the rear galley with no fade.**
+- [x] A7 **The seatbelt sign lights over you with no chime.**
+- [~] A8 **Poison deaths have no sound, no PA, and turn grey instantly.** *Partly: a cough near the victim and a PA; they still turn grey at once.*
+- [x] A9 **Nothing marks the vote opening, and there's no PA for "no one restrained".**
+- [x] A10 **A stray chime plays at 1.2 s into every ending, including the hijack and ghost ones.**
+- [x] A11 **The PA ding-dong overlaps the turbulence chime and the restraint zip.**
+- [x] A12 **Every PA key press plays a 1.9 s ding-dong for everyone.** It needs a cooldown.
+- [x] A13 **Rough air makes no sound or shake.**
+- [x] A14 **A course change has no announcement.**
+- [x] A15 **Thunder uses the turbulence rumble, which is a gameplay signal.**
+- [x] A16 **The engine drone and cabin air play in the hotel and the gate.**
+- [x] A17 **Finding a bomb under your own seat makes no sound.**
+- [x] A18 **The cart rolls silently.** Only a runaway makes noise.
+- [~] A19 **The lavatory door never opens, and people pop in and out.** *Partly: door sounds as someone goes in and comes out; the door itself does not swing yet.*
+- [x] A20 **The flight deck door is silent in play.**
+- [~] A21 **Human chat is silent in 3D, and there's no private notification for whispers and team chat.** *Partly: a private ping for whispers and your team; no murmur under human speech bubbles.*
+- [x] A22 **Your own death and rising as a ghost are silent,** as are the poison and sleep vignettes.
+- [x] A23 **Oxygen masks drop silently.**
+- [x] A24 **`thud` and `setEngine` cap at 1, so the hijack crescendo and reverse thrust flatten.**
+- [x] A25 **The ghost ending is silent.**
+- [x] A26 **The hijack opens with bomb beeps.** They use `setTimeout`, so skipping doesn't cancel them.
+- [x] A27 **The arrest and escape endings have almost no sound.**
+- [x] A28 **There's no runway rumble on takeoff and no tyre chirp at touchdown.**
+- [~] A29 **Lunch trays pop in and out, with no clinks.** *Partly: clinks when lunch comes round; the trays still appear at once.*
+- [x] A30 **Votes make no sound, and yours has no confirmation.**
+- [x] A31 **No clock tick in the last seconds when you still need to act.**
+- [x] A32 **Flight deck controls don't click, and a refused control makes no sound.**
+- [~] A33 **Other people's footsteps and claps are silent.** *Partly: claps have a sound; other people's footsteps do not yet.*
+- [~] A34 **The voice PA squelch ignores Sound off, and blast muffling doesn't reach voices.** *Partly: the squelch and crackle follow Sound off and the sound level; a blast does not muffle voices yet.*
+- [x] A35 **Items give no feedback in 3D** (frequent-flyer card, pills, mirror and the rest).
+- [x] A36 **Hotel: unpacking is silent, and there's no "full" blip.**
+- [x] A37 **Safety card: no hover or pick sounds.**
+- [x] A38 **Gate scan: no scanner chirp.** Success reuses the bomb beep.
+- [x] A39 **Cues pile up and all fire late after switching tabs.**
+- [x] A40 **The sound slider plays no preview.**

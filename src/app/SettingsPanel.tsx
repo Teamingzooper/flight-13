@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { ClientState } from '../net/protocol';
+import { cabinAudio } from '../world/audio';
 import { FOV_RANGE, QUALITIES, TEXT_SIZES, personVolume, setPersonVolume, setPrefs, usePrefs, type Quality, type TextSize } from './prefs';
 import { Toggle } from './SettingsForm';
 
@@ -42,6 +43,9 @@ function Slider({ label, value, onChange, format }: { label: string; value: numb
  * Your settings: sound and voice, the people aboard (turn anyone down or mute them), graphics and accessibility. On the
  * home page (#/settings), and as a tab on the seatback TV, where `state` adds the people on your flight.
  */
+/** When the sound slider last played its sample. */
+let lastSample = -Infinity;
+
 export function SettingsPanel({ state }: { state?: ClientState | null }) {
   const prefs = usePrefs();
   const mics = useMicrophones();
@@ -50,7 +54,20 @@ export function SettingsPanel({ state }: { state?: ClientState | null }) {
     <div class="prefs">
       <section class="prefs-section">
         <h3>Sound and voice</h3>
-        <Slider label="Cabin sounds" value={prefs.sound} onChange={(sound) => setPrefs({ sound })} />
+        <Slider
+          label="Cabin sounds"
+          value={prefs.sound}
+          onChange={(sound) => {
+            setPrefs({ sound });
+            // (A sample at the new level, now and then as you drag.)
+            cabinAudio.unlock();
+            cabinAudio.applyLevel();
+            if (performance.now() - lastSample > 350) {
+              lastSample = performance.now();
+              cabinAudio.chime();
+            }
+          }}
+        />
         <Slider label="Voices" value={prefs.voice} onChange={(voice) => setPrefs({ voice })} />
         <label class="field">
           <span class="label">Microphone</span>

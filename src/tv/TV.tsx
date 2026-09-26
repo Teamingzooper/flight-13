@@ -13,6 +13,8 @@ import { ChatTab } from './ChatTab';
 import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
 import { awaitingYou, captainName } from './format';
+import { useCueSounds, useLastSeconds } from './useCueSounds';
+import { tutorialWaits } from '../tutorial/Coach';
 import { Header } from './Header';
 import { TutorialCoach } from '../tutorial/Coach';
 import { CaptainMenu, PausedBanner } from './CaptainMenu';
@@ -87,9 +89,12 @@ export function TV({
   onClose?: () => void;
   onUse3D?: () => void;
 }) {
+  // On its own (not inside the 3D view, which plays its own), the screen plays the flight's sounds.
+  useCueSounds(state.game ?? null, !embedded);
   const game = state.game!;
   const { ctx: shared, toast } = useTVContext(flight, snap, state);
   const ctx = embedded ? { ...shared, embedded } : shared;
+  useLastSeconds(shared.left, !!state.game && awaitingYou(state.game) !== null && !tutorialWaits(state), !embedded);
   const [tab, setTab] = useState<TabId>(() => AUTO_TAB[game.phase.kind] ?? 'action');
   const [leaving, setLeaving] = useState(false);
   const phaseKey = `${game.phase.kind}:${game.phase.night}`;

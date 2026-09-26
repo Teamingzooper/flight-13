@@ -485,8 +485,8 @@ export class GateSet {
     this.terminal.light.emissive.set(ok ? '#3cff7a' : '#ff3b30');
     if (ok) {
       this.once('beep', () => {
-        cabinAudio.beep(0.2);
-        setTimeout(() => cabinAudio.chime(), 150);
+        cabinAudio.scan(true);
+        setTimeout(() => cabinAudio.chime(), 250);
         this.terminal.drawReadout('WELCOME ABOARD', true);
       });
     } else if (t < 0.2) {

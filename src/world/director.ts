@@ -11,6 +11,16 @@ export type Cue =
   | { kind: 'cartRoll'; from: number; to: number; runaway: boolean }
   | { kind: 'restrained'; playerId: string }
   | { kind: 'landing'; result: GameResult }
+  /** The vote opens. */
+  | { kind: 'voteOpen' }
+  /** A bomb was found and defused overnight (public; the one who did it hears their own snip). */
+  | { kind: 'defused' }
+  /** Someone died of poison at dawn. */
+  | { kind: 'poisoned'; playerId: string }
+  /** The Pilot flew rough air over three rows. */
+  | { kind: 'roughAir'; rows: number[] }
+  /** Someone used an item everyone can see (a frequent-flyer card, a bobby pin on their cuffs). */
+  | { kind: 'item'; playerId: string; item: string }
   /** An announcement: the flight deck's automatic ones, or the Pilot's own (`who`). */
   | { kind: 'pa'; text: string; who?: string };
 
@@ -83,6 +93,29 @@ export function directorCues(prev: PlayerView | null, next: PlayerView): Cue[] {
       );
     }
   }
+  // The vote opens (and, after it, a verdict that restrained nobody is still said).
+  if (kind === 'day_vote' && prev.phase.kind !== 'day_vote') cues.push({ kind: 'voteOpen' }, pa('The vote is now open. Choose who should be restrained.'));
+  if (fresh.some((e) => e.tag === 'verdict' && e.to === 'all' && e.text === 'No one was restrained.')) cues.push(pa('The cabin could not agree. Nobody was restrained.'));
+  // What the night left behind: a bomb made safe, a passenger lost to poison, rough air, a new course.
+  if (fresh.some((e) => e.tag === 'defused' && e.to === 'all')) cues.push({ kind: 'defused' }, pa('A bomb was found and made safe overnight. Thank you, whoever you are.'));
+  for (const e of fresh) {
+    if (e.tag === 'death' && e.to === 'all' && e.data?.cause === 'poison' && typeof e.data.player === 'string') {
+      cues.push({ kind: 'poisoned', playerId: e.data.player }, pa('Ladies and gentlemen, we have lost a passenger to a sudden illness. Please stay in your seats.'));
+    }
+    if (e.tag === 'roughair' && e.to === 'all' && Array.isArray(e.data?.rows)) {
+      cues.push({ kind: 'roughAir', rows: e.data.rows as number[] }, pa('We are flying through some rough air. Keep your seatbelts fastened.'));
+    }
+    if (e.tag === 'course' && e.to === 'all') cues.push(pa(clip(e.text)));
+    if (e.tag === 'item' && e.to === 'all' && typeof e.data?.player === 'string') {
+      const item = e.text.includes('bobby pin') ? 'bobbypin' : e.text.includes('frequent-flyer') ? 'ffcard' : 'item';
+      cues.push({ kind: 'item', playerId: e.data.player, item });
+      if (item === 'bobbypin') {
+        const name = next.players.find((p) => p.id === e.data!.player)?.name ?? 'A passenger';
+        cues.push(pa(`${name} has slipped their handcuffs and is back in their seat.`));
+      }
+    }
+  }
+
   // The crew call lunch.
   if (fresh.some((e) => e.tag === 'meal' && e.to === 'all' && e.text.startsWith('Lunch is served'))) {
     cues.push(pa('Ladies and gentlemen, lunch is served: chicken or pasta, as it comes. Enjoy your meal.'));

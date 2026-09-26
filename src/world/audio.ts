@@ -15,6 +15,7 @@ function readMuted(): boolean {
 
 interface Beds {
   engineGain: GainNode;
+  airGain: GainNode;
   engineFilter: BiquadFilterNode;
   hum: OscillatorNode;
   whine: OscillatorNode;
@@ -33,6 +34,8 @@ class CabinAudio {
   private beds: Beds | null = null;
   private wantBeds = false;
   private engineLevel = 0.4;
+  /** A room on the ground (the hotel, the gate hall): no engines, only quiet air. */
+  private room = false;
   private readonly listeners = new Set<() => void>();
 
   /** Browsers only allow sound after a gesture; call this from pointer and key handlers. */
@@ -70,19 +73,27 @@ class CabinAudio {
     this.beds = null;
   }
 
-  /** 0 = engines idle, 0.45 = cruise, 1 = takeoff power. */
+  /** 0 = engines idle, 0.45 = cruise, 1 = takeoff power (a little past it: reverse thrust, a hijacker's dive). */
   setEngine(level: number, seconds = 1.5): void {
-    this.engineLevel = clamp(level, 0, 1);
+    this.engineLevel = clamp(level, 0, 1.3);
     const b = this.beds;
     const ctx = this.ctx;
     if (!b || !ctx) return;
     const t = ctx.currentTime;
     const l = this.engineLevel;
-    b.engineGain.gain.setTargetAtTime(0.1 + l * 0.34, t, seconds / 3);
+    b.engineGain.gain.setTargetAtTime(this.room ? 0 : 0.1 + l * 0.34, t, seconds / 3);
     b.engineFilter.frequency.setTargetAtTime(160 + l * 520, t, seconds / 3);
     b.hum.frequency.setTargetAtTime(48 + l * 26, t, seconds / 3);
     b.whine.frequency.setTargetAtTime(2100 + l * 1700, t, seconds / 3);
-    b.whineGain.gain.setTargetAtTime(0.0015 + l * 0.006, t, seconds / 3);
+    b.whineGain.gain.setTargetAtTime(this.room ? 0 : 0.0015 + l * 0.006, t, seconds / 3);
+    b.airGain.gain.setTargetAtTime(this.room ? 0.004 : 0.012, t, seconds / 3);
+  }
+
+  /** On the ground indoors (the hotel room, the gate hall): the engines fall silent and the air goes quiet. */
+  setRoomTone(on: boolean): void {
+    if (this.room === on) return;
+    this.room = on;
+    this.setEngine(this.engineLevel, 0.8);
   }
 
   setMuted(muted: boolean): void {
@@ -230,11 +241,11 @@ class CabinAudio {
     this.noise(t, 0.4, { type: 'bandpass', frequency: 380, to: 1500, q: 1.1 }, 0.16, 0.12);
   }
 
-  /** Something heavy landing on a soft bed (`weight` 0..1). */
+  /** Something heavy landing on a soft bed (`weight` 0..1; more for a door flung open, up to 2.2). */
   thud(weight = 1): void {
     const t = this.now();
     if (t === null) return;
-    const w = clamp(weight, 0.1, 1);
+    const w = clamp(weight, 0.1, 2.2);
     this.tone(t, 'sine', 95, 52, 0.28, 0.42 * w);
     this.noise(t, 0.22, { type: 'lowpass', frequency: 300 }, 0.5 * w, 0.004, true);
     this.noise(t, 0.08, { type: 'bandpass', frequency: 900, q: 0.8 }, 0.06 * w, 0.003);
@@ -305,6 +316,221 @@ class CabinAudio {
     saw.stop(t + 0.38);
   }
 
+  /** Wire cutters through the right wire: a snip, and the device powering down. */
+  snip(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.03, { type: 'highpass', frequency: 3000 }, 0.3, 0.001);
+    this.tone(t + 0.01, 'square', 1500, 1500, 0.025, 0.025);
+    this.tone(t + 0.25, 'sine', 880, 110, 0.55, 0.06);
+  }
+
+  /** Someone taken ill: two coughs and a ragged breath (`gain` 0..1 by distance). */
+  cough(gain = 1): void {
+    const t = this.now();
+    if (t === null) return;
+    const g = clamp(gain, 0.1, 1);
+    for (const at of [0, 0.34]) {
+      this.noise(t + at, 0.14, { type: 'bandpass', frequency: 620, q: 1.4 }, 0.28 * g, 0.004, true);
+      this.noise(t + at, 0.1, { type: 'bandpass', frequency: 1900, q: 1 }, 0.05 * g, 0.004);
+    }
+    this.noise(t + 0.75, 0.55, { type: 'bandpass', frequency: 1300, to: 800, q: 0.8 }, 0.05 * g, 0.2);
+  }
+
+  /** A soft tick: the clock in its last seconds, a button, a vote. `bright` for your own. */
+  tick(bright = false): void {
+    const t = this.now();
+    if (t === null) return;
+    this.tone(t, 'triangle', bright ? 1760 : 1320, bright ? 1760 : 1320, 0.05, bright ? 0.05 : 0.03);
+    this.noise(t, 0.01, { type: 'highpass', frequency: 5000 }, 0.02, 0.0005);
+  }
+
+  /** Thunder far off: a slow roll with no rattling bins (turbulence has those). */
+  thunder(near = 0.5): void {
+    const t = this.now();
+    if (t === null) return;
+    const n = clamp(near, 0.1, 1);
+    this.noise(t, 3.4, { type: 'lowpass', frequency: 260, to: 55 }, 0.55 * n, 0.35, true);
+    this.noise(t + 0.04, 0.3, { type: 'lowpass', frequency: 1100 }, 0.12 * n, 0.02, true);
+  }
+
+  /** A door: the latch, then (opening) the swing, or (closing) the thump as it shuts. */
+  door(open: boolean): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.022, { type: 'bandpass', frequency: 2600, q: 3 }, 0.22, 0.001);
+    this.tone(t, 'sine', open ? 320 : 190, open ? 240 : 140, 0.09, 0.05);
+    if (open) this.noise(t + 0.08, 0.5, { type: 'bandpass', frequency: 420, q: 0.9 }, 0.05, 0.15, true);
+    else this.noise(t + 0.02, 0.18, { type: 'lowpass', frequency: 240 }, 0.3, 0.004, true);
+  }
+
+  /** Oxygen masks: the panels popping open and rubber cups clattering down. */
+  masks(): void {
+    const t = this.now();
+    if (t === null) return;
+    for (let i = 0; i < 12; i++) {
+      const at = t + Math.random() * 0.5;
+      this.noise(at, 0.03, { type: 'bandpass', frequency: 900 + Math.random() * 900, q: 2 }, 0.1, 0.001);
+      this.tone(at + 0.04, 'sine', 320, 190, 0.07, 0.025);
+    }
+  }
+
+  /** The cart's wheels rolling for `seconds` (a can or two clinking), `level` 0..1. */
+  roll(seconds: number, level = 1): void {
+    const t = this.now();
+    if (t === null) return;
+    const l = clamp(level, 0.1, 1);
+    this.noise(t, seconds, { type: 'bandpass', frequency: 230, q: 0.9 }, 0.14 * l, Math.min(0.4, seconds / 3), true);
+    for (let i = 0; i < Math.round(seconds * 1.5); i++) {
+      const f = 2300 + Math.random() * 1400;
+      this.tone(t + Math.random() * seconds, 'sine', f, f, 0.06, 0.018 * l);
+    }
+  }
+
+  /** Something for you alone (a whisper, your team): two soft notes. */
+  ping(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.bell(1568, t, 0.5, 0.05);
+    this.bell(2093, t + 0.09, 0.6, 0.04);
+  }
+
+  /** Something wrong right under you: a low sting. */
+  sting(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.tone(t, 'sawtooth', 110, 98, 1.6, 0.045, { type: 'lowpass', frequency: 900 });
+    this.tone(t, 'sine', 55, 49, 1.8, 0.12);
+    this.tone(t + 0.02, 'triangle', 233, 220, 1.3, 0.03);
+  }
+
+  /** Your own heart, slowing to a stop. */
+  heartbeat(): void {
+    const t = this.now();
+    if (t === null) return;
+    let at = t;
+    for (let i = 0; i < 4; i++) {
+      const k = 1 - i * 0.22;
+      this.tone(at, 'sine', 62, 40, 0.13, 0.4 * k);
+      this.tone(at + 0.19, 'sine', 56, 38, 0.1, 0.25 * k);
+      at += 0.85 + i * 0.3;
+    }
+  }
+
+  /** Rising as a ghost: an airy swell. */
+  swell(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 2.8, { type: 'bandpass', frequency: 500, to: 2400, q: 0.7 }, 0.07, 1.2);
+    this.tone(t, 'sine', 440, 660, 2.6, 0.018);
+  }
+
+  /** The runway under the wheels for `seconds`: rumble and the thump of the joints, faster as you go. */
+  runway(seconds: number): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, seconds, { type: 'lowpass', frequency: 170 }, 0.3, seconds * 0.4, true);
+    let at = t + 0.4;
+    let gap = 0.7;
+    while (at < t + seconds - 0.3) {
+      this.noise(at, 0.06, { type: 'lowpass', frequency: 220 }, 0.16, 0.002, true);
+      at += gap;
+      gap = Math.max(0.12, gap * 0.86);
+    }
+  }
+
+  /** Tyres touching down. */
+  squeal(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.35, { type: 'bandpass', frequency: 1700, to: 1100, q: 4 }, 0.1, 0.01);
+    this.noise(t + 0.02, 0.45, { type: 'lowpass', frequency: 200 }, 0.5, 0.01, true);
+  }
+
+  /** The master caution: a two-tone alarm, `times` over. */
+  alarm(times = 4): void {
+    const t = this.now();
+    if (t === null) return;
+    for (let i = 0; i < times; i++) {
+      this.tone(t + i * 0.62, 'square', 880, 880, 0.26, 0.03, { type: 'lowpass', frequency: 3000 });
+      this.tone(t + i * 0.62 + 0.29, 'square', 660, 660, 0.26, 0.03, { type: 'lowpass', frequency: 3000 });
+    }
+  }
+
+  /** Wind roaring through the cabin for `seconds`. */
+  wind(seconds: number): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, seconds, { type: 'bandpass', frequency: 420, to: 900, q: 0.6 }, 0.35, 1.0);
+    this.noise(t, seconds, { type: 'lowpass', frequency: 160 }, 0.45, 1.2, true);
+  }
+
+  /** A bobby pin in a lock: small metal clicks, then the cuffs spring open. */
+  lockpick(): void {
+    const t = this.now();
+    if (t === null) return;
+    for (let i = 0; i < 6; i++) this.noise(t + i * 0.13 + Math.random() * 0.05, 0.012, { type: 'highpass', frequency: 4000 }, 0.12, 0.001);
+    this.noise(t + 0.95, 0.05, { type: 'bandpass', frequency: 2500, q: 2 }, 0.22, 0.001);
+    this.tone(t + 0.95, 'square', 1200, 900, 0.05, 0.03);
+  }
+
+  /** Handcuffs clicking shut. */
+  cuff(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.015, { type: 'highpass', frequency: 3500 }, 0.25, 0.001);
+    this.noise(t + 0.07, 0.02, { type: 'highpass', frequency: 3000 }, 0.2, 0.001);
+    this.tone(t, 'square', 2600, 2600, 0.02, 0.02);
+  }
+
+  /** Cutlery and china. */
+  clink(): void {
+    const t = this.now();
+    if (t === null) return;
+    for (let i = 0; i < 4; i++) {
+      const f = 2800 + Math.random() * 1400;
+      this.tone(t + i * 0.09 + Math.random() * 0.05, 'sine', f, f, 0.14, 0.03);
+    }
+  }
+
+  /** Someone clapping (`gain` by distance). */
+  clap(gain = 1): void {
+    const t = this.now();
+    if (t === null) return;
+    const g = clamp(gain, 0.05, 1);
+    for (let i = 0; i < 5; i++) this.noise(t + i * 0.24 + Math.random() * 0.03, 0.05, { type: 'bandpass', frequency: 1400, q: 1.2 }, 0.16 * g, 0.001);
+  }
+
+  /** The gate's scanner: reading, then a bright double beep once it takes the pass. */
+  scan(ok: boolean): void {
+    const t = this.now();
+    if (t === null) return;
+    this.tone(t, 'sine', 1760, 1760, 0.07, 0.05);
+    if (ok) this.tone(t + 0.1, 'sine', 2350, 2350, 0.12, 0.06);
+  }
+
+  /** A finger on paper, or a card turned over. */
+  paper(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.07, { type: 'bandpass', frequency: 3200, q: 1 }, 0.035, 0.003);
+  }
+
+  /** That will not work: a short low blip. */
+  nope(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.tone(t, 'square', 330, 250, 0.12, 0.025, { type: 'lowpass', frequency: 1500 });
+  }
+
+  /** A switch or a dial detent on the flight deck. */
+  switchClick(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.noise(t, 0.01, { type: 'highpass', frequency: 3000 }, 0.18, 0.0005);
+    this.tone(t, 'square', 3000, 3000, 0.01, 0.012);
+  }
+
   private startBeds(): void {
     const ctx = this.ctx!;
     const t = ctx.currentTime;
@@ -357,6 +583,7 @@ class CabinAudio {
     for (const node of [engineSrc, hum, whine, lfo, airSrc]) node.start(t);
     this.beds = {
       engineGain,
+      airGain,
       engineFilter,
       hum,
       whine,

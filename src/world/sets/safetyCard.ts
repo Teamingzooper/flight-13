@@ -196,6 +196,7 @@ export class SafetyCardSet {
   hover(lesson: LessonId): void {
     if (this.hovered === lesson) return;
     this.hovered = lesson;
+    if (this.stage === 'choose') cabinAudio.paper();
     this.events.onHover?.(lesson);
   }
 
@@ -205,6 +206,7 @@ export class SafetyCardSet {
     this.hover(lesson);
     this.picked = lesson;
     this.goto('zoom');
+    cabinAudio.whoosh();
   }
 
   /** Straight to the card held up and open (reduced motion, or a click during the sequence). */
