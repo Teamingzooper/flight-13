@@ -421,6 +421,16 @@ export function resolveNight(s: GameState, now: number): void {
     }
   }
 
+  // 1d. The Mastermind takes their phone off airplane mode: the cabin cameras show nothing but static tonight.
+  let jammed = false;
+  for (const { actor, action } of acts) {
+    if (action.kind !== 'jam') continue;
+    actor.jamUsed = true;
+    jammed = true;
+    addLog(s, now, 'saboteurs', 'jam', `${actor.name} took their phone off airplane mode: the cabin cameras show nothing but static tonight.`);
+    addLog(s, now, 'end', 'jam', `Night ${n}: Mastermind ${actor.name} jammed the cabin cameras (airplane mode off).`);
+  }
+
   // 2. Treatments (and who gave them, so a Nurse is credited for every life saved).
   const treated = new Set<string>();
   const nursesOf = new Map<string, string[]>();
@@ -554,6 +564,18 @@ export function resolveNight(s: GameState, now: number): void {
   for (const { actor, action } of acts) {
     if (action.kind !== 'watch') continue;
     const rows = [action.startRow, action.startRow + 1, action.startRow + 2];
+    if (jammed) {
+      addLog(
+        s,
+        now,
+        [actor.id],
+        'watch',
+        `The cabin cameras over rows ${rows[0]}–${rows[2]} showed nothing but static all night: somebody’s phone was off airplane mode.`,
+        { rows, seen: [], jammed: true },
+      );
+      addLog(s, now, 'end', 'watch', `Night ${n}: Pilot ${actor.name}’s cabin cameras were jammed.`);
+      continue;
+    }
     const inRows = (p: PlayerState | undefined) => {
       if (!p || !p.seat || inWashroom(s, p.id) || onFlightDeck(s, p)) return false;
       const cell = parsePlace(p.seat);

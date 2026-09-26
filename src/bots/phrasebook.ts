@@ -33,6 +33,7 @@ export type LineKind =
   | 'order_no'
   | 'pa_cameras'
   | 'pa_quiet'
+  | 'pa_jammed'
   | 'lunch_drugged'
   | 'lunch_trays'
   | 'banter';
@@ -94,6 +95,10 @@ const LINES: Record<LineKind, readonly string[]> = {
     'From the flight deck: {name} was on camera last night, {why}.',
   ],
   pa_quiet: ['This is your captain. The cabin cameras were quiet last night.', 'Captain speaking: nothing on the cameras last night.'],
+  pa_jammed: [
+    'Captain speaking: the cabin cameras showed nothing but static last night. Somebody’s phone was off airplane mode.',
+    'This is your captain. Someone switched airplane mode off last night and jammed my cameras. Phones in airplane mode, please.',
+  ],
   lunch_drugged: [
     'I slept through the whole night. Something in my {dish} knocked me out, so whoever sat near me at lunch drugged it.',
     'My {dish} was drugged. I was out cold all night. Who was near {seat} at lunch?',
@@ -161,7 +166,7 @@ export function say(kind: LineKind, fill: Fill, t: Tone, rng: () => number): str
   const template = options[Math.floor(rng() * options.length)];
   const filled = template.replace(/\{(\w+)\}/g, (_, key: string) => fill[key as keyof Fill] ?? '');
   // (Announcements over the PA keep their captain's voice, whatever the bot's tone.)
-  const voiced = kind === 'pa_cameras' || kind === 'pa_quiet' ? filled : tone(filled, t, kind, fill, rng);
+  const voiced = kind === 'pa_cameras' || kind === 'pa_quiet' || kind === 'pa_jammed' ? filled : tone(filled, t, kind, fill, rng);
   // A reason slotted in after a full stop starts a sentence.
   const shaped = voiced.replace(/([.!?]\s+)([a-z])/g, (_, stop: string, c: string) => stop + c.toUpperCase());
   return fit(shaped.charAt(0).toUpperCase() + shaped.slice(1));

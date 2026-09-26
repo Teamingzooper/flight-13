@@ -228,6 +228,10 @@ export function checkAction(s: GameState, p: PlayerState, action: NightAction): 
     }
     case 'knockout':
       return 'Only a saboteur up in the jump seat can do that.';
+    case 'jam':
+      if (p.role !== 'mastermind') return 'Only the Mastermind can jam the cabin cameras.';
+      if (p.jamUsed) return 'You already switched airplane mode off on this flight.';
+      return activePlayers(s).some((o) => isPilot(o.role) && isCockpit(o.seat)) ? null : 'No Pilot is watching the cabin cameras.';
     default:
       return 'Unknown action.';
   }
@@ -283,6 +287,8 @@ export function possibleActions(s: GameState, p: PlayerState): NightAction[] {
   }
   // Up in the jump seat, a saboteur can knock the Pilot out.
   if (isSaboteur(p.role)) candidates.push({ kind: 'knockout' });
+  // The Mastermind's phone, once per flight.
+  if (p.role === 'mastermind') candidates.push({ kind: 'jam' });
   // Anyone can look under their own seat (or search the lavatory they are in) instead.
   candidates.push({ kind: 'search' });
   return candidates.filter((a) => checkAction(s, p, a) === null);

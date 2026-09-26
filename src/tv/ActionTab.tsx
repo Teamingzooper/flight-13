@@ -182,6 +182,33 @@ function MovePanel({ ctx }: { ctx: TVContext }) {
   );
 }
 
+/**
+ * The Mastermind, once per flight and instead of planting: take your phone off airplane mode, and the Pilot's cabin
+ * cameras show nothing but static tonight.
+ */
+function JamCard({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
+  const { game, send } = ctx;
+  const you = game.you!;
+  const jam = actions.find((a) => a.kind === 'jam');
+  const chosen = game.mine?.action?.kind === 'jam';
+  if (you.jamUsed) return <p class="muted used-note">Airplane mode: already switched off on this flight.</p>;
+  return (
+    <div class={`ability-card jam-card${chosen ? ' on' : ''}`}>
+      <div class="ability-title">Take your phone off airplane mode</div>
+      <p class="muted">
+        Once per flight, instead of planting. Your phone floods the cabin with signal and the Pilot’s cameras show nothing but static tonight: cover
+        for whatever your team is up to. The Pilot finds out the cameras were jammed, not who jammed them.
+      </p>
+      <div class="row">
+        <button class={`btn${chosen ? ' primary' : ''}`} disabled={!jam} onClick={() => void send({ kind: 'act', action: { kind: 'jam' } })}>
+          {chosen ? '✓ Airplane mode off tonight' : 'Switch airplane mode off'}
+        </button>
+        {!jam && <span class="muted">No Pilot is watching the cameras.</span>}
+      </div>
+    </div>
+  );
+}
+
 /** Once per flight: hide in the lavatory for the night instead of moving. */
 function WashroomCard({ ctx }: { ctx: TVContext }) {
   const { game, send } = ctx;
@@ -268,8 +295,15 @@ function AbilityPanel({ ctx }: { ctx: TVContext }) {
       body = <InvestigatorPicker ctx={ctx} actions={actions} />;
       break;
     case 'bomber':
-    case 'mastermind':
       body = <BombPicker ctx={ctx} actions={actions} />;
+      break;
+    case 'mastermind':
+      body = (
+        <>
+          <BombPicker ctx={ctx} actions={actions} />
+          <JamCard ctx={ctx} actions={actions} />
+        </>
+      );
       break;
     case 'marshal':
       body = you.cuffsUsed && you.usesLeft === null ? (

@@ -176,6 +176,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     roughAirUsed: false,
     courseUsed: false,
     knockedOutNight: null,
+    jamUsed: false,
     abilityUses: 0,
   }));
   for (const p of s.players) s.stats[p.id] = { kills: 0, rescues: 0, found: 0, defused: 0 };

@@ -18,6 +18,24 @@ function flight(): GameState {
 }
 
 describe('the camera tape', () => {
+  it('is only static on a night a Mastermind jammed the cameras', () => {
+    const s = makeGame([
+      { id: 'pilot', role: 'pilot', seat: COCKPIT },
+      { id: 'mm', role: 'mastermind', seat: '4C' },
+      { id: 'nurse', role: 'nurse', seat: '5B' },
+      { id: 'mid', role: 'passenger', seat: '5C' },
+      { id: 'edge', role: 'passenger', seat: '6F' },
+      { id: 'far', role: 'passenger', seat: '8A' },
+    ]);
+    advanceTo(s, 'night_act', 1);
+    act(s, 'pilot', { kind: 'watch', startRow: 3 });
+    act(s, 'mm', { kind: 'jam' });
+    act(s, 'nurse', { kind: 'treat', target: 'mid' });
+    advanceTo(s, 'day_discuss', 1);
+    const tape = planTape(viewFor(s, 'pilot', 0), () => null)!;
+    expect(tape).toMatchObject({ night: 1, rows: [3, 4, 5], jammed: true, clips: [], cast: [] });
+  });
+
   it('replays each sighting in turn, with its caption and a night clock', () => {
     const s = flight();
     advanceTo(s, 'night_act', 1);
