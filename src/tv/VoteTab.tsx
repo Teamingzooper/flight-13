@@ -14,9 +14,13 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
       <div class="tab">
         {discussing && (
           <div class="callout">
-            <span>The vote opens when the discussion ends, or sooner once everyone is ready.</span>
+            <span>
+              {game.voteToday
+                ? 'The vote opens when the discussion ends, or sooner once everyone is ready.'
+                : 'No vote today: nothing happened last night. The lights go out when the discussion ends, or sooner once everyone is ready.'}
+            </span>
             <button class="btn primary small" disabled={ready} onClick={() => void send({ kind: 'ready' })}>
-              {ready ? 'Ready ✓ waiting for the others' : 'Ready to vote'}
+              {ready ? 'Ready ✓ waiting for the others' : game.voteToday ? 'Ready to vote' : 'Ready for tonight'}
             </button>
           </div>
         )}
@@ -69,7 +73,7 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
               {p.id === game.you?.id ? ' (you)' : ''}
             </span>
             {ally && <span class="vote-ally">Saboteur{p.role ? ` · ${roleName(p.role, game.settings)}` : ''}</span>}
-            <span class="vote-seat">{seatPill(p.seat)}</span>
+            {!game.blackout && <span class="vote-seat">{seatPill(p.seat)}</span>}
             <span class="vote-count">{counts[p.id] ?? 0}</span>
             {voters(p.id).length > 0 && <span class="vote-voters">{voters(p.id).join(', ')}</span>}
           </button>

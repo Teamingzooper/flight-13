@@ -180,7 +180,7 @@ describe('Flight School', () => {
     expect(view().log.some((e) => e.tag === 'watch' && e.text.includes('Mia (bot) bent down under their seat'))).toBe(true);
     expect(coach()?.text).toMatch(/cameras caught Mia/);
     await until('day_discuss');
-    expect(coach()?.text).toMatch(/Switch the chat to PA/);
+    expect(coach()?.text).toMatch(/announcement on the PA/);
     await accuse('Mia', 'Flight deck here: my cameras caught Mia bending under 3C.', 'pa');
     await until('ended');
     expect(view().result).toMatchObject({ winner: 'passengers' });

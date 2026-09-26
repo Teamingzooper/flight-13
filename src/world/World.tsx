@@ -7,7 +7,7 @@ import { EMOTES, canEmote } from '../net/emotes';
 import { CoursePicker, PaPanel } from '../tv/PilotPanels';
 import type { ClientState } from '../net/protocol';
 import { canPa } from '../net/voiceRules';
-import { captainName, clock, phaseTitle } from '../tv/format';
+import { awaitingYou, captainName, clock, phaseTitle } from '../tv/format';
 import { IconSound } from '../tv/icons';
 import { PhaseOverlay, reopenPhaseCard, usePhaseOverlayOpen } from '../tv/Overlays';
 import { usePacking } from '../tv/packing';
@@ -347,15 +347,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   }
 
   const you = game.you;
-  const needsInput =
-    !scene &&
-    !!you &&
-    you.status === 'alive' &&
-    !you.buckled &&
-    !you.drowsy &&
-    ((kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
-      (kind === 'night_act' && !game.mine?.acted) ||
-      (kind === 'day_vote' && game.mine?.vote === null));
+  const needsInput = !scene && awaitingYou(game) !== null;
   const useIt = TOUCH ? 'use your screen' : 'click your screen or press E';
   const fx = statusFx(game);
   // What the vignette means, said once in the hint line.

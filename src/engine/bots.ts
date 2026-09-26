@@ -76,7 +76,8 @@ export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent
       return [...intents, ...maybeUse(s, p, h, 'mirror', 0.3)];
     }
     case 'night_act': {
-      if (s.night.drowsy[p.id]) return [];
+      // Drugged at lunch, or slipped a sleeping pill: asleep.
+      if (s.night.drowsy[p.id] || s.night.asleep[p.id]) return [];
       if (isGuest(s, p.id)) {
         // Up in the jump seat: now and then a saboteur knocks the Pilot out; a Nurse treats him if he is poisoned.
         const actions = possibleActions(s, p);

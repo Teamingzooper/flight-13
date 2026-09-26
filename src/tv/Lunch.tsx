@@ -86,8 +86,8 @@ function Tamper({ ctx }: { ctx: TVContext }) {
       ) : (
         <>
           Slip a sleeping draught into one dish around {reach === 'any' ? 'any row you serve' : reachLabel(game, reach)}. Whoever has it there
-          sleeps through tonight: no seat change, no ability. Your team gets one go. Pick the dish your targets got, and remember you eat yours
-          too{meal.orders[you.id] ? ` (the ${meal.orders[you.id]})` : ''}.
+          sleeps through tonight: no seat change, no ability. Your team gets one go. Pick the dish your targets got
+          {reach === 'any' ? '.' : `, and remember you eat yours too${meal.orders[you.id] ? ` (the ${meal.orders[you.id]})` : ''}.`}
         </>
       )}
       {reach === 'any' && !done && (

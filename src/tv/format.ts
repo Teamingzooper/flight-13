@@ -19,10 +19,34 @@ export function nameOf(game: PlayerView, id: string | null | undefined): string 
   return playerById(game, id)?.name ?? 'someone';
 }
 
+/**
+ * What the flight is waiting on you for right now (the same things the phase needs from you before it can end early):
+ * a move or the Pilot's seatbelt call at lights out, an action in the dark, a vote. Nothing while you are asleep,
+ * buckled in or out of play.
+ */
+export function awaitingYou(game: PlayerView): 'action' | 'vote' | null {
+  const you = game.you;
+  if (!you || you.status !== 'alive' || you.buckled || you.drowsy || you.asleep) return null;
+  const mine = game.mine;
+  const pilot = you.role === 'pilot' || you.role === 'pilot_rogue';
+  switch (game.phase.kind) {
+    case 'night_move':
+      if (pilot) return !you.knockedOut && mine?.seatbelt === null ? 'action' : null;
+      return mine?.move === null ? 'action' : null;
+    case 'night_act':
+      return pilot && you.knockedOut ? null : mine?.acted ? null : 'action';
+    case 'day_vote':
+      return (game.options?.vote.length ?? 0) > 0 && mine?.vote === null ? 'vote' : null;
+    default:
+      return null;
+  }
+}
+
 export function nameWithSeat(game: PlayerView, id: string): string {
   const p = playerById(game, id);
   if (!p) return 'someone';
-  return p.seat ? `${p.name} (${placeLabel(p.seat)})` : p.name;
+  // (In a blackout the seat map is down: nobody can tell who sits where.)
+  return p.seat && !game.blackout ? `${p.name} (${placeLabel(p.seat)})` : p.name;
 }
 
 /** A seat, where the Stewardess is working ("crew, row 5"), or the flight deck. */
@@ -89,6 +113,7 @@ export function phaseHint(game: PlayerView): string {
       return 'Fasten your seatbelt. Wheels up in a moment.';
     case 'night_move':
       if (!playing) return 'The living are changing seats in the dark.';
+      if (you.drowsy) return 'You are fast asleep tonight.';
       if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Make your flight deck calls: seatbelt sign, jump seat, rough air, course.';
       if (you.buckled) return 'The seatbelt sign is on over your seat.';
       // (Typed chat is shut at night; voice chat allows a whisper to the seats right round you, if the captain allows it.)
@@ -97,6 +122,7 @@ export function phaseHint(game: PlayerView): string {
         : 'Change seats or stay put. Nobody can talk.';
     case 'night_act':
       if (!playing) return 'Abilities are being used in the dark.';
+      if (you.drowsy || you.asleep) return 'You are fast asleep tonight.';
       if (you.role === 'pilot' || you.role === 'pilot_rogue') return 'Aim the cabin cameras at three rows.';
       if (you.inJumpSeat) return 'You are up on the flight deck tonight.';
       return you.buckled ? 'You are buckled in. Wait for dawn.' : 'Use your ability from your new seat, or rest.';
@@ -126,7 +152,7 @@ export function describeAction(game: PlayerView, action: NightAction): string {
     case 'poison':
       return `slip poison to ${nameWithSeat(game, action.target)}`;
     case 'check':
-      return `check under the ${action.side === 'left' ? 'A, B and C' : 'D, E and F'} seats of your row`;
+      return `check under the ${action.side === 'left' ? 'left-hand' : 'right-hand'} seats of your row`;
     case 'plant': {
       const where =
         action.where === 'seat' ? describeLocation({ kind: 'seat', seat: game.you?.seat ?? '?' }) : describeLocation({ kind: action.where });

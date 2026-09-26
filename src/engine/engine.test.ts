@@ -40,10 +40,20 @@ describe('phase flow', () => {
     const t = s.phase.startedAt + 1000;
     for (const id of ['bomber', 'pilot', 'p1', 'p2', 'p3']) applyIntent(s, id, { kind: 'move', to: 'stay' }, t);
     expect(s.phase.earlyEndAt).toBeNull();
+    applyIntent(s, 'pilot', { kind: 'jumpseat', target: 'none' }, t);
     applyIntent(s, 'pilot', { kind: 'seatbelt', target: 'none' }, t);
     expect(s.phase.earlyEndAt).toBe(t + 3000);
     expect(tick(s, t + 3000)).toBe(true);
     expect(s.phase.kind).toBe('night_act');
+  });
+
+  it('gives the Pilot longer when only his seatbelt call is in (the jump seat, rough air and course may follow)', () => {
+    const s = smallFlight();
+    advanceTo(s, 'night_move', 1);
+    const t = s.phase.startedAt + 1000;
+    for (const id of ['bomber', 'p1', 'p2', 'p3']) applyIntent(s, id, { kind: 'move', to: 'stay' }, t);
+    applyIntent(s, 'pilot', { kind: 'seatbelt', target: 'none' }, t);
+    expect(s.phase.earlyEndAt).toBe(t + 9000);
   });
 
   it('every passenger must press Done at night, even without an ability', () => {

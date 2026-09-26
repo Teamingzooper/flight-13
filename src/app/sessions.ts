@@ -109,9 +109,15 @@ export function openFlight(code: string, move?: string): ActiveFlight {
     });
     const flight: OpenFlight = { kind: 'ok', code, client, host, media: network.media ? { channel: network.media, selfId: network.selfId } : null };
     exposeForDev(flight);
+    // The flight pauses while its host is away (leaving it, or closing the tab), and carries on when they are back.
+    host.idle(false);
+    const away = () => host.hostLeft();
+    addEventListener('pagehide', away);
     active = {
       flight,
       stop: () => {
+        removeEventListener('pagehide', away);
+        host.hostLeft();
         stopTicker();
         client.close();
         host.close();

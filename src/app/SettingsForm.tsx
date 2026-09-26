@@ -116,7 +116,7 @@ export function describeRules(s: Settings): string[] {
     `The Stewardess turns rogue ${Math.round(s.stewardessRogueChance * 100)}% of the time.`,
     `The Pilot turns rogue ${Math.round(s.pilotRogueChance * 100)}% of the time (never if the saboteurs would stop being outnumbered).`,
     `Pace: nights ${t.night_move + t.night_act}s, discussion ${discuss}s, votes ${t.day_vote}s.`,
-    s.voteMode === 'daily' ? 'A vote every day.' : 'Votes only after a night with a death or an explosion.',
+    s.voteMode === 'daily' ? 'A vote every day.' : 'Votes only after a night when something happened (a death, a blast, handcuffs or a defused bomb).',
     s.revealRoles ? 'Roles are revealed when someone is out.' : 'Roles stay secret until landing.',
     s.anonymousVotes ? 'Votes are anonymous.' : 'Everyone sees who voted for whom.',
     s.whispers ? 'Whispers to nearby seats are allowed.' : 'No whispering.',
@@ -484,7 +484,7 @@ export function SettingsForm({
             checked={s.voteMode === 'daily'}
             onChange={(v) => set({ voteMode: v ? 'daily' : 'afterIncident' })}
             title="Vote every day"
-            hint="Off: only vote after a night with a death or an explosion."
+            hint="Off: only vote after a night when something happened (a death, a blast, handcuffs or a defused bomb)."
           />
           <Toggle checked={s.anonymousVotes} onChange={(v) => set({ anonymousVotes: v })} title="Anonymous votes" />
           <Toggle checked={s.whispers} onChange={(v) => set({ whispers: v })} title="Whispers to nearby seats" />

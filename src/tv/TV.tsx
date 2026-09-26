@@ -12,7 +12,7 @@ import { BoardingPanel, PackingPanel } from './CarryOn';
 import { ChatTab } from './ChatTab';
 import type { TVContext } from './context';
 import { FlightTab } from './FlightTab';
-import { captainName } from './format';
+import { awaitingYou, captainName } from './format';
 import { Header } from './Header';
 import { TutorialCoach } from '../tutorial/Coach';
 import { CaptainMenu, PausedBanner } from './CaptainMenu';
@@ -103,12 +103,9 @@ export function TV({
   const unread = useUnread(game, tab === 'chat');
 
   const you = game.you;
-  const acting = !!you && you.status === 'alive' && !you.buckled;
-  const pendingAction =
-    acting &&
-    ((game.phase.kind === 'night_move' && (game.mine?.move === null || (you.role === 'pilot' && game.mine?.seatbelt === null))) ||
-      (game.phase.kind === 'night_act' && !game.mine?.acted));
-  const pendingVote = game.phase.kind === 'day_vote' && game.options !== null && game.mine?.vote === null;
+  const waiting = awaitingYou(game);
+  const pendingAction = waiting === 'action';
+  const pendingVote = waiting === 'vote';
   const preflight = game.phase.kind === 'packing' || game.phase.kind === 'boarding';
   const badges: Partial<Record<TabId, string>> = {
     action: pendingAction ? '!' : undefined,

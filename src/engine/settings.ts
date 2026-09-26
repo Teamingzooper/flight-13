@@ -8,6 +8,8 @@ export const MIN_PLAYERS = 4;
 /** The most any plane carries (the jumbo); each plane has its own range (engine/planes.ts). */
 export const MAX_PLAYERS = 24;
 export const EARLY_END_GRACE_MS = 3000;
+/** Lights out, with the Pilot's seatbelt call in but his other calls not: a little longer to make them. */
+export const FLIGHT_DECK_GRACE_MS = 9000;
 /** After the last night action, long enough to finish looking under your seat before the lights come on. */
 export const NIGHT_ACT_GRACE_MS = 7000;
 export const CHAT_MAX_LENGTH = 200;

@@ -2,6 +2,8 @@ import { phaseDue, tick } from './engine';
 import { defaultSettings } from './settings';
 import { createGame } from './setup';
 import { getPlayer } from './state';
+import { aisleRow } from './grid';
+import { isStewardess } from './roles';
 import type { DestinationId, GameState, Look, PhaseKind, PlayerState, RoleId, SeatId, Settings } from './types';
 
 export const TEST_LOOK: Look = { body: 0, skin: 0, hair: 0, hairColor: 0, top: 0, topStyle: 0, bottom: 0 };
@@ -34,6 +36,9 @@ export function makeGame(
     p.role = tp.role;
     p.seat = tp.seat;
   }
+  // The cart starts with the first Stewardess, wherever she was put (as a real flight's setup does).
+  const crew = s.players.find((p) => isStewardess(p.role) && aisleRow(p.seat) !== null);
+  if (crew) s.cabin.cartRow = aisleRow(crew.seat)!;
   return s;
 }
 

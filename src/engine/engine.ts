@@ -7,7 +7,7 @@ import { checkTamper, closeLunch, tamperLunch } from './meal';
 import { resolveMoves, resolveNight, searchSeat, startNight } from './night';
 import { isPilot, isSaboteur } from './roles';
 import { checkAction, checkCourse, checkJumpseat, checkMove, checkRoughAir, checkSeatbelt, flightDeckError } from './rules';
-import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH, PA_COOLDOWN_MS, PA_MAX_LENGTH } from './settings';
+import { CHAT_COOLDOWN_MS, CHAT_HISTORY, CHAT_MAX_LENGTH, EARLY_END_GRACE_MS, FLIGHT_DECK_GRACE_MS, NIGHT_ACT_GRACE_MS, NOTE_MAX_LENGTH, PA_COOLDOWN_MS, PA_MAX_LENGTH } from './settings';
 import { clearedForTakeoff } from './setup';
 import { activePlayers, addLog, cellOf, getPlayer, inWashroom, isActive, newId, setPhase } from './state';
 import type { ChatChannel, ChatMessage, GameState, Intent, IntentResult, PhaseKind, PlayerState } from './types';
@@ -105,6 +105,7 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
       if (s.phase.kind !== 'night_act') return fail('Abilities are used at night, after seats change.');
       if (s.night.buckled[p.id]) return fail('You are buckled in tonight.');
       if (s.night.drowsy[p.id]) return fail('You are fast asleep tonight.');
+      if (s.night.asleep[p.id]) return fail('You dozed off: someone slipped something into your water.');
       if (s.night.searched[p.id]) return fail(inWashroom(s, p.id) ? 'You already searched the lavatory tonight.' : 'You already spent tonight looking under your seat.');
       if (intent.action) {
         const error = checkAction(s, p, intent.action);
@@ -168,6 +169,7 @@ function allSubmitted(s: GameState): boolean {
         (p) =>
           s.night.buckled[p.id] !== undefined ||
           s.night.drowsy[p.id] !== undefined ||
+          s.night.asleep[p.id] !== undefined ||
           p.id in s.night.actions ||
           (isPilot(p.role) && flightDeckError(s, p) !== null),
       );
@@ -183,7 +185,9 @@ function allSubmitted(s: GameState): boolean {
 /** Once every eligible player has submitted, end the phase after a short grace period. */
 export function scheduleEarlyEnd(s: GameState, now: number): void {
   if (s.phase.earlyEndAt !== null || !allSubmitted(s)) return;
-  const grace = s.phase.kind === 'night_act' ? NIGHT_ACT_GRACE_MS : EARLY_END_GRACE_MS;
+  // A Pilot who has only set the seatbelt sign may still be making his other calls (jump seat, rough air, course).
+  const deckBusy = s.phase.kind === 'night_move' && activePlayers(s).some((p) => isPilot(p.role) && !(p.id in s.night.jumpseats) && flightDeckError(s, p) === null);
+  const grace = s.phase.kind === 'night_act' ? NIGHT_ACT_GRACE_MS : deckBusy ? FLIGHT_DECK_GRACE_MS : EARLY_END_GRACE_MS;
   s.phase.earlyEndAt = Math.min(s.phase.endsAt, now + grace);
 }
 

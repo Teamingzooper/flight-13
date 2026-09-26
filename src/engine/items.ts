@@ -137,6 +137,7 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
   const kind = s.phase.kind;
   if (info.when === 'night' && !NIGHT.has(kind)) return `Your ${name} is for use at night.`;
   if (NIGHT.has(kind) && s.night.drowsy[p.id]) return 'You are fast asleep tonight.';
+  if (kind === 'night_act' && s.night.asleep[p.id]) return 'You dozed off: someone slipped something into your water.';
   if (info.when === 'day' && !DAY.has(kind)) return `Your ${name} is for use during the day.`;
   switch (use.item) {
     case 'defuser':
@@ -167,6 +168,7 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
     case 'mirror':
       return s.night.mirrors[p.id] ? 'Your mirror is already out.' : null;
     case 'ffcard':
+      if (s.settings.voteMode !== 'daily' && !s.incidentAtDawn) return 'There is no vote today.';
       return s.day.doubled[p.id] ? 'Your vote already counts twice today.' : null;
     default:
       return 'That item cannot be used like that.';

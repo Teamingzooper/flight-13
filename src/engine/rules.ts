@@ -272,7 +272,8 @@ export function possibleActions(s: GameState, p: PlayerState): NightAction[] {
     case 'bomber':
     case 'mastermind':
       for (const where of ['seat', 'cart', 'lavatory'] as const) {
-        for (const fuse of [1, 2] as const) candidates.push({ kind: 'plant', where, fuse });
+        // (A fuse that outlasts the flight would never go off.)
+        for (const fuse of [1, 2] as const) if (s.phase.night + fuse <= s.nights) candidates.push({ kind: 'plant', where, fuse });
       }
       break;
     case 'marshal':

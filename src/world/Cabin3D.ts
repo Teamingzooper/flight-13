@@ -438,7 +438,7 @@ export class Cabin3D {
     // Known bombs show as devices (planters, investigators, and anyone who found one under their seat).
     effects.devices.set(
       game.bombs
-        .filter((b) => !b.exploded)
+        .filter((b) => !b.exploded && !b.defused)
         .map((b) => ({
           id: b.id,
           place: b.location.kind === 'seat' ? { kind: 'seat' as const, cell: grid.parseSeat(b.location.seat)! } : { kind: b.location.kind },
