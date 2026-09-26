@@ -601,6 +601,7 @@ export class HostSession {
       }
       case 'kick': {
         if (s.game) return fail('You cannot remove passengers mid-flight.');
+        if (s.tutorial) return fail('Flight School needs every one of its bots.');
         const target = this.player(cmd.playerId);
         if (!target) return fail('No such passenger.');
         if (!target.bot && target.token === s.hostToken) return fail('You cannot remove yourself.');
@@ -614,6 +615,7 @@ export class HostSession {
       }
       case 'addBot': {
         if (s.game) return fail('The doors are closed.');
+        if (s.tutorial) return fail('Flight School has its own cast.');
         if (s.players.length >= s.settings.maxPassengers) return fail('The flight is full.');
         // A first name nobody aboard has (bots are talked to by name), while there are any left.
         const taken = new Set(s.players.map((p) => p.name.split(' ')[0].toLowerCase()));

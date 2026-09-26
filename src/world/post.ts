@@ -2,7 +2,7 @@ import {
   BlendFunction,
   BloomEffect,
   ChromaticAberrationEffect,
-  type Effect,
+  Effect,
   type EffectComposer,
   EffectPass,
   NoiseEffect,
@@ -16,6 +16,29 @@ import { N8AOPostPass } from 'n8ao';
 import * as THREE from 'three';
 import type { GraphicsProfile } from './graphics';
 
+/**
+ * Black for any pixel that is not a number (or is infinite). One such pixel anywhere, from a bad vertex or a shader
+ * dividing by zero, is spread by bloom's blur into a big black rectangle (or strips a colour from the whole frame), so
+ * they are caught here, before bloom sees them. (Bits, not isnan(): some drivers optimise isnan away.)
+ */
+class FiniteEffect extends Effect {
+  constructor() {
+    super(
+      'FiniteEffect',
+      /* glsl */ `
+        bool notFinite(float x) {
+          return (floatBitsToUint(x) & 0x7f800000u) == 0x7f800000u;
+        }
+        void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+          bool bad = notFinite(inputColor.r) || notFinite(inputColor.g) || notFinite(inputColor.b) || notFinite(inputColor.a);
+          outputColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : inputColor;
+        }
+      `,
+      { blendFunction: BlendFunction.SET },
+    );
+  }
+}
+
 /** The passes a graphics setting put in a composer (to point at another scene, or throw away). */
 export interface PostChain {
   ao: N8AOPostPass | null;
@@ -24,7 +47,8 @@ export interface PostChain {
 
 /**
  * The effects chain for a graphics setting, into `composer` (its old passes removed): ambient occlusion straight
- * after the scene, then bloom, vignette, film grain and tone mapping, lens fringing, and SMAA to smooth edges.
+ * after the scene, a guard against pixels that are not numbers, then bloom, vignette, film grain and tone mapping, lens
+ * fringing, and SMAA to smooth edges.
  */
 export function buildPostChain(
   composer: EffectComposer,
@@ -51,6 +75,10 @@ export function buildPostChain(
     composer.addPass(ao);
     chain.ao = ao;
   }
+  // (Its own pass: bloom reads the pass's input, not what effects in the same pass make of it.)
+  const finite = new FiniteEffect();
+  chain.effects.push(finite);
+  composer.addPass(new EffectPass(camera, finite));
   const main: Effect[] = [];
   if (p.bloom) {
     main.push(

@@ -116,7 +116,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
                   {p.id === state.you && <span class="badge cyan">You</span>}
                   {!p.connected && <span class="badge red">Offline</span>}
                 </span>
-                {state.isHost && !p.host && (
+                {state.isHost && !p.host && !state.tutorial && (
                   <button class="btn ghost tiny" onClick={() => run(client.command({ kind: 'kick', playerId: p.id }))}>
                     Remove
                   </button>
@@ -125,7 +125,7 @@ export function Boarding({ flight, state }: { flight: OpenFlight; state: ClientS
             ))}
             {state.players.length === 0 && <li class="muted">Nobody aboard yet.</li>}
           </ul>
-          {state.isHost && (
+          {state.isHost && !state.tutorial && (
             <div class="row">
               <button
                 class="btn ghost small"
