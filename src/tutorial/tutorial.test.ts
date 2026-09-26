@@ -89,6 +89,15 @@ describe('Flight School', () => {
     }
   });
 
+  it('keeps its cast: no bots added or removed', async () => {
+    const { you } = school('passenger');
+    await settle();
+    const mia = you.snapshot.state!.players.find((p) => p.name === 'Mia (bot)')!;
+    expect(await you.command({ kind: 'kick', playerId: mia.id })).toMatchObject({ ok: false });
+    expect(await you.command({ kind: 'addBot' })).toMatchObject({ ok: false });
+    expect(you.snapshot.state!.players).toHaveLength(6);
+  });
+
   it('Passenger: waits for you, and plays out to a win: flashlight, chat, vote', async () => {
     const { wait, view, coach, until, send, board, accuse } = school('passenger');
     await board(['flashlight']);
