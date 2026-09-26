@@ -3,6 +3,22 @@
 A social-deduction game at 35,000 feet: saboteurs, passengers and a bomb or two, played peer to peer in
 the browser. Live at https://teamingzooper.github.io/flight-13/.
 
+## Flight School
+
+**Tutorial flight** on the Terminal pans across to your seat, 3A. You reach into the seatback pocket in front, take out
+the safety card, and point at one of its five lessons: **Passenger, Nurse, Stewardess, Pilot** or **Bomber**. Click
+one, the card comes up close on that panel, and its tutorial flight boards.
+
+Every lesson is the same short flight with five scripted bots, cast differently, and a coach that says what to do next:
+
+- **Passenger:** your flashlight finds the bomb under your neighbour's seat.
+- **Nurse:** you keep someone alive through a blast.
+- **Stewardess:** you walk the drink cart to a row and check under the seats.
+- **Pilot:** you watch the cabin cameras and tell the plane over the PA.
+- **Bomber:** you plant, frame the Investigator, and get clear before it goes off.
+
+Stray from the script and the flight carries on, with the bots thinking for themselves.
+
 ## Voice chat
 
 Press **Voice** (in the lobby, or top right in the cabin) to talk out loud.

@@ -1664,3 +1664,197 @@
   font-weight: 600;
   line-height: 20px;
 }
+
+/*
+ * The Terminal and Flight School's safety card, side by side: Tutorial pans the view across to your seat (the
+ * Terminal slides off to the left as the cabin slides in from the right), and Back pans home again.
+ */
+.home-track {
+  position: relative;
+  overflow-x: clip;
+}
+
+.home-track > .home {
+  transition: transform 1.2s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.home-track.panned > .home {
+  transform: translateX(-100vw);
+}
+
+.picker {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  background: #05070c;
+  transform: translateX(100vw);
+  transition: transform 1.2s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.home-track.panned > .picker {
+  transform: none;
+}
+
+/* Reduced motion: a cross-fade instead of the pan. */
+.reduce-motion .home-track > .home,
+.reduce-motion .picker {
+  transform: none;
+  transition: opacity 0.35s ease;
+}
+
+.reduce-motion .picker {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reduce-motion .home-track.panned > .picker {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reduce-motion .home-track.panned > .home {
+  opacity: 0;
+}
+
+.picker-gl {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.picker-gl canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.picker-gl.pointing {
+  cursor: pointer;
+}
+
+.picker-back {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: 16px;
+  z-index: 2;
+  background: rgba(8, 12, 20, 0.6);
+  backdrop-filter: blur(8px);
+  transition: opacity 0.3s ease;
+}
+
+.picker-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(calc(100vw - 32px), 760px);
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(8, 12, 20, 0.72);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translate(-50%, 16px);
+  pointer-events: none;
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+}
+
+.picker-bar.shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.picker-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.picker-caption b {
+  font: 800 24px/1 var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.picker-caption p {
+  margin: 2px 0 0;
+  color: var(--dim);
+}
+
+.picker-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--amber);
+  border-radius: 50%;
+  background: #14213d;
+  font: 800 19px var(--display);
+}
+
+.picker-num.saboteur {
+  border-color: #ffb3ab;
+  background: #c8342b;
+}
+
+.picker-roles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.picker-roles .chip.saboteur.on {
+  border-color: var(--red);
+  background: var(--red);
+  color: #2a0506;
+}
+
+.picker-hint {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+  width: 100%;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font: 600 15px var(--display);
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: fade-in 0.8s 1.4s both;
+}
+
+.picker-hint span {
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Picked: the panel fills your eyes, then black. */
+.picker-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+
+.picker.leaving .picker-fade {
+  opacity: 1;
+}
+
+.picker.leaving .picker-bar,
+.picker.leaving .picker-back {
+  opacity: 0;
+}

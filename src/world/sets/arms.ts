@@ -17,6 +17,11 @@ const FORE = 0.28;
 export const GRAB_POINT = new THREE.Vector3(0, -0.034, -0.06);
 export const PINCH_POINT = new THREE.Vector3(-0.012, -0.018, -0.108);
 
+/** The tip of the forefinger held out straight (pointing), in the hand's frame. */
+export function indexTip(side: Side): THREE.Vector3 {
+  return new THREE.Vector3(side === 'right' ? -0.028 : 0.028, -0.012, -0.142);
+}
+
 /** The rotation that points the fingers along `forward` with the palm facing `palm` (both world directions). */
 export function handFacing(forward: THREE.Vector3, palm: THREE.Vector3): THREE.Quaternion {
   const z = forward.clone().normalize().negate();
@@ -32,6 +37,8 @@ interface Finger {
   mid: THREE.Group;
   /** How far this finger curls in a pinch (the forefinger most, the little finger tucks away). */
   pinch: number;
+  /** The forefinger: it stays out straight to point. */
+  fore: boolean;
 }
 
 function capsule(radius: number, length: number, material: THREE.Material): THREE.Mesh {
@@ -55,8 +62,11 @@ export class Arm {
   readonly targetQuat = new THREE.Quaternion();
   grip = 0;
   pinch = 0;
+  /** Pointing: the forefinger out straight, the others curled into the palm and the thumb over them. */
+  pointing = 0;
   targetGrip = 0;
   targetPinch = 0;
+  targetPointing = 0;
   /** Spring stiffness (higher: snappier) and how much the spring is damped (1: no overshoot). */
   stiffness = 110;
   damping = 0.9;
@@ -111,9 +121,8 @@ export class Arm {
       mid.add(capsule(0.0078, lengths[i] * 0.45, skin));
       base.add(mid);
       this.hand.add(base);
-      // (The forefinger is the one on the thumb's side.)
-      const fromThumb = this.side === 'right' ? i : 3 - i;
-      this.fingers.push({ base, mid, pinch: [0.55, 1.05, 1.25, 1.35][fromThumb] });
+      // (Counted from the thumb's side on either hand: the spread is mirrored, so the first is the forefinger.)
+      this.fingers.push({ base, mid, pinch: [0.55, 1.05, 1.25, 1.35][i], fore: i === 0 });
     });
     const thumbBase = new THREE.Group();
     thumbBase.position.set(-0.036 * this.sign, -0.014, -0.028);
@@ -149,6 +158,13 @@ export class Arm {
     return at.clone().applyQuaternion(this.quat).add(this.pos);
   }
 
+  /** Where the forefinger's tip is now, in the world (from the finger itself). */
+  fingerTip(): THREE.Vector3 {
+    const fore = this.fingers.find((f) => f.fore)!;
+    this.hand.updateMatrixWorld(true);
+    return fore.mid.localToWorld(new THREE.Vector3(0, 0, -0.0271));
+  }
+
   /** The hand's frame now (for holding things rigidly). */
   matrix(): THREE.Matrix4 {
     return new THREE.Matrix4().compose(this.pos, this.quat, new THREE.Vector3(1, 1, 1));
@@ -175,6 +191,7 @@ export class Arm {
     const ease = 1 - Math.exp(-dt * 16);
     this.grip += (this.targetGrip - this.grip) * ease;
     this.pinch += (this.targetPinch - this.pinch) * ease;
+    this.pointing += (this.targetPointing - this.pointing) * ease;
 
     // The elbow, from the shoulder and the wrist (leaning the shoulder in when the wrist is out of reach).
     const s = shoulder.clone();
@@ -198,11 +215,12 @@ export class Arm {
     this.hand.quaternion.copy(this.quat);
     // (Fingers point along -z and the palm faces -y, so curling in towards the palm is a negative turn about x.)
     for (const f of this.fingers) {
-      const curl = Math.max(this.grip, this.pinch * f.pinch * 0.9);
+      const held = Math.max(this.grip, this.pinch * f.pinch * 0.9);
+      const curl = f.fore ? held * (1 - this.pointing) : Math.max(held, this.pointing * 1.3);
       f.base.rotation.x = -curl * 1.0;
       f.mid.rotation.x = -curl * 1.15;
     }
-    const thumb = Math.max(this.grip * 0.8, this.pinch);
+    const thumb = Math.max(this.grip * 0.8, this.pinch, this.pointing * 0.8);
     this.thumb.base.rotation.set(-thumb * 0.35, (0.5 - thumb * 0.25) * this.sign, thumb * 0.4 * this.sign);
     this.thumb.tip.rotation.x = -thumb * 0.6;
   }

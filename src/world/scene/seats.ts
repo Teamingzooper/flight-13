@@ -4,6 +4,7 @@ import { grid, type SeatId } from '../../engine';
 import { BULKHEAD_Z, colX, rowZ } from '../layout';
 import { fabricTexture, idleScreenTexture } from '../textures';
 import { withDetail } from '../graphics';
+import { cardFrontTexture, magazineTexture } from '../sets/safetyCardArt';
 
 /** Seatbacks lean back (toward +z) by this much. */
 const RECLINE = 0.2;
@@ -21,7 +22,16 @@ export interface SeatParts {
   hideScreen(seat: SeatId | null): void;
   /** Darken a seat (1 = as new, lower = scorched). */
   tint(seat: SeatId, shade: number): void;
+  /** Hide the safety card in the pocket a seat's passenger faces (a hand is holding the real one). */
+  hideCard(seat: SeatId | null): void;
+  /** Where the card in that pocket stands (its bottom edge's centre, facing its passenger), or null (row 1). */
+  pocketCard(seat: SeatId): THREE.Matrix4 | null;
 }
+
+/** The literature pocket on each seatback, in the back's own frame (below the pivot, as the lower shell hangs). */
+export const POCKET = { y: -0.13, z: 0.078, w: 0.34, h: 0.2 } as const;
+/** The laminated safety card, and how far into its pocket it sits (its top edge shows above the pocket's lip). */
+export const SAFETY_CARD = { w: 0.32, h: 0.22, bottom: POCKET.y - POCKET.h / 2 + 0.012, z: 0.068 } as const;
 
 const tmp = new THREE.Object3D();
 
@@ -75,6 +85,14 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
   const screens: THREE.Matrix4[] = [];
   const screenIndex = new Map<SeatId, number>();
   const screenMatrices = new Map<SeatId, THREE.Matrix4>();
+  const lowerShells: THREE.Matrix4[] = [];
+  const pockets: THREE.Matrix4[] = [];
+  const bands: THREE.Matrix4[] = [];
+  const cards: THREE.Matrix4[] = [];
+  const magazines: THREE.Matrix4[] = [];
+  const bags: THREE.Matrix4[] = [];
+  /** Each seat's own card, by the seat whose back it is in. */
+  const cardMatrices = new Map<SeatId, THREE.Matrix4>();
 
   for (const seat of seats) {
     const cell = grid.parseSeat(seat)!;
@@ -85,6 +103,17 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
     shells.push(matrix(onBack(x, z, new THREE.Vector3(0, 0.32, 0.05)), RECLINE));
     headrests.push(matrix(onBack(x, z, new THREE.Vector3(0, 0.55, -0.05)), RECLINE));
     trays.push(matrix(onBack(x, z, new THREE.Vector3(0, 0.2, 0.068)), RECLINE));
+    // Below the back, its shell comes down to the seat frame, with the literature pocket on it and the top of the
+    // safety card showing above the pocket's lip.
+    lowerShells.push(matrix(onBack(x, z, new THREE.Vector3(0, -0.13, 0.045)), RECLINE));
+    pockets.push(matrix(onBack(x, z, new THREE.Vector3(0, POCKET.y, POCKET.z)), RECLINE));
+    bands.push(matrix(onBack(x, z, new THREE.Vector3(0, POCKET.y + POCKET.h / 2 - 0.006, POCKET.z + 0.004)), RECLINE));
+    const card = matrix(onBack(x, z, new THREE.Vector3(0, SAFETY_CARD.bottom, SAFETY_CARD.z)), RECLINE);
+    cards.push(card);
+    cardMatrices.set(seat, card);
+    // Behind the card: the inflight magazine, and a sick bag.
+    magazines.push(matrix(onBack(x, z, new THREE.Vector3(-0.055, SAFETY_CARD.bottom, SAFETY_CARD.z - 0.004)), RECLINE));
+    bags.push(matrix(onBack(x, z, new THREE.Vector3(0.1, SAFETY_CARD.bottom, SAFETY_CARD.z - 0.007)), RECLINE));
     legs.push(matrix(new THREE.Vector3(x - 0.15, 0.2, z - 0.08)), matrix(new THREE.Vector3(x + 0.15, 0.2, z - 0.08)));
     // Armrests: one to the left of every seat, plus the aisle/wall side of each block's last seat.
     arms.push(matrix(new THREE.Vector3(x - 0.225, 0.64, z)));
@@ -118,12 +147,28 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
   };
 
   // One instance per seat, in seat order, so a seat can be darkened after a blast.
+  const pocketCloth = withDetail(new THREE.MeshStandardMaterial({ color: '#39404d', roughness: 0.95 }), 'fabric', [4, 2], 0.8);
+  const band = new THREE.MeshStandardMaterial({ color: '#4d5564', roughness: 0.7 });
+  // The laminated card: glossy, its top strip (the header) all that shows.
+  const cardMaterial = new THREE.MeshStandardMaterial({ map: cardFrontTexture(), roughness: 0.32, side: THREE.DoubleSide });
+  const cardTop = cardStrip(SAFETY_CARD.w, SAFETY_CARD.h, SAFETY_CARD.h - (POCKET.y + POCKET.h / 2 - SAFETY_CARD.bottom) + 0.01);
+  const cardMesh = instanced(cardTop, cardMaterial, cards, false);
+  const magazineTop = new THREE.PlaneGeometry(0.2, 0.06);
+  magazineTop.translate(0, SAFETY_CARD.h + 0.018 - 0.03, 0);
+  instanced(magazineTop, new THREE.MeshStandardMaterial({ map: magazineTexture(), roughness: 0.45, side: THREE.DoubleSide }), magazines, false);
+  const bagTop = new THREE.PlaneGeometry(0.1, 0.05);
+  bagTop.translate(0, SAFETY_CARD.h + 0.01 - 0.025, 0);
+  instanced(bagTop, new THREE.MeshStandardMaterial({ color: '#ece8dd', roughness: 0.9, side: THREE.DoubleSide }), bags, false);
   const perSeat = [
     instanced(new RoundedBoxGeometry(0.43, 0.11, 0.46, 3, 0.045), fabric, cushions),
     instanced(new RoundedBoxGeometry(0.43, 0.66, 0.09, 3, 0.04), fabric, backs),
     instanced(new RoundedBoxGeometry(0.44, 0.64, 0.03, 2, 0.012), shell, shells),
     instanced(new RoundedBoxGeometry(0.3, 0.16, 0.012, 2, 0.005), headrest, headrests, false),
     instanced(new RoundedBoxGeometry(0.38, 0.28, 0.014, 2, 0.006), shell, trays, false),
+    instanced(new RoundedBoxGeometry(0.42, 0.26, 0.03, 2, 0.012), shell, lowerShells),
+    instanced(pocketGeometry(), pocketCloth, pockets, false),
+    instanced(new RoundedBoxGeometry(POCKET.w, 0.018, 0.012, 2, 0.005), band, bands, false),
+    cardMesh,
   ];
   const seatIndex = new Map(seats.map((seat, i) => [seat, i]));
   const shade = new THREE.Color();
@@ -134,6 +179,11 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
 
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
   let hidden: SeatId | null = null;
+  let hiddenCard: SeatId | null = null;
+  const seatAhead = (seat: SeatId): SeatId | null => {
+    const cell = grid.parseSeat(seat);
+    return cell && cell.row > 1 ? grid.seatId({ row: cell.row - 1, col: cell.col }) : null;
+  };
 
   return {
     group,
@@ -146,6 +196,18 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
       if (seat && screenIndex.has(seat)) screenMesh.setMatrixAt(screenIndex.get(seat)!, zero);
       screenMesh.instanceMatrix.needsUpdate = true;
     },
+    hideCard(seat) {
+      const ahead = seat ? seatAhead(seat) : null;
+      if (hiddenCard === ahead) return;
+      if (hiddenCard && seatIndex.has(hiddenCard)) cardMesh.setMatrixAt(seatIndex.get(hiddenCard)!, cardMatrices.get(hiddenCard)!);
+      hiddenCard = ahead;
+      if (ahead && seatIndex.has(ahead)) cardMesh.setMatrixAt(seatIndex.get(ahead)!, zero);
+      cardMesh.instanceMatrix.needsUpdate = true;
+    },
+    pocketCard(seat) {
+      const ahead = seatAhead(seat);
+      return ahead ? (cardMatrices.get(ahead)?.clone() ?? null) : null;
+    },
     tint(seat, amount) {
       const i = seatIndex.get(seat);
       if (i === undefined) return;
@@ -156,4 +218,33 @@ export function buildSeats(rows: number, cols: readonly number[] = grid.SEAT_COL
       }
     },
   };
+}
+
+/**
+ * The pocket: stretchy cloth, bulging out a little in the middle where the card and the magazines sit. A curved
+ * panel (its back flat against the shell).
+ */
+function pocketGeometry(): THREE.BufferGeometry {
+  const geometry = new THREE.PlaneGeometry(POCKET.w, POCKET.h, 12, 6);
+  const pos = geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) / (POCKET.w / 2);
+    const v = pos.getY(i) / (POCKET.h / 2);
+    // Fullest just below the lip, flat at the sides and the bottom seam.
+    pos.setZ(i, 0.014 * (1 - u * u) * Math.max(0, 1 - ((v - 0.35) / 1.35) ** 2));
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The safety card's top strip, the part above the pocket's lip: a plane `shown` tall at the top of a card `w` × `h`,
+ * built from its bottom edge up (so the card's matrix is its bottom edge), with the card's texture mapped to match.
+ */
+function cardStrip(w: number, h: number, shown: number): THREE.BufferGeometry {
+  const geometry = new THREE.PlaneGeometry(w, shown);
+  geometry.translate(0, h - shown / 2, 0);
+  const uv = geometry.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - shown / h + uv.getY(i) * (shown / h));
+  return geometry;
 }

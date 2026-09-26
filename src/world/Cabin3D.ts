@@ -1,18 +1,6 @@
-import {
-  BlendFunction,
-  BloomEffect,
-  ChromaticAberrationEffect,
-  type Effect,
-  EffectComposer,
-  EffectPass,
-  NoiseEffect,
-  RenderPass,
-  SMAAEffect,
-  ToneMappingEffect,
-  ToneMappingMode,
-  VignetteEffect,
-} from 'postprocessing';
-import { N8AOPostPass } from 'n8ao';
+import { type Effect, EffectComposer } from 'postprocessing';
+import type { N8AOPostPass } from 'n8ao';
+import { buildPostChain, disposePostChain } from './post';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { destinationOf, grid, hasTwist, isNightPhase, phaseDurationMs, type Cell, type PlaneId, type ItemId, type PlayerView, type SeatId } from '../engine';
@@ -844,66 +832,12 @@ export class Cabin3D {
     else this.composer.render(dt);
   }
 
-  /**
-   * The effects chain for the graphics setting: ambient occlusion straight after the scene, then bloom, lens
-   * fringing, vignette, film grain and tone mapping, and SMAA to smooth edges.
-   */
+  /** The effects chain for the graphics setting (post.ts), aimed at whatever is showing. */
   private buildPasses(): void {
-    const p = this.profile;
-    this.composer.removeAllPasses();
-    this.aoPass?.dispose();
-    this.aoPass = null;
-    for (const effect of this.passEffects) effect.dispose();
-    this.passEffects = [];
-    this.composer.multisampling = p.multisampling;
-    this.composer.addPass(new RenderPass(this.shownScene, this.shownCamera));
-    if (p.post === 'none') return;
-    const width = this.container.clientWidth || 1;
-    const height = this.container.clientHeight || 1;
-    if (p.ao !== 'off') {
-      const ao = new N8AOPostPass(this.shownScene, this.shownCamera, width, height);
-      ao.configuration.aoRadius = 0.42;
-      ao.configuration.distanceFalloff = 1;
-      ao.configuration.intensity = 2.4;
-      ao.configuration.color = new THREE.Color('#0b0d14');
-      ao.configuration.gammaCorrection = false;
-      ao.setQualityMode(p.ao);
-      if (p.ao !== 'High') ao.configuration.halfRes = true;
-      this.composer.addPass(ao);
-      this.aoPass = ao;
-    }
-    const main: Effect[] = [];
-    if (p.bloom) {
-      main.push(
-        new BloomEffect({
-          mipmapBlur: true,
-          luminanceThreshold: p.tone === 'neutral' ? 0.88 : 0.82,
-          luminanceSmoothing: 0.2,
-          intensity: p.quality === 'ultra' ? 0.85 : 0.75,
-          radius: p.quality === 'ultra' ? 0.72 : 0.65,
-          levels: p.quality === 'ultra' ? 9 : 7,
-        }),
-      );
-    }
-    main.push(new VignetteEffect({ offset: 0.3, darkness: p.post === 'light' ? 0.45 : 0.6 }));
-    if (p.grain > 0) {
-      const noise = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY });
-      noise.blendMode.opacity.value = p.grain;
-      main.push(noise);
-    }
-    main.push(new ToneMappingEffect({ mode: p.tone === 'neutral' ? ToneMappingMode.NEUTRAL : ToneMappingMode.ACES_FILMIC }));
-    this.passEffects.push(...main);
-    this.composer.addPass(new EffectPass(this.shownCamera, ...main));
-    if (p.fringe) {
-      const fringe = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0.0007, 0.0005), radialModulation: true, modulationOffset: 0.4 });
-      this.passEffects.push(fringe);
-      this.composer.addPass(new EffectPass(this.shownCamera, fringe));
-    }
-    if (p.smaa) {
-      const smaa = new SMAAEffect();
-      this.passEffects.push(smaa);
-      this.composer.addPass(new EffectPass(this.shownCamera, smaa));
-    }
+    disposePostChain({ ao: this.aoPass, effects: this.passEffects });
+    const chain = buildPostChain(this.composer, this.shownScene, this.shownCamera, this.profile, this.container.clientWidth || 1, this.container.clientHeight || 1);
+    this.aoPass = chain.ao;
+    this.passEffects = chain.effects;
   }
 
   /** Switch graphics setting while running: resolution, shadows, reflections, surface detail, effects, sunbeams. */
