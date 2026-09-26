@@ -37,7 +37,8 @@ import { FACE_TEMPLATES } from './face';
 import { BotBrain, TalkLimiter } from '../bots';
 import { canPa, channelOpen, channelVisible, type VoiceChannel } from './voiceRules';
 import type { Transport } from './transport';
-import { TUTORIAL_BOMB_NIGHT, TUTORIAL_CAST, TUTORIAL_WAITS, TUTORIAL_YOU, botName, tutorialCues, type TutorialBot } from '../tutorial/script';
+import { BOT_LOOKS, TUTORIAL_BOTS, TUTORIAL_WAITS, botName, type TutorialBot } from '../tutorial/script';
+import { lessonOf, tutorialCues, type LessonId } from '../tutorial/lessons';
 
 export interface HostPlayer {
   id: string;
@@ -63,6 +64,8 @@ export interface HostSnapshot {
   nextId: number;
   /** The tutorial flight: scripted bots, fixed roles and seats, and clocks that wait for you (tutorial/script.ts). */
   tutorial?: boolean;
+  /** Which of Flight School's lessons (missing: the Passenger's, as before there were others). */
+  lesson?: LessonId;
   /** The role the host picked for themselves (kept here, never sent to anyone else). */
   hostRole?: RoleId | null;
   /** When the captain paused the flight (null or missing: running). */
@@ -75,13 +78,14 @@ export interface HostSnapshot {
   moves?: Record<string, { playerId: string | null; until: number }>;
 }
 
-export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false): HostSnapshot {
+export function newHostSnapshot(code: string, hostToken: string, settings: Settings, controlTower: boolean, tutorial = false, lesson: LessonId = 'passenger'): HostSnapshot {
   const s: HostSnapshot = { v: 1, code, hostToken, controlTower, settings: structuredClone(settings), players: [], game: null, lobbyChat: [], nextId: 1 };
   if (tutorial) {
     s.tutorial = true;
+    s.lesson = lesson;
     // The cast boards first; you take the last seat.
-    TUTORIAL_CAST.forEach((member, i) => {
-      s.players.push({ id: `p${s.nextId++}`, token: '', name: botName(member.name), look: member.look, face: FACE_TEMPLATES[i % FACE_TEMPLATES.length].face, bot: true });
+    TUTORIAL_BOTS.forEach((bot, i) => {
+      s.players.push({ id: `p${s.nextId++}`, token: '', name: botName(bot), look: BOT_LOOKS[bot], face: FACE_TEMPLATES[i % FACE_TEMPLATES.length].face, bot: true });
     });
   }
   return s;
@@ -672,25 +676,25 @@ export class HostSession {
   }
 
   /**
-   * The tutorial's cast: everyone gets their scripted role and seat (you: a Passenger, next to the Bomber), and the
-   * Bomber boards with her bomb already under her seat, so your flashlight can find it on the first night.
+   * The tutorial's cast: everyone gets the lesson's role and seat, and in most lessons the Bomber boards with her bomb
+   * already under her seat (so your flashlight, your check, your cameras or your treatment have something to find).
    */
   private castTutorial(game: GameState): void {
+    const lesson = lessonOf(this.snapshot.lesson);
     for (const p of game.players) {
-      const member = TUTORIAL_CAST.find((m) => botName(m.name) === p.name);
-      const bot = this.player(p.id)?.bot;
-      const place = member ?? (bot ? null : TUTORIAL_YOU);
+      const bot = TUTORIAL_BOTS.find((b) => botName(b) === p.name);
+      const place = bot ? lesson.cast[bot] : this.player(p.id)?.bot ? null : lesson.you;
       if (!place) continue;
       p.role = place.role;
       p.seat = place.seat;
-      if (p.role === 'bomber') {
+      if (p.role === 'bomber' && bot && lesson.bomb) {
         p.bombsPlanted = 1;
         game.bombs.push({
           id: 'bomb-tutorial',
           planterId: p.id,
-          location: { kind: 'seat', seat: p.seat },
+          location: { kind: 'seat', seat: lesson.bomb.seat },
           plantedNight: 0,
-          detonateNight: TUTORIAL_BOMB_NIGHT,
+          detonateNight: lesson.bomb.night,
           exploded: false,
           explodedAt: null,
           defused: false,
@@ -734,8 +738,13 @@ export class HostSession {
     return brain;
   }
 
-  /** The tutorial's bots play their cues (tutorial/script.ts), each once, at its time into the phase. */
-  private runTutorialBots(game: GameState, now: number): boolean {
+  /**
+   * The tutorial's bots play their cues (tutorial/lessons.ts), each once, at its time into the phase. Null when the
+   * lesson has no script for this phase: the bots think for themselves.
+   */
+  private runTutorialBots(game: GameState, now: number): boolean | null {
+    const cues = tutorialCues(this.snapshot.lesson, game.phase.kind, game.phase.night);
+    if (!cues) return null;
     const key = `${game.id}:${game.phase.kind}:${game.phase.night}`;
     if (this.cueKey !== key) {
       this.cueKey = key;
@@ -744,7 +753,7 @@ export class HostSession {
     const ids = (who: TutorialBot | 'you') =>
       who === 'you' ? (this.snapshot.players.find((p) => !p.bot)?.id ?? '') : (this.snapshot.players.find((p) => p.name === botName(who))?.id ?? '');
     let acted = false;
-    tutorialCues(game.phase.kind, game.phase.night).forEach((cue, i) => {
+    cues.forEach((cue, i) => {
       if (this.cuesPlayed.has(i) || now < game.phase.startedAt + cue.after) return;
       this.cuesPlayed.add(i);
       const id = ids(cue.bot);
@@ -756,7 +765,10 @@ export class HostSession {
   }
 
   private runBots(game: GameState, now: number): boolean {
-    if (this.snapshot.tutorial) return this.runTutorialBots(game, now);
+    if (this.snapshot.tutorial) {
+      const played = this.runTutorialBots(game, now);
+      if (played !== null) return played;
+    }
     const key = `${game.phase.kind}:${game.phase.night}`;
     const talking = BOT_TALK_PHASES.has(game.phase.kind);
     let acted = false;
@@ -810,7 +822,7 @@ export class HostSession {
       voice: this.voicePeers(),
       ...this.tunedFor(peer),
       pa: this.paSpeaker(),
-      ...(s.tutorial ? { tutorial: true } : {}),
+      ...(s.tutorial ? { tutorial: true, lesson: s.lesson ?? 'passenger' } : {}),
       // The host's own pick goes to the host alone; everyone else only learns that there is one.
       ...(peer.trusted ? { myRole: s.hostRole ?? null } : {}),
       ...(s.hostRole && !s.tutorial ? { hostPicksRole: true } : {}),

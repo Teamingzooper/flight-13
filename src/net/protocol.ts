@@ -29,6 +29,7 @@ import {
 import { isEmoteId, type EmoteId } from './emotes';
 import { isVoiceChannel, type VoiceChannel } from './voiceRules';
 import { cleanFace } from './face';
+import type { LessonId } from '../tutorial/lessons';
 
 export const PROTOCOL_VERSION = 1;
 /** Tickets to move a seat to another device: 20 letters and digits. */
@@ -92,6 +93,8 @@ export interface ClientState {
   pa?: string | null;
   /** The tutorial flight: the coach shows what to do, and the clocks wait for you. */
   tutorial?: boolean;
+  /** Which lesson the tutorial flight is. */
+  lesson?: LessonId;
   /** Only in the host's own state: the role they picked for themselves (null: random). */
   myRole?: RoleId | null;
   /** Everyone is told that the captain picked their own role (never which). */

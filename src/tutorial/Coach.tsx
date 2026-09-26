@@ -1,10 +1,11 @@
 import type { ClientState } from '../net/protocol';
-import { TUTORIAL_WAITS, tutorialCoach } from './script';
+import { TUTORIAL_WAITS } from './script';
+import { tutorialCoach } from './lessons';
 
 /** The Flight School coach: what to do now, on the tutorial flight only. */
 export function TutorialCoach({ state, className = '' }: { state: ClientState; className?: string }) {
   if (!state.tutorial) return null;
-  const step = tutorialCoach(state.game);
+  const step = tutorialCoach(state.game, state.lesson);
   if (!step) return null;
   return (
     <div class={`coach ${className}`} role="status" aria-live="polite">

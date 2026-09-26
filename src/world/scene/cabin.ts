@@ -123,7 +123,8 @@ function clothCurtain(mesh: THREE.Mesh, halfWidth: number, height: number): { up
   const write = () => {
     for (let i = 0; i < pos.count; i++) {
       // Hanging from the rail: the lower the cloth, the further it swings out; pushed aside, it slides along the rail.
-      const hang = Math.pow((height / 2 - baseY[i]) / height, 1.15);
+      // (Clamped: the top row, stored as 32-bit floats, sits a hair above the rail, and pow of a negative is NaN.)
+      const hang = Math.pow(Math.max(0, (height / 2 - baseY[i]) / height), 1.15);
       const c = column[i];
       const x = Math.max(-halfWidth, Math.min(halfWidth, baseX[i] + part[c].x * (0.55 + 0.45 * hang)));
       pos.setXYZ(i, x, baseY[i], Math.sin(baseX[i] * 34) * 0.025 + bulge[c].x * hang);

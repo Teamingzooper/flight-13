@@ -17,6 +17,7 @@ import { stopVoice } from '../net/voice';
 import { acquireHostLock, deleteHostSnapshot, loadHostSnapshot, saveHostSnapshot } from './hosting';
 import { loadProfile, rememberFlight } from './profile';
 import { tutorialSettings } from '../tutorial/script';
+import type { LessonId } from '../tutorial/lessons';
 
 export interface OpenFlight {
   kind: 'ok';
@@ -61,12 +62,12 @@ export async function bookFlight(settings: Settings, controlTower: boolean): Pro
   return { code };
 }
 
-/** Book the tutorial flight (you and five scripted bots) and return its flight number. */
-export function bookTutorial(): string {
+/** Book a tutorial flight (you and five scripted bots, in one of Flight School's lessons) and return its flight number. */
+export function bookTutorial(lesson: LessonId = 'passenger'): string {
   const profile = loadProfile();
   let code = newFlightCode();
   while (loadHostSnapshot(code)) code = newFlightCode();
-  saveHostSnapshot(newHostSnapshot(code, profile.token, tutorialSettings(), false, true), true);
+  saveHostSnapshot(newHostSnapshot(code, profile.token, tutorialSettings(), false, true, lesson), true);
   return code;
 }
 
