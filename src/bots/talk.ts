@@ -287,7 +287,9 @@ export function wants(ctx: TalkContext): Say[] {
     if (grid.isCockpit(k.me.seat)) {
       const tonight = k.seen.filter((s) => s.night === day && !k.team.includes(s.actor));
       const worst = tonight.find((s) => s.kind === 'drink') ?? tonight.find((s) => s.kind === 'pills' || s.kind === 'under_seat') ?? tonight[0];
-      if (worst) {
+      if (k.jammed.includes(day)) {
+        out.push({ kind: 'pa_jammed', channel: 'pa', fill: {}, priority: 65, key: `pa:${day}`, at: soon(3, 8), reply: false });
+      } else if (worst) {
         out.push({ kind: 'pa_cameras', channel: 'pa', fill: { name: name(worst.actor), why: sightingText(worst, name) }, priority: 70, key: `pa:${day}`, at: soon(3, 8), reply: false });
       } else if (!saboteur || rng() < 0.5) {
         out.push({ kind: 'pa_quiet', channel: 'pa', fill: {}, priority: 20, key: `pa:${day}`, at: soon(3, 8), reply: false });

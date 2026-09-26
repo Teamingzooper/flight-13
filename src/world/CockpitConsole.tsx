@@ -124,7 +124,8 @@ export function CockpitConsole({ ctx, cabin, mode, onClose }: { ctx: TVContext; 
           ),
         )}
         {clip && <div class="cctv-caption">{clip.text}.</div>}
-        {tape && tape.clips.length === 0 && t > 0.8 && <div class="cctv-caption">Nobody stirred in {rowsText(tape.rows[0])}.</div>}
+        {tape?.jammed && t > 0.8 && <div class="cctv-caption">Static all night: somebody’s phone was off airplane mode.</div>}
+        {tape && !tape.jammed && tape.clips.length === 0 && t > 0.8 && <div class="cctv-caption">Nobody stirred in {rowsText(tape.rows[0])}.</div>}
       </div>
       <div class="cctv-bar">
         {mode !== 'replay' && (

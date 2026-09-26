@@ -1651,6 +1651,11 @@ export class Cabin3D {
     const w = Math.round(r.width);
     const h = Math.round(r.height);
     if (w < 8 || h < 8) return;
+    // A jammed night: nothing on the tape but static.
+    if (this.tape?.plan.jammed) {
+      this.staticFeed(view, w, h);
+      return;
+    }
     const x = Math.round(r.left - box.left);
     const y = Math.round(box.bottom - r.bottom);
     const cam = this.consoleCam;
@@ -1711,6 +1716,47 @@ export class Cabin3D {
       feed.height = fh;
     }
     g.drawImage(this.renderer.domElement, Math.round(left * ratio), Math.round(top * ratio), fw, fh, 0, 0, fw, fh);
+  }
+
+  private readonly staticNoise = document.createElement('canvas');
+
+  /** Snow on the console, rolling, with NO SIGNAL across it (the cameras were jammed that night). */
+  private staticFeed(view: ConsoleView, w: number, h: number): void {
+    const feed = view.screen.querySelector<HTMLCanvasElement>('canvas.cctv-feed');
+    const g = feed?.getContext('2d');
+    if (!feed || !g) return;
+    if (feed.width !== w || feed.height !== h) {
+      feed.width = w;
+      feed.height = h;
+    }
+    const noise = this.staticNoise;
+    noise.width = 160;
+    noise.height = 90;
+    const n = noise.getContext('2d')!;
+    const pixels = n.createImageData(160, 90);
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const v = Math.random() * 200;
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = v;
+      pixels.data[i + 3] = 255;
+    }
+    n.putImageData(pixels, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(noise, 0, 0, w, h);
+    // A darker band rolls slowly down the picture.
+    const band = ((this.time * 0.35) % 1.4) * h - 0.2 * h;
+    const roll = g.createLinearGradient(0, band, 0, band + 0.25 * h);
+    roll.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    roll.addColorStop(0.5, 'rgba(0, 0, 0, 0.45)');
+    roll.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    g.fillStyle = roll;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    g.fillRect(w / 2 - 90, h / 2 - 22, 180, 44);
+    g.fillStyle = '#e8eefb';
+    g.font = '700 22px "Barlow Condensed", "Arial Narrow", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('NO SIGNAL', w / 2, h / 2);
   }
 
   /** Name tags (the console's `[data-cctv-tag]` elements) float over the heads the cameras see. */

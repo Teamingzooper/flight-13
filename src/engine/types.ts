@@ -186,6 +186,8 @@ export interface PlayerState {
   courseUsed: boolean;
   /** Pilot: knocked out cold by his guest, and out of action on this night. */
   knockedOutNight: number | null;
+  /** Mastermind: airplane mode is switched off once per flight (the cameras jammed). */
+  jamUsed: boolean;
   /** A custom role's ability: times used so far (for those limited per flight). */
   abilityUses: number;
 }
@@ -239,7 +241,9 @@ export type NightAction =
   /** Pilot: watch three rows on the cabin cameras. */
   | { kind: 'watch'; startRow: number }
   /** A saboteur in the jump seat knocks the Pilot out cold. */
-  | { kind: 'knockout' };
+  | { kind: 'knockout' }
+  /** Mastermind, once per flight: take your phone off airplane mode, and the cabin cameras show only static tonight. */
+  | { kind: 'jam' };
 
 /**
  * What the Pilot's cabin cameras showed someone doing (for bots and replays; the text says the same). It is what
@@ -352,6 +356,7 @@ export type LogTag =
   | 'roughair'
   | 'course'
   | 'knockout'
+  | 'jam'
   | 'watch'
   | 'meal'
   | 'gameover';

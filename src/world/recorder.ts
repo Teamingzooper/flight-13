@@ -27,6 +27,7 @@ const ACT_TAG: Partial<Record<NightAction['kind'], string>> = {
   cuff: 'cuff',
   watch: 'watch',
   knockout: 'knockout',
+  jam: 'jam',
 };
 
 /** What an action looks like acted out (the truth this time: the recorder saw everything). */

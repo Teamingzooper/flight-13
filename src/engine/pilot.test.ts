@@ -202,6 +202,44 @@ describe('in the dark on the flight deck', () => {
     expect(applyIntent(s, 'pilot', { kind: 'seatbelt', target: 'mid' }, 0)).toEqual({ ok: false, error: 'You are still out cold.' });
   });
 
+  it('the Mastermind takes their phone off airplane mode: the cameras show static, once per flight', () => {
+    const s = cabin([{ id: 'mm', role: 'mastermind', seat: '4C' }]);
+    advanceTo(s, 'night_act', 1);
+    expect(viewFor(s, 'mm', 0).options?.actions).toContainEqual({ kind: 'jam' });
+    expect(viewFor(s, 'bomber', 0).options?.actions).not.toContainEqual({ kind: 'jam' });
+    expect(act(s, 'bomber', { kind: 'jam' })).toEqual({ ok: false, error: 'Only the Mastermind can jam the cabin cameras.' });
+    expect(act(s, 'mm', { kind: 'jam' })).toEqual({ ok: true });
+    act(s, 'pilot', { kind: 'watch', startRow: 3 });
+    act(s, 'mid', { kind: 'search' });
+    advanceTo(s, 'dawn', 1);
+    // The Pilot learns the cameras were jammed, not who jammed them (and sees nothing, not even the search in row 4).
+    const report = logTexts(s, 'pilot').find((t) => t.startsWith('The cabin cameras over rows 3–5'));
+    expect(report).toBe('The cabin cameras over rows 3–5 showed nothing but static all night: somebody’s phone was off airplane mode.');
+    expect(logTexts(s, 'pilot').join(' ')).not.toContain('mm');
+    const entry = s.log.find((e) => e.tag === 'watch' && Array.isArray(e.to) && e.to.includes('pilot'))!;
+    expect(entry.data).toMatchObject({ rows: [3, 4, 5], seen: [], jammed: true });
+    // The saboteurs know.
+    const seenBy = (id: string) => viewFor(s, id, 0).log.map((e) => e.text).join(' ');
+    expect(seenBy('bomber')).toContain('mm took their phone off airplane mode: the cabin cameras show nothing but static tonight.');
+    expect(seenBy('mid')).not.toContain('airplane mode');
+    // Once per flight.
+    advanceTo(s, 'night_act', 2);
+    expect(viewFor(s, 'mm', 0).you?.jamUsed).toBe(true);
+    expect(viewFor(s, 'mm', 0).options?.actions).not.toContainEqual({ kind: 'jam' });
+    expect(act(s, 'mm', { kind: 'jam' })).toEqual({ ok: false, error: 'You already switched airplane mode off on this flight.' });
+  });
+
+  it('airplane mode is no use with no Pilot watching', () => {
+    const s = makeGame([
+      { id: 'mm', role: 'mastermind', seat: '4C' },
+      { id: 'a', role: 'passenger', seat: '1A' },
+      { id: 'b', role: 'passenger', seat: '2A' },
+      { id: 'c', role: 'passenger', seat: '3A' },
+    ]);
+    advanceTo(s, 'night_act', 1);
+    expect(act(s, 'mm', { kind: 'jam' })).toEqual({ ok: false, error: 'No Pilot is watching the cabin cameras.' });
+  });
+
   it('passengers in the jump seat cannot knock anyone out', () => {
     const s = cabin();
     advanceTo(s, 'night_move', 1);

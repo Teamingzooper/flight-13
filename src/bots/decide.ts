@@ -192,11 +192,16 @@ export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: B
       }
       case 'bomber':
       case 'mastermind': {
+        // Not planting tonight: the Mastermind may take their phone off airplane mode instead, to cover the team.
+        const jamOr = (): { act?: NightAction } => {
+          const jam = role === 'mastermind' && rng() < 0.4 ? legal(view, { kind: 'jam' }) : undefined;
+          return jam ? { act: jam } : {};
+        };
         const threatCell = targetSeat ? grid.parseSeat(targetSeat) : null;
         const inReach = !!(me && threatCell && grid.distance(me, threatCell) <= 2);
-        if (!inReach && rng() >= 0.35) return {};
+        if (!inReach && rng() >= 0.35) return jamOr();
         const act = legal(view, { kind: 'plant', where: 'seat', fuse: skill === 'hard' ? 1 : 2 }) ?? view.options?.actions.find((a) => a.kind === 'plant');
-        return act ? { act } : {};
+        return act ? { act } : jamOr();
       }
       case 'stewardess_rogue': {
         const act = target ? legal(view, { kind: 'serve', target }) : undefined;

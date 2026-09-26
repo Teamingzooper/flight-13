@@ -83,7 +83,8 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     name: 'Mastermind',
     team: 'saboteurs',
     blurb: 'Planned all of this. Looks completely harmless.',
-    howTo: "Plant bombs just like a Bomber (one for every three nights of the flight), but hidden so well that the Stewardess's checks miss them.",
+    howTo:
+      "Plant bombs just like a Bomber (one for every three nights of the flight), but hidden so well that the Stewardess's checks miss them. Once per flight, instead, take your phone off airplane mode: the Pilot's cabin cameras show nothing but static that night.",
   },
   stewardess_rogue: {
     id: 'stewardess_rogue',

@@ -140,6 +140,7 @@ export function normalizeGame(s: GameState): GameState {
     p.roughAirUsed ??= false;
     p.courseUsed ??= false;
     p.knockedOutNight ??= null;
+    p.jamUsed ??= false;
     p.abilityUses ??= 0;
     // Older games gave each Bomber one bomb and only noted whether it was used.
     const old = p as PlayerState & { bombUsed?: boolean };

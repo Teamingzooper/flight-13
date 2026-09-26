@@ -92,6 +92,8 @@ export interface YouView {
   courseUsed: boolean;
   /** Pilot: knocked out cold tonight (no calls, no cameras). */
   knockedOut: boolean;
+  /** Mastermind: airplane mode already switched off on this flight. */
+  jamUsed: boolean;
   /** Someone slipped you a sleeping pill, or drugged your lunch: you sleep through tonight. */
   asleep: boolean;
   /** Drugged at lunch: asleep all night, from the moment the lights go out (no seat change either). */
@@ -296,6 +298,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     roughAirUsed: me.roughAirUsed,
     courseUsed: me.courseUsed,
     knockedOut: isPilot(me.role) && isNightPhase(s.phase.kind) && me.knockedOutNight === s.phase.night,
+    jamUsed: me.jamUsed,
     asleep:
       (s.phase.kind === 'night_act' && s.night.asleep[me.id] !== undefined) || (isNightPhase(s.phase.kind) && s.night.drowsy[me.id] !== undefined),
     drowsy: isNightPhase(s.phase.kind) && s.night.drowsy[me.id] !== undefined,

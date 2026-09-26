@@ -40,6 +40,8 @@ export interface Knowledge {
   served: { night: number; target: string }[];
   cuffed: { night: number; target: string }[];
   seen: Seen[];
+  /** Nights my cabin cameras were jammed (a phone off airplane mode). */
+  jammed: number[];
   verdicts: VerdictFact[];
   deaths: { night: number; id: string; cause: string }[];
   washroom: { night: number; id: string }[];
@@ -72,6 +74,7 @@ export function know(view: PlayerView): Knowledge {
     served: [],
     cuffed: [],
     seen: [],
+    jammed: [],
     verdicts: [],
     deaths: [],
     washroom: [],
@@ -109,6 +112,7 @@ export function know(view: PlayerView): Knowledge {
         if (mine(e, me.id) && str(d.target)) k.cuffed.push({ night: e.night, target: str(d.target)! });
         break;
       case 'watch':
+        if (mine(e, me.id) && d.jammed === true) k.jammed.push(e.night);
         if (!mine(e, me.id) || !Array.isArray(d.seen)) break;
         for (const s of d.seen as Sighting[]) k.seen.push({ night: e.night, ...s });
         break;

@@ -41,6 +41,8 @@ export interface Tape {
   from?: ReadonlyMap<string, SeatId>;
   /** Seconds. */
   length: number;
+  /** A phone was off airplane mode all night: the tape is nothing but static. */
+  jammed?: boolean;
 }
 
 /** Stillness before the first clip, each clip, and stillness after the last one (seconds). */
@@ -104,6 +106,7 @@ export function planTape(game: PlayerView, seatsOn: (night: number) => ReadonlyM
   const rows = (entry.data!.rows as number[]).slice(0, 3);
   const seen = (Array.isArray(entry.data!.seen) ? entry.data!.seen : []) as Sighting[];
   const night = entry.night;
+  if (entry.data!.jammed === true) return { night, rows, clips: [], cast: [], seats: new Map(), length: QUIET, jammed: true };
   const seatsThatNight = seatsOn(night);
   const byId = new Map(game.players.map((p) => [p.id, p]));
   const name = (id: string) => byId.get(id)?.name ?? 'Someone';
