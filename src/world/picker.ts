@@ -60,6 +60,7 @@ export async function startPicker(container: HTMLElement, look: Look, events: Sa
     begin() {
       if (running) return;
       running = true;
+      cabinAudio.unlock();
       cabinAudio.start();
       cabinAudio.setEngine(0.45, 0.1);
       if (getPrefs().reduceMotion) set.skip();

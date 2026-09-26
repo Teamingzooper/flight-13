@@ -12,6 +12,7 @@ import { IconSound } from '../tv/icons';
 import { PhaseOverlay, reopenPhaseCard, usePhaseOverlayOpen } from '../tv/Overlays';
 import { usePacking } from '../tv/packing';
 import { LeaveDialog, TV, useTVContext } from '../tv/TV';
+import { useLastSeconds } from '../tv/useCueSounds';
 import { VoiceButton, useVoice } from '../tv/VoiceButton';
 import { cabinAudio } from './audio';
 import { Cabin3D, type SceneKind } from './Cabin3D';
@@ -80,6 +81,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const onControl = useRef<(id: ControlId) => void>(() => {});
   const [muted, toggleMute] = useMuted();
   const { ctx, toast } = useTVContext(flight, snap, state);
+  useLastSeconds(ctx.left, !!state.game && awaitingYou(state.game) !== null && !tutorialWaits(state), true);
   const game = state.game!;
   const kind = game.phase.kind;
   /** You are the one on the PA right now. */
@@ -327,6 +329,8 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   const freshTape = tapeReady(game);
   onControl.current = (id) => {
     const use = controlAction(game, id, freshTape);
+    if (use.kind === 'no') cabinAudio.nope();
+    else cabinAudio.switchClick();
     if (use.kind === 'console') setConsoleMode(use.mode);
     else if (use.kind === 'course') setDeckCard('course');
     else if (use.kind === 'pa') {

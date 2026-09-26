@@ -1546,8 +1546,11 @@ export class HotelSet {
     const inst = this.hovered;
     if (!inst || !this.interactive || this.stage !== 'ready') return;
     if (this.carries.some((c) => c.inst === inst)) return;
-    if (inst.slot !== null) this.events.onUnpack(inst.slot);
-    else if (this.packed.length < MAX_PACKED) this.events.onPack(inst.item);
+    if (inst.slot !== null) {
+      this.events.onUnpack(inst.slot);
+      setTimeout(() => cabinAudio.thud(0.25), 450);
+    } else if (this.packed.length < MAX_PACKED) this.events.onPack(inst.item);
+    else cabinAudio.nope();
   }
 
   /** Keep the tooltip beside the hovered item. */
