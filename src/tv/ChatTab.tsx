@@ -83,7 +83,7 @@ export function ChatTab({ ctx }: { ctx: TVContext }) {
         ))}
         {alive && kind === 'day_discuss' && (
           <button class={`chip ready-chip${ready ? ' on' : ''}`} disabled={ready} onClick={() => void send({ kind: 'ready' })}>
-            {ready ? 'Ready ✓ waiting for the others' : 'Ready to vote'}
+            {ready ? 'Ready ✓ waiting for the others' : game.voteToday ? 'Ready to vote' : 'Ready for tonight'}
           </button>
         )}
       </div>

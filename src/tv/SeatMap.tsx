@@ -64,7 +64,8 @@ export function SeatMap({
   const occupant = new Map<SeatId, PlayerSummary>();
   for (const p of game.players) if (p.seat) occupant.set(p.seat, p);
   const scorched = new Set(game.cabin.scorched.map((c) => `${c.row}:${c.col}`));
-  const live = game.bombs.filter((b) => !b.exploded);
+  // (A defused bomb is dead: not shown as a threat.)
+  const live = game.bombs.filter((b) => !b.exploded && !b.defused);
   const seatBombs = new Set(live.flatMap((b) => (b.location.kind === 'seat' ? [b.location.seat] : [])));
   const cartBomb = live.some((b) => b.location.kind === 'cart');
   const lavBomb = live.some((b) => b.location.kind === 'lavatory');
@@ -313,7 +314,7 @@ export function MapLegend({ game }: { game: PlayerView }) {
         <IconCart size={14} />
         Drink cart (blocks the aisle)
       </span>
-      {game.bombs.some((b) => !b.exploded) && (
+      {game.bombs.some((b) => !b.exploded && !b.defused) && (
         <span>
           <IconBomb />
           Bomb you know about

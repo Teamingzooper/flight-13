@@ -34,7 +34,8 @@ function useDismissed(): [string | null, (key: string) => void] {
   ];
 }
 
-const overlayKey = (game: PlayerView) => `${game.phase.kind}:${game.phase.night}`;
+// (By game too: a new flight's boarding pass is not the one you already put away.)
+const overlayKey = (game: PlayerView) => `${game.gameId}:${game.phase.kind}:${game.phase.night}`;
 
 /** Show the current phase's card again (e.g. your boarding pass while packing). */
 export function reopenPhaseCard(): void {
@@ -161,9 +162,13 @@ function BoardingPass({ game, onClose }: { game: PlayerView; onClose: () => void
             <b>Pilot must fly:</b>{' '}
             {you.role === 'pilot'
               ? 'if the passengers restrain you, nobody can fly the plane and the saboteurs win.'
-              : you.team === 'saboteurs'
-                ? 'get the passengers to restrain the Pilot and you win.'
-                : 'restrain the Pilot by mistake and the saboteurs win.'}
+              : you.role === 'pilot_rogue'
+                ? 'it only protects a loyal Pilot. If the passengers restrain you, your team just loses a player.'
+                : you.team === 'saboteurs'
+                  ? game.players.some((p) => p.role === 'pilot_rogue')
+                    ? 'the Pilot is one of yours, so this rule will not win it for you.'
+                    : 'get the passengers to restrain the Pilot and you win.'
+                  : 'restrain the Pilot by mistake and the saboteurs win.'}
           </p>
         )}
         {you.team === 'saboteurs' && (

@@ -48,6 +48,8 @@ export function startNight(s: GameState, night: number, now: number): void {
 /** End of night_move: the Pilot's seatbelts apply first, then every seat change at once. */
 export function resolveMoves(s: GameState, now: number): void {
   const n = s.phase.night;
+  // Where the crew stood before anyone moved (the cart only rolls when its Stewardess walks it).
+  const crewBefore = new Map(activePlayers(s).filter((p) => isStewardess(p.role)).map((p) => [p.id, p.seat]));
   // The flight deck first: course, rough air and the seatbelt sign; then, with everyone buckled, the jump seat.
   const pilots = activePlayers(s).filter((p) => isPilot(p.role));
   for (const pilot of pilots) {
@@ -88,8 +90,9 @@ export function resolveMoves(s: GameState, now: number): void {
     }
   }
 
-  // The drink cart rolls with the Stewardess (the first one still working, if there are several).
-  const crew = activePlayers(s).find((p) => isStewardess(p.role) && isAisleSpot(p.seat));
+  // The drink cart rolls with the Stewardess who walked it tonight (the first, if several walked). One who stays put
+  // leaves it where it is: a runaway cart stays where it rolled until she next walks.
+  const crew = activePlayers(s).find((p) => isStewardess(p.role) && isAisleSpot(p.seat) && crewBefore.get(p.id) !== p.seat);
   const row = crew ? aisleRow(crew.seat) : null;
   if (row !== null && !s.cabin.cartDestroyed && row !== s.cabin.cartRow) {
     s.cabin.cartRow = row;
@@ -332,7 +335,7 @@ export function resolveNight(s: GameState, now: number): void {
   const visits = new Map<string, string[]>();
   const visit = (target: string, text: string) => visits.set(target, [...(visits.get(target) ?? []), text]);
   for (const pilot of activePlayers(s)) {
-    if (pilot.role === 'pilot' && pilot.lastSeatbeltTarget && s.night.seatbelts[pilot.id] === pilot.lastSeatbeltTarget) {
+    if (isPilot(pilot.role) && pilot.lastSeatbeltTarget && s.night.seatbelts[pilot.id] === pilot.lastSeatbeltTarget) {
       visit(pilot.lastSeatbeltTarget, `${pilot.name} turned on your seatbelt sign`);
     }
   }
@@ -516,7 +519,8 @@ export function resolveNight(s: GameState, now: number): void {
     }
     for (const b of found) if (!actor.knownBombIds.includes(b.id)) actor.knownBombIds.push(b.id);
     statsOf(s, actor.id).found += found.length;
-    const what = `under ${seats.slice(0, 2).join(', ')} and ${seats[2]}`;
+    // (Three seats a side on the airliner, two on the private jet.)
+    const what = `under ${seats.length > 1 ? `${seats.slice(0, -1).join(', ')} and ${seats[seats.length - 1]}` : seats.join('')}`;
     const text =
       found.length === 0
         ? `You worked row ${row} and checked ${what}. No bombs.`

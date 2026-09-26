@@ -68,7 +68,7 @@ export const ROLES: Record<RoleId, RoleInfo> = {
     team: 'passengers',
     blurb: 'Crew uniform, crew loyalties. You know every row by heart.',
     howTo:
-      'You work the aisle, not a seat, and everyone can see you. Each night, walk the drink cart to any row, then check under the three seats on its left or its right for bombs. Nobody can walk past your cart.',
+      'You work the aisle, not a seat, and everyone can see you. Each night, walk the drink cart to any row, then check under the seats on its left or its right for bombs. Nobody can walk past your cart.',
   },
   bomber: {
     id: 'bomber',

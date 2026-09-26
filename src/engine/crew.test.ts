@@ -194,8 +194,22 @@ describe('the washroom', () => {
     expect(viewFor(s, 'stew', 0).options?.actions).toEqual([{ kind: 'serve', target: 'left' }]);
   });
 
+  it('only rolls when its Stewardess walks it: a cart that ran away stays put until she does', () => {
+    const s = cabin();
+    advanceTo(s, 'night_move', 1);
+    // (It broke loose last night and rolled to row 2.)
+    s.cabin.cartRow = 2;
+    advanceTo(s, 'night_act', 1);
+    expect(s.cabin.cartRow).toBe(2);
+    advanceTo(s, 'night_move', 2);
+    move(s, 'stew', 'Aisle 6');
+    advanceTo(s, 'night_act', 2);
+    expect(s.cabin.cartRow).toBe(6);
+  });
+
   it('you can only search the lavatory (or, with a bomb, leave one there)', () => {
-    const s = cabin([{ id: 'inv', role: 'investigator', seat: '1C' }]);
+    // (Behind the cart at row 5, so both can reach the lavatory.)
+    const s = cabin([{ id: 'inv', role: 'investigator', seat: '7C' }]);
     advanceTo(s, 'night_move', 1);
     move(s, 'inv', 'washroom');
     move(s, 'bomber', 'washroom');

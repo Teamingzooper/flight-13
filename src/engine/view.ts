@@ -173,6 +173,8 @@ export interface PlayerView {
   /** Who is up on the flight deck with the Pilot right now. */
   jumpseat: string | null;
   blackout: boolean;
+  /** Today ends in a vote (always, unless votes only follow a night when something happened, and nothing did). */
+  voteToday: boolean;
   bombs: BombView[];
   mine: MineView | null;
   options: OptionsView | null;
@@ -204,7 +206,8 @@ function cuffedOptions(s: GameState, me: PlayerState): OptionsView {
 function optionsFor(s: GameState, me: PlayerState): OptionsView {
   const kind = s.phase.kind;
   // (Asleep after a drugged lunch is as stuck as buckled in.)
-  const drowsy = isNightPhase(kind) && s.night.drowsy[me.id] !== undefined;
+  // (Slipped a sleeping pill tonight: as asleep as drugged, once seats have changed.)
+  const drowsy = (isNightPhase(kind) && s.night.drowsy[me.id] !== undefined) || (kind === 'night_act' && s.night.asleep[me.id] !== undefined);
   const buckled = s.night.buckled[me.id] !== undefined || drowsy;
   const others = activePlayers(s).filter((p) => p.id !== me.id);
   // The flight deck's calls, while the Pilot is fit to make them.
@@ -355,6 +358,7 @@ export function viewFor(s: GameState, playerId: string | null, now: number): Pla
     washroom: s.phase.kind === 'night_act' ? s.night.washroom : null,
     jumpseat: s.phase.kind === 'night_act' ? s.night.jumpseat : null,
     blackout: s.blackoutNight === s.phase.night && BLACKOUT_PHASES.has(s.phase.kind),
+    voteToday: s.settings.voteMode === 'daily' || s.incidentAtDawn,
     bombs,
     mine,
     options: me && isActive(me) && !ended ? optionsFor(s, me) : me && me.cuffedFrom && !ended ? cuffedOptions(s, me) : null,

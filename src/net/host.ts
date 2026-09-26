@@ -277,7 +277,15 @@ export class HostSession {
         return;
       }
     }
-    if (s.controlTower || now - this.captainSeenAt < CAPTAIN_GRACE_MS) return;
+    if (s.controlTower) {
+      // The tower is gone: a pause it left behind does not hold everyone aboard.
+      if (s.game && s.pausedAt && !s.idlePaused && now - this.captainSeenAt >= CAPTAIN_GRACE_MS) {
+        this.resume(s.game, now);
+        this.changed();
+      }
+      return;
+    }
+    if (now - this.captainSeenAt < CAPTAIN_GRACE_MS) return;
     const next = s.players.find((p) => !p.bot && p.token && this.isConnected(p.id));
     if (!next) return;
     s.hostToken = next.token;
@@ -285,6 +293,15 @@ export class HostSession {
     for (const peer of this.peers.values()) peer.trusted = !!peer.token && peer.token === s.hostToken;
     this.captainSeenAt = now;
     this.changed();
+  }
+
+  /**
+   * The host's own browser leaves the flight it runs (browser-hosted flights): it waits, paused, until they are
+   * back (`idle(false)` on reopening), saved at once.
+   */
+  hostLeft(): void {
+    this.idle(true);
+    this.persist?.(this.snapshot);
   }
 
   /** Tell everyone the flight is over, then shut down. */
@@ -647,6 +664,8 @@ export class HostSession {
         if (!game || game.phase.kind === 'ended') return fail('There is no flight in the air.');
         if (!Number.isInteger(cmd.seconds) || cmd.seconds < 1 || cmd.seconds > 600) return fail('Add between 1 and 600 seconds.');
         game.phase.endsAt += cmd.seconds * 1000;
+        // (Everyone may already be done, with the phase about to end early: that waits too.)
+        if (game.phase.earlyEndAt !== null) game.phase.earlyEndAt += cmd.seconds * 1000;
         break;
       }
       case 'skipPhase': {
@@ -766,7 +785,12 @@ export class HostSession {
       this.cuesPlayed.add(i);
       const id = ids(cue.bot);
       if (!id) return;
-      if (cue.intent && applyIntent(game, id, cue.intent(ids), now).ok) acted = true;
+      if (cue.intent) {
+        if (applyIntent(game, id, cue.intent(ids), now).ok) acted = true;
+        // Off the script (called up to the jump seat, say): the bot makes a legal choice of its own instead of
+        // leaving the phase waiting for it.
+        else for (const intent of botIntents(game, id, this.botRng)) if (applyIntent(game, id, intent, now).ok) acted = true;
+      }
       if (cue.say && applyIntent(game, id, { kind: 'chat', channel: cue.say.channel, text: cue.say.text }, now).ok) acted = true;
     });
     return acted;

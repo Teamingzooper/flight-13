@@ -40,12 +40,13 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
       {deck && (day || ((kind === 'night_move' || kind === 'night_act') && !you.drowsy)) && <ControlsCard ctx={ctx} />}
       {pilot && day && !deck && <PaPanel ctx={ctx} />}
       {day && game.meal && <LunchPanel ctx={ctx} />}
-      {(kind === 'night_move' || kind === 'night_act') && you.drowsy && <FastAsleep />}
+      {(kind === 'night_move' || kind === 'night_act') && (you.drowsy || you.asleep) && <FastAsleep pill={!you.drowsy} />}
       {kind === 'night_move' &&
         !you.drowsy &&
         (deck ? null : pilot ? <FlightDeckPanel ctx={ctx} /> : you.buckled ? <Buckled game={game} /> : <MovePanel ctx={ctx} />)}
       {kind === 'night_act' &&
         !you.drowsy &&
+        !you.asleep &&
         (deck ? null : pilot ? (
           <CameraPanel ctx={ctx} />
         ) : you.inJumpSeat ? (
@@ -103,8 +104,13 @@ function crewRow(game: PlayerView): number | null {
 }
 
 /** Drugged at lunch: nothing to do but sleep. */
-function FastAsleep() {
-  return (
+function FastAsleep({ pill }: { pill: boolean }) {
+  return pill ? (
+    <div class="callout amber">
+      <b>Zzz.</b> Someone slipped a sleeping pill into your water. You doze off: whatever you had planned for tonight will not happen. Only a
+      neighbour could have done it.
+    </div>
+  ) : (
     <div class="callout amber">
       <b>Zzz.</b> Something in your lunch knocked you out. You sleep straight through tonight: no seat change, no ability. Whoever sat near you
       at lunch had the chance to drug it.
@@ -158,7 +164,7 @@ function MovePanel({ ctx }: { ctx: TVContext }) {
         {row !== null ? 'Walk the cart?' : 'Change seats?'}
         <span class="muted">
           {row !== null
-            ? `Tap any row in the aisle, or stay at row ${row}. You can only work the six seats beside you.`
+            ? `Tap any row in the aisle, or stay at row ${row}. You can only work the seats beside you.`
             : `Tap an empty seat, or stay in ${you.seat}.`}
         </span>
       </div>
@@ -404,7 +410,7 @@ function TargetPicker({ ctx, title, hint, actions, empty }: { ctx: TVContext; ti
   );
 }
 
-/** The loyal Stewardess checks under the three seats on one side of her row. */
+/** The loyal Stewardess checks under the seats on one side of her row (three on the airliner, two on the jet). */
 function RowCheckPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }) {
   const { game, send } = ctx;
   const [focus, setFocus] = useState<'left' | 'right' | null>(null);
@@ -579,9 +585,13 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
   const current = game.mine?.action ?? null;
   const planned = current?.kind === 'plant' ? current : null;
   const [where, setWhere] = useState<BombSpot>(planned?.where ?? 'seat');
-  const [fuse, setFuse] = useState<1 | 2>(planned?.fuse ?? 2);
+  // A fuse that outlasts the flight is no use: the plane lands after night `nights`.
+  const lands = (f: 1 | 2) => night + f > game.phase.nights;
+  // (Flight School's Bomber is coached for tomorrow night.)
+  const [fuse, setFuse] = useState<1 | 2>(planned?.fuse ?? (ctx.state.tutorial || lands(2) ? 1 : 2));
   const [editing, setEditing] = useState(false);
-  const total = bombsFor(destinationOf(game.settings).nights);
+  // Every bomb you carry, planted or not (a custom bomb role's own count, too).
+  const total = you.bombsLeft + game.bombs.filter((b) => b.planterId === you.id).length || bombsFor(destinationOf(game.settings).nights);
   const ticking = game.bombs.filter((b) => !b.exploded && !b.defused && b.planterId === you.id);
   const tickingText = ticking.map((b) => `${describeLocation(b.location)} (the end of night ${b.detonateNight})`).join(', ');
   if (you.bombsLeft <= 0 && !planned) {
@@ -693,11 +703,11 @@ function BombPicker({ ctx, actions }: { ctx: TVContext; actions: NightAction[] }
       <div class="step-label">When it goes off</div>
       <div class="choice-grid two">
         {([1, 2] as const).map((f) => (
-          <button key={f} class={`choice${fuse === f ? ' on' : ''}`} onClick={() => setFuse(f)}>
+          <button key={f} class={`choice${fuse === f ? ' on' : ''}`} disabled={lands(f)} onClick={() => setFuse(f)}>
             <span class="choice-head">
               <b>{f === 1 ? 'Tomorrow night' : 'The night after'}</b>
             </span>
-            <span class="choice-sub">At {when(f)}, after everyone changes seats.</span>
+            <span class="choice-sub">{lands(f) ? 'The plane will have landed by then.' : `At ${when(f)}, after everyone changes seats.`}</span>
           </button>
         ))}
       </div>

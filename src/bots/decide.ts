@@ -200,7 +200,7 @@ export function chooseNight(view: PlayerView, k: Knowledge, b: Beliefs, skill: B
         const threatCell = targetSeat ? grid.parseSeat(targetSeat) : null;
         const inReach = !!(me && threatCell && grid.distance(me, threatCell) <= 2);
         if (!inReach && rng() >= 0.35) return jamOr();
-        const act = legal(view, { kind: 'plant', where: 'seat', fuse: skill === 'hard' ? 1 : 2 }) ?? view.options?.actions.find((a) => a.kind === 'plant');
+        const act = legal(view, { kind: 'plant', where: 'seat', fuse: skill === 'hard' || view.phase.night + 2 > view.phase.nights ? 1 : 2 }) ?? view.options?.actions.find((a) => a.kind === 'plant');
         return act ? { act } : jamOr();
       }
       case 'stewardess_rogue': {

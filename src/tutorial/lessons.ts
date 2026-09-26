@@ -371,7 +371,7 @@ const pilot: Lesson = {
       case 'day_discuss':
         return talk(
           game,
-          'Only you can talk to the whole plane at once. Switch the chat to PA (or hold the PA button and speak) and say what your cameras caught Mia doing.',
+          'Only you can talk to the whole plane at once. Type an announcement on the PA (on your screen’s Action tab, or the PA control on the flight deck) and say what your cameras caught Mia doing.',
           'pa',
         );
       case 'day_vote':
