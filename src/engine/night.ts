@@ -374,18 +374,12 @@ export function resolveNight(s: GameState, now: number): void {
     const seat = t.seat;
     visit(t.id, `${actor.name} snapped handcuffs on you`);
     used(actor);
-    if (consumeItem(t, 'bobbypin')) {
-      actor.cuffsUsed = true;
-      addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}), but they picked the lock and slipped free. Your cuffs are gone.`, {
-        target: t.id,
-      });
-      addLog(s, now, [t.id], 'item', 'Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
-      addLog(s, now, 'end', 'cuff', `Night ${n}: ${roleOf(actor)} ${actor.name} handcuffed ${t.name}, who picked the lock with a bobby pin.`);
-      continue;
-    }
     actor.cuffsUsed = true;
     cuffed.add(t.id);
     removeFromPlay(s, t, 'restrained', n);
+    // (A bobby pin can pick these cuffs later: see items.ts.)
+    t.cuffedFrom = seat;
+    if (t.items.includes('bobbypin')) addLog(s, now, [t.id], 'item', 'You are in handcuffs, but you still have your bobby pin. Pick the lock from your carry-on.');
     s.incidentAtDawn = true;
     addLog(s, now, [actor.id], 'cuff', `You handcuffed ${t.name} (${seat}).`, { target: t.id });
     addLog(s, now, 'all', 'cuff', `The ${roleOf(actor)} handcuffed ${label(s, t)} in ${seat} and walked them to the rear galley.`, { player: t.id });

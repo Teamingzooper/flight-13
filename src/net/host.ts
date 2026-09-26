@@ -5,6 +5,7 @@ import {
   isNightPhase,
   checkTakeoff,
   createGame,
+  grid,
   isRoleId,
   phaseDue,
   submitDefaults,
@@ -39,6 +40,7 @@ import { canPa, channelOpen, channelVisible, type VoiceChannel } from './voiceRu
 import type { Transport } from './transport';
 import { BOT_LOOKS, TUTORIAL_BOTS, TUTORIAL_WAITS, botName, type TutorialBot } from '../tutorial/script';
 import { lessonOf, tutorialCues, type LessonId } from '../tutorial/lessons';
+import { isStewardess } from '../engine/roles';
 
 export interface HostPlayer {
   id: string;
@@ -703,6 +705,10 @@ export class HostSession {
         });
       }
     }
+      // The drink cart starts with the lesson's Stewardess, wherever she works.
+    const crew = game.players.find((p) => isStewardess(p.role) && grid.isAisleSpot(p.seat));
+    const row = crew ? grid.aisleRow(crew.seat) : null;
+    if (row !== null) game.cabin.cartRow = row;
   }
 
   /** Start the clock again: the phase gets back the time it was paused for. */

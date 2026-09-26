@@ -93,6 +93,26 @@ export class Cart {
     this.group.rotation.set(0, yaw, 0);
   }
 
+  /** Let go: the cart stays where the hands left it, and rolls on from there to its row. */
+  release(): void {
+    if (!this.held) return;
+    this.held = false;
+    this.z = this.group.position.z;
+    this.group.rotation.set(0, 0, 0);
+  }
+
+  /** Where the handle's grips are (left and right hands), in the world. */
+  grips(): [THREE.Vector3, THREE.Vector3] {
+    this.group.updateMatrixWorld();
+    return [new THREE.Vector3(-0.1, 0.95, 0.38).applyMatrix4(this.group.matrixWorld), new THREE.Vector3(0.1, 0.95, 0.38).applyMatrix4(this.group.matrixWorld)];
+  }
+
+  /** A point on the cart's top, in its own space (x across, z along), in the world. */
+  onTop(x: number, z: number): THREE.Vector3 {
+    this.group.updateMatrixWorld();
+    return new THREE.Vector3(x, 1.03, z).applyMatrix4(this.group.matrixWorld);
+  }
+
   setRow(row: number, destroyed: boolean, runaway = false): void {
     this.group.visible = !destroyed;
     if (rowZ(row) !== this.targetZ) this.speed = runaway ? 3.2 : 0.9;

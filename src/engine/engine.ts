@@ -36,7 +36,8 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
   if (intent.kind === 'chat') return postChat(s, p, intent.channel, intent.text, now);
   if (intent.kind === 'whisper') return postWhisper(s, p, intent.to, intent.text, now);
   if (s.phase.kind === 'ended') return fail('The flight is over.');
-  if (!isActive(p)) return fail('You are out of the game.');
+  // (In handcuffs, you can still pick the lock.)
+  if (!isActive(p) && !(intent.kind === 'use' && intent.item === 'bobbypin')) return fail('You are out of the game.');
 
   switch (intent.kind) {
     case 'pack': {
@@ -54,6 +55,8 @@ export function applyIntent(s: GameState, playerId: string, intent: Intent, now:
       const error = checkItemUse(s, p, use);
       if (error) return fail(error);
       useItem(s, p, use, now);
+      // Back in play: a win that was waiting on those handcuffs (at dawn, or after the vote) is decided again.
+      if (use.item === 'bobbypin' && (s.phase.kind === 'dawn' || s.phase.kind === 'verdict')) s.result = checkWin(s);
       // An extender can free someone who was not expected to act: let them.
       if (s.phase.earlyEndAt !== null && !allSubmitted(s)) s.phase.earlyEndAt = null;
       break;

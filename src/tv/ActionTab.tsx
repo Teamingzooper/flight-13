@@ -24,7 +24,7 @@ export function ActionTab({ ctx }: { ctx: TVContext }) {
   if (you.status !== 'alive') {
     return (
       <div class="tab">
-        <GhostPanel game={game} />
+        <GhostPanel ctx={ctx} />
       </div>
     );
   }
@@ -861,13 +861,31 @@ function Notes({ game }: { game: PlayerView }) {
   );
 }
 
-function GhostPanel({ game }: { game: PlayerView }) {
+function GhostPanel({ ctx }: { ctx: TVContext }) {
+  const { game, send } = ctx;
   const you = game.you!;
   const cause = game.players.find((p) => p.id === you.id)?.cause;
-  const how =
-    cause === 'restrained' ? 'The passengers restrained you.' : cause === 'poison' ? 'The poison got you.' : 'You were caught in an explosion.';
+  const how = you.cuffed
+    ? 'The Air Marshal handcuffed you.'
+    : cause === 'restrained'
+      ? 'The passengers restrained you.'
+      : cause === 'poison'
+        ? 'The poison got you.'
+        : 'You were caught in an explosion.';
+  const pin = game.options?.items.some((u) => u.item === 'bobbypin');
   return (
     <div class="stack">
+      {pin && (
+        <div class="ability-card pin-card">
+          <div class="ability-title">Pick the lock</div>
+          <p class="muted">You still have your bobby pin. Work the handcuffs open and slip back to your seat: everyone will see you come back.</p>
+          <div class="row">
+            <button class="btn primary" onClick={() => void send({ kind: 'use', item: 'bobbypin' })}>
+              Use your bobby pin
+            </button>
+          </div>
+        </div>
+      )}
       <div class="ghost-card">
         <div class="label">You are out</div>
         <h2>{how}</h2>

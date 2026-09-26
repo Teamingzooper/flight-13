@@ -1,4 +1,4 @@
-import { ITEM_ORDER, MAX_PACKED, possibleItemUses } from './items';
+import { ITEM_ORDER, MAX_PACKED, checkItemUse, possibleItemUses } from './items';
 import { inReach, lunchOpen, tamperReach } from './meal';
 import { isPilot, isSaboteur } from './roles';
 import { nextFloat, pick, type RngHolder } from './rng';
@@ -54,6 +54,8 @@ function lunch(s: GameState, p: PlayerState, h: RngHolder): Intent[] {
 /** Random legal choices for one player in the current phase (simulation and dev bots). */
 export function botIntents(s: GameState, playerId: string, h: RngHolder): Intent[] {
   const p = getPlayer(s, playerId);
+  // In the Air Marshal's handcuffs with a bobby pin: pick the lock at the first chance.
+  if (p && checkItemUse(s, p, { item: 'bobbypin' }) === null) return [{ kind: 'use', item: 'bobbypin' }];
   if (!p || !isActive(p)) return [];
   switch (s.phase.kind) {
     case 'packing': {
