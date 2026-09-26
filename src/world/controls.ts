@@ -8,7 +8,7 @@ const PITCH_MAX = 0.8;
 const LEAN_DISTANCE = 0.2;
 const TAP_SLOP_PX = 7;
 /** Resting gaze: slightly down, so your screen and the cabin ahead are both in view. */
-const REST_PITCH = -0.26;
+export const REST_PITCH = -0.26;
 /** Eye height standing in the aisle. */
 const STAND_EYE = 1.6;
 /** Walking pace and stride in the aisle. */
@@ -46,7 +46,7 @@ export interface ControlEvents {
   onScript?(kind: ScriptKind, active: boolean): void;
 }
 
-export type ScriptKind = 'walk' | 'search';
+export type ScriptKind = 'walk' | 'search' | 'tend';
 
 export interface Sample {
   pos: THREE.Vector3;
@@ -224,6 +224,32 @@ export function aisleScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: num
       };
     },
     { rampIn: 0.5, rampOut: 0.6 },
+  );
+}
+
+/**
+ * Crew with the drink cart walk it along the aisle: hands on its handle, facing forward over it the whole way,
+ * pushing it towards the front or pulling it back towards the tail (no turning your back on the cart).
+ */
+export function cartScript(from: THREE.Vector3, to: THREE.Vector3, fromYaw: number, fromPitch: number, restYaw: number): Script {
+  const points = [from.clone(), new THREE.Vector3(0, STAND_EYE, (from.z + to.z) / 2), to.clone()];
+  return pathScript(
+    points,
+    (_d, _at, length) => ({
+      yaw: [
+        [0, fromYaw],
+        [Math.min(0.4, length * 0.3), restYaw],
+        [length, restYaw],
+      ],
+      // Eyes on the cart and the aisle ahead of it.
+      pitch: [
+        [0, fromPitch],
+        [Math.min(0.4, length * 0.3), -0.42],
+        [Math.max(0.5, length - 0.3), -0.42],
+        [length, REST_PITCH],
+      ],
+    }),
+    { rampIn: 0.7, rampOut: 0.8 },
   );
 }
 
@@ -506,7 +532,7 @@ export class SeatControls {
    * When `animate` is set you stand up, walk the aisle and sit down again (or, for crew in the `aisle`,
    * just walk along it).
    */
-  setSeat(eye: THREE.Vector3, screen: THREE.Matrix4 | null, animate: boolean, restYaw = 0, aisle = false): void {
+  setSeat(eye: THREE.Vector3, screen: THREE.Matrix4 | null, animate: boolean, restYaw = 0, aisle = false, withCart = false): void {
     const leaning = this.lean > 0.01;
     // Set off from exactly where the head is (leaning in to the screen, or sitting back).
     const from = leaning ? this.camera.position.clone() : this.base.clone();
@@ -530,7 +556,13 @@ export class SeatControls {
       this.leanQuaternion.setFromRotationMatrix(look);
     }
     if (animate) {
-      this.startScript(aisle ? aisleScript(from, eye, this.yaw, this.pitch, restYaw) : walkScript(from, eye, this.yaw, this.pitch, restYaw));
+      this.startScript(
+        aisle
+          ? withCart
+            ? cartScript(from, eye, this.yaw, this.pitch, restYaw)
+            : aisleScript(from, eye, this.yaw, this.pitch, restYaw)
+          : walkScript(from, eye, this.yaw, this.pitch, restYaw),
+      );
       this.events.onRustle?.();
     } else {
       this.endScript();
@@ -611,6 +643,33 @@ export class SeatControls {
     this.lean = this.leanTarget = this.leanVel = 0;
     this.startScript(script);
     return script.duration;
+  }
+
+  /**
+   * A scripted moment from outside (the crew's cutscenes): keyframes of where the head is and where it looks, with
+   * cues at their times. Returns its length.
+   */
+  runScript(kind: ScriptKind, keys: { t: number; pos: THREE.Vector3; yaw: number; pitch: number }[], marks: { t: number; fn: () => void }[] = []): number {
+    const script = keyScript(kind, keys, [0.3, 0.2]);
+    script.marks.push(...marks);
+    this.lean = this.leanTarget = this.leanVel = 0;
+    this.startScript(script);
+    return script.duration;
+  }
+
+  /** The scripted moment playing now (its kind and how far in), or null. */
+  get scriptClock(): { kind: ScriptKind; t: number } | null {
+    return this.script ? { kind: this.script.kind, t: this.script.t } : null;
+  }
+
+  /** Where the head is now, before shake and lean (for things carried along with you, like the cart you push). */
+  get headBase(): THREE.Vector3 {
+    return this.base;
+  }
+
+  /** Where you look, now (world yaw and pitch). */
+  get look(): { yaw: number; pitch: number } {
+    return { yaw: this.yaw, pitch: this.pitch };
   }
 
   /** Snap your eyes to something for a moment (a bomb about to go off). The mouse waits meanwhile. */

@@ -101,7 +101,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
   // The flight just ended here: its cutscene plays before any end card, from the very first render of the end
   // (the cabin only starts it after this render, and the card must not show ahead of it).
   const cutscene = ending || (kind === 'ended' && !!cabin.current?.endingAhead(game));
-  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !cutscene && scene !== 'search';
+  const cardOpen = usePhaseOverlayOpen(game) && !holdReport && !cutscene && scene !== 'search' && scene !== 'tend';
   // Any window (the TV, a phase card, the leave dialog) frees the mouse; closing the last one captures it again.
   const windowOpen = leaning || cardOpen || leavingOpen || consoleMode !== null || deckCard !== null || recorderOpen;
   const mouseFree = windowOpen || preflight || cutscene;
@@ -397,7 +397,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
         ? you?.inWashroom
           ? 'Searching the lavatory…'
           : 'Looking under your seat…'
-        : fxHint
+        : scene === 'tend'
+          ? game.mine?.action?.kind === 'serve'
+            ? 'Pouring a drink…'
+            : 'Checking under the seats…'
+          : fxHint
           ? fxHint
           : deckHint
             ? deckHint
@@ -420,6 +424,11 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           {ending && (
             <button class="hud-chip hud-button boarding-skip" onClick={() => cabin.current?.skipEnding()}>
               Skip ›
+            </button>
+          )}
+          {!ending && game.options?.items.some((u) => u.item === 'bobbypin') && (
+            <button class="hud-chip hud-button boarding-skip" onClick={() => void flight.client.sendIntent({ kind: 'use', item: 'bobbypin' })}>
+              Pick the lock with your bobby pin
             </button>
           )}
           <div class={`hud-top${(kind === 'boarding' && !skipped) || ending ? ' hidden' : ''}`}>
@@ -526,7 +535,7 @@ export function World({ flight, snap, state, onUse2D }: { flight: OpenFlight; sn
           ) : (
             <div class={`hud-hint${needsInput ? ' urgent' : ''}`}>{hint}</div>
           )}
-          {!holdReport && !cutscene && scene !== 'search' && (
+          {!holdReport && !cutscene && scene !== 'search' && scene !== 'tend' && (
             <div class="hud-overlay">
               <PhaseOverlay
                 ctx={ctx}

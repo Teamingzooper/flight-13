@@ -40,6 +40,8 @@ import { atTheControls, deckLook, type ControlId } from './cockpit';
 import { buildStaircase } from './scene/staircase';
 import { buildGalley } from './scene/galley';
 import { Trays } from './scene/trays';
+import { CrewRig } from './crew';
+import { SKIN, TOP } from '../app/Avatar';
 import { clipAt, type Clip, type Tape } from './tape';
 import type { Actor } from './scene/people';
 
@@ -76,7 +78,7 @@ export interface ConsoleView {
   recorder?: boolean;
 }
 
-export type SceneKind = 'walk' | 'search' | 'glance';
+export type SceneKind = 'walk' | 'search' | 'glance' | 'tend';
 
 /** A cabin camera in the ceiling at the front of `start`'s three rows, looking back down them. */
 function aimCabinCamera(cam: THREE.PerspectiveCamera, start: number): void {
@@ -183,6 +185,14 @@ export class Cabin3D {
   private seatKey: string | null = null;
   /** You work the aisle and the cart is at your row: your tablet screen rolls with it. */
   private tabletFollows = false;
+  /** Your own hands as crew (on the cart, holding the tablet, the night's work), and the row you work. */
+  private readonly crew = new CrewRig();
+  private crewRow: number | null = null;
+  /** You are walking the cart to a new row: it rolls where your hands push it. */
+  private cartWalk = false;
+  /** The night's work last acted out (so each choice plays once). */
+  private crewActionKey: string | null = null;
+  private crewLook = '';
   /** The flight deck: the view through the windscreen, the flight displays, and how the plane is flying. */
   private readonly forwardView = new ForwardView();
   private readonly display = new FlightDisplay();
@@ -302,7 +312,7 @@ export class Cabin3D {
     this.liveMesh = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN_W, SCREEN_H), this.liveScreen.material);
     this.liveMesh.matrixAutoUpdate = false;
     this.liveMesh.visible = false;
-    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision, this.trays.group);
+    this.scene.add(this.liveMesh, this.people.group, this.cart.group, this.camera, this.cctv.nightVision, this.trays.group, this.crew.group);
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType, multisampling: this.profile.multisampling });
     this.shownScene = this.scene;
@@ -441,6 +451,12 @@ export class Cabin3D {
     const alive = game.you?.status === 'alive';
     const away: Away = alive && game.you?.inWashroom ? 'wc' : alive && game.you?.inJumpSeat ? 'deck' : null;
     const key = seat ? (away ? `${away}:${seat}` : seat) : game.you ? 'aft' : 'tower';
+    // Crew: the row you work, and whether the drink cart is there with you (after this update).
+    const crewRow = seat && !away && game.you?.status === 'alive' ? grid.aisleRow(seat) : null;
+    const withCart = crewRow !== null && !game.cabin.cartDestroyed && game.cabin.cartRow === crewRow;
+    const hadCart = this.tabletFollows;
+    this.crewRow = crewRow;
+    this.tabletFollows = withCart;
     if (key !== this.seatKey) {
       const wasAway = /^(wc|deck):/.test(this.seatKey ?? '');
       const first = this.seatKey === null;
@@ -456,11 +472,20 @@ export class Cabin3D {
           this.fade(0, 0.7);
         });
       } else {
+        // Walking the cart to your new row: it rolls where your hands push (or pull) it.
+        this.cartWalk = animate && withCart && hadCart;
+        if (this.cartWalk) this.crew.cancel();
         this.placeCamera(seat, animate, away);
       }
     }
-    const crewRow = seat && !away ? grid.aisleRow(seat) : null;
-    this.tabletFollows = crewRow !== null && !game.cabin.cartDestroyed && game.cabin.cartRow === crewRow;
+    // Your hands as crew wear your own skin and sleeves.
+    const mine = game.players.find((p) => p.id === game.you?.id);
+    const lookKey = mine ? JSON.stringify(mine.look) : '';
+    if (mine && lookKey !== this.crewLook) {
+      this.crewLook = lookKey;
+      this.crew.setLook(SKIN[mine.look.skin] ?? SKIN[0], TOP[mine.look.top] ?? TOP[0], mine.look.topStyle === 1 || mine.look.topStyle === 3);
+    }
+    this.actOutCrewWork(game, !!prev, withCart);
     const runaway = cues.some((c) => c.kind === 'cartRoll' && c.runaway);
     this.cart.setRow(game.cabin.cartRow, game.cabin.cartDestroyed, runaway);
     cabin.lavatoryDoor.visible = !game.cabin.lavatoryDestroyed;
@@ -715,6 +740,34 @@ export class Cabin3D {
     this.seatKey = null;
   }
 
+  /**
+   * Crew, in the dark: the check you chose (under the three seats on one side of your row) or the drink you are
+   * serving is acted out by your own hands, once per choice. (Only with the cart there to work from.)
+   */
+  private actOutCrewWork(game: PlayerView, live: boolean, withCart: boolean): void {
+    const action = game.mine?.action;
+    const work = game.phase.kind === 'night_act' && withCart && (action?.kind === 'check' || action?.kind === 'serve') ? action : null;
+    const key = work ? `${game.gameId}:${game.phase.night}:${JSON.stringify(work)}` : null;
+    if (key === this.crewActionKey) return;
+    this.crewActionKey = key;
+    const seat = game.you?.seat;
+    const row = seat ? grid.aisleRow(seat) : null;
+    if (!work || !live || row === null || this.crew.busy || this.controls.scriptClock) return;
+    const e = eyePosition(seat!);
+    const eye = new THREE.Vector3(e.x, e.y, e.z);
+    if (work.kind === 'check') {
+      const script = this.crew.check(row, work.side === 'left' ? -1 : 1, eye);
+      this.controls.runScript('tend', script.keys, script.marks);
+      return;
+    }
+    if (work.kind !== 'serve') return;
+    const targetSeat = game.players.find((p) => p.id === work.target)?.seat;
+    if (!targetSeat || grid.isAisleSpot(targetSeat)) return;
+    const pose = seatPose(targetSeat);
+    const script = this.crew.serve(row, eye, new THREE.Vector3(pose.x, 0, pose.z), this.people.actor(work.target) ?? null);
+    this.controls.runScript('tend', script.keys, script.marks);
+  }
+
   private placeCamera(seat: SeatId | null, animate: boolean, away: Away = null): void {
     const { seats, lighting, cabin, lavatory, flightDeck } = this.built!;
     seats.hideScreen(away ? null : seat);
@@ -742,8 +795,17 @@ export class Cabin3D {
       const e = eyePosition(seat);
       // Crew stand behind the drink cart and use the tablet on it; the Pilot has the flight deck's screen.
       const row = grid.aisleRow(seat);
-      const screen = grid.isCockpit(seat) ? flightDeck.captainScreen : row === null ? seats.screenMatrix(seat) : Cart.tabletAt(row);
-      this.controls.setSeat(new THREE.Vector3(e.x, e.y, e.z), screen, animate, 0, row !== null);
+      // (Crew without the cart hold the tablet in their hands.)
+      const handheld = row !== null && !this.tabletFollows;
+      const eye = new THREE.Vector3(e.x, e.y, e.z);
+      const screen = grid.isCockpit(seat)
+        ? flightDeck.captainScreen
+        : row === null
+          ? seats.screenMatrix(seat)
+          : handheld
+            ? CrewRig.handheldAt(eye)
+            : Cart.tabletAt(row);
+      this.controls.setSeat(eye, screen, animate, 0, row !== null, this.cartWalk);
       // The captain can look right up at the overhead panel.
       this.controls.setLookUp(grid.isCockpit(seat) ? 1.05 : undefined);
       useScreen(screen);
@@ -1012,13 +1074,25 @@ export class Cabin3D {
     this.controls.update(dt, time);
     // Your own body follows the camera down the aisle, and keeps out of the way while you search.
     const me = this.youId ? this.people.actor(this.youId) : undefined;
+    // Crew see their own hands (and not the rest of their body, which their hands would double up with).
+    this.crew.active = this.crewRow !== null && this.showing === 'cabin' && !this.ending;
     if (me) {
       me.drive(this.controls.body());
-      me.hidden = this.searching;
+      me.hidden = this.searching || this.crew.active;
     }
     this.cart.update(dt, time);
+    // Pushing the cart to a new row: it goes where your hands take it, and stays there when they stop.
+    const walking = this.cartWalk && this.controls.scriptClock?.kind === 'walk';
+    if (this.cartWalk && !walking) {
+      this.cartWalk = false;
+      this.cart.release();
+    }
+    this.crew.update(dt, this.controls.headBase, this.tabletFollows ? this.cart : null, walking);
     if (this.tabletFollows && this.liveMesh.visible) {
       this.cart.tabletMatrix(this.liveMesh.matrix);
+      this.liveMesh.matrixWorldNeedsUpdate = true;
+    } else if (this.crew.active && this.liveMesh.visible) {
+      this.liveMesh.matrix.copy(this.crew.screenMatrix);
       this.liveMesh.matrixWorldNeedsUpdate = true;
     }
     this.applyPoses(time);

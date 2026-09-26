@@ -188,6 +188,8 @@ export interface PlayerState {
   knockedOutNight: number | null;
   /** Mastermind: airplane mode is switched off once per flight (the cameras jammed). */
   jamUsed: boolean;
+  /** Handcuffed by the Air Marshal: the seat they were taken from (a bobby pin gets them back to it). */
+  cuffedFrom: SeatId | null;
   /** A custom role's ability: times used so far (for those limited per flight). */
   abilityUses: number;
 }

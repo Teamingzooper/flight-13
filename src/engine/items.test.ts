@@ -225,19 +225,50 @@ describe('carry-on items', () => {
     expect(s.stats.mastermind.kills).toBe(1);
   });
 
-  it("a bobby pin picks the Air Marshal's handcuffs, and the cuffs are gone", () => {
-    const s = cabin();
+  it("a bobby pin picks the Air Marshal's handcuffs by hand, and the flight goes on", () => {
+    const s = makeGame([
+      { id: 'bomber', role: 'bomber', seat: '4B' },
+      { id: 'marshal', role: 'marshal', seat: '4E' },
+      { id: 'pilot', role: 'pilot', seat: '8F' },
+      { id: 'nurse', role: 'nurse', seat: '1F' },
+      { id: 'p1', role: 'passenger', seat: '6A' },
+      { id: 'p2', role: 'passenger', seat: '2D' },
+    ]);
     pack(s, 'bomber', ['bobbypin']);
     advanceTo(s, 'night_move', 1);
     move(s, 'marshal', '4C');
     advanceTo(s, 'night_act', 1);
+    // Not before the cuffs are on.
+    expect(use(s, 'bomber', { item: 'bobbypin' })).toMatchObject({ ok: false });
     act(s, 'marshal', { kind: 'cuff', target: 'bomber' });
     act(s, 'bomber', { kind: 'plant', where: 'seat', fuse: 2 });
     advanceTo(s, 'dawn', 1);
-    expect(player(s, 'bomber')).toMatchObject({ status: 'alive', bombsPlanted: 1, usedItems: ['bobbypin'] });
+    // Cuffed and out of play: nothing picked the lock by itself, and the pin is still in the carry-on.
+    expect(player(s, 'bomber')).toMatchObject({ status: 'restrained', cuffedFrom: '4B', items: ['bobbypin'], bombsPlanted: 0 });
+    expect(logTexts(s, 'bomber')).toContain('You are in handcuffs, but you still have your bobby pin. Pick the lock from your carry-on.');
+    expect(viewFor(s, 'bomber', 0).options?.items).toEqual([{ item: 'bobbypin' }]);
+    // Not one of the ghosts while the pin might still get them out.
+    expect(applyIntent(s, 'bomber', { kind: 'chat', channel: 'ghosts', text: 'hello' }, 0)).toMatchObject({ ok: false });
+    // The only saboteur in cuffs: the passengers' win waits on the morning...
+    expect(s.result).toMatchObject({ winner: 'passengers' });
+    // ...and the pin calls it off.
+    expect(use(s, 'bomber', { item: 'bobbypin' })).toEqual({ ok: true });
+    expect(player(s, 'bomber')).toMatchObject({ status: 'alive', seat: '4B', cuffedFrom: null, usedItems: ['bobbypin'] });
+    expect(s.result).toBeNull();
+    expect(viewFor(s, 'marshal', 0).log.map((e) => e.text)).toContain('bomber picked the lock of their handcuffs with a bobby pin and slipped back to 4B.');
+    advanceTo(s, 'day_discuss', 1);
+    expect(s.phase.kind).toBe('day_discuss');
     expect(player(s, 'marshal').cuffsUsed).toBe(true);
-    expect(logTexts(s, 'bomber')).toContain('Someone snapped handcuffs on you in the dark. You picked the lock with your bobby pin and slipped free.');
-    expect(logTexts(s, 'marshal')).toContain('You handcuffed bomber (4B), but they picked the lock and slipped free. Your cuffs are gone.');
+  });
+
+  it('a pin cannot pick your way out of the vote', () => {
+    const s = cabin();
+    pack(s, 'bomber', ['bobbypin']);
+    advanceTo(s, 'day_vote', 1);
+    voteAll(s, 'bomber');
+    advanceTo(s, 'verdict', 1);
+    expect(player(s, 'bomber').status).toBe('restrained');
+    expect(use(s, 'bomber', { item: 'bobbypin' })).toMatchObject({ ok: false });
   });
 });
 

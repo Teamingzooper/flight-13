@@ -1,6 +1,6 @@
-import { aisleRow, distance, isSeatInCabin, parseSeat, rowSeats, seatsWithin } from './grid';
+import { aisleRow, distance, isSeatInCabin, parsePlace, parseSeat, rowSeats, seatsWithin } from './grid';
 import { isStewardess } from './roles';
-import { activePlayers, addLog, cellOf, fuseText, getPlayer, inWashroom, isActive, isGuest, statsOf } from './state';
+import { activePlayers, addLog, cellOf, emptySeats, fuseText, getPlayer, inWashroom, isActive, isGuest, occupantOf, statsOf } from './state';
 import type { Bomb, GameState, ItemId, PhaseKind, PlayerState, SeatId } from './types';
 
 /** Items that fit in a carry-on. */
@@ -73,8 +73,8 @@ export const ITEMS: Record<ItemId, ItemInfo> = {
     id: 'bobbypin',
     name: 'Bobby pin',
     when: 'any',
-    automatic: true,
-    blurb: "Pick the lock of the Air Marshal's handcuffs once.",
+    automatic: false,
+    blurb: "Once the Air Marshal's handcuffs are on you, pick the lock and slip back to your seat.",
   },
 };
 
@@ -129,6 +129,10 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
   const name = info.name.toLowerCase();
   if (!p.items.includes(use.item)) return `You have no ${name} in your carry-on.`;
   if (info.automatic) return `Your ${name} works by itself when you need it.`;
+  if (use.item === 'bobbypin') {
+    if (p.status !== 'restrained' || !p.cuffedFrom) return 'Keep it for the Air Marshal’s handcuffs: pick the lock once they are on you.';
+    return s.phase.kind === 'ended' ? 'The flight is over.' : null;
+  }
   if (!isActive(p) || !p.seat) return 'You are out of play.';
   const kind = s.phase.kind;
   if (info.when === 'night' && !NIGHT.has(kind)) return `Your ${name} is for use at night.`;
@@ -171,6 +175,8 @@ export function checkItemUse(s: GameState, p: PlayerState, use: ItemUse): string
 
 /** Every legal item use for a player right now (the TV and bots use this). */
 export function possibleItemUses(s: GameState, p: PlayerState): ItemUse[] {
+  // In the Air Marshal's handcuffs, the one thing you can do is pick the lock.
+  if (p.status === 'restrained') return checkItemUse(s, p, { item: 'bobbypin' }) === null ? [{ item: 'bobbypin' }] : [];
   if (!isActive(p) || !p.seat) return [];
   const uses: ItemUse[] = [];
   for (const item of new Set(p.items)) {
@@ -250,6 +256,21 @@ export function useItem(s: GameState, p: PlayerState, use: ItemUse, now: number)
       s.night.mirrors[p.id] = true;
       addLog(s, now, [p.id], 'item', 'You propped your compact mirror on the tray table. At dawn you will know who came near you.');
       break;
+    case 'bobbypin': {
+      // Back to the seat you were taken from, or the nearest free one if somebody has taken it.
+      const home = p.cuffedFrom!;
+      const cell = parsePlace(home);
+      const free = emptySeats(s).sort((a, b) => (cell ? distance(parseSeat(a)!, cell) - distance(parseSeat(b)!, cell) : 0));
+      const seat = occupantOf(s, home) ? (free[0] ?? home) : home;
+      p.status = 'alive';
+      p.cause = null;
+      p.outNight = null;
+      p.seat = seat;
+      p.cuffedFrom = null;
+      addLog(s, now, 'all', 'item', `${p.name} picked the lock of their handcuffs with a bobby pin and slipped back to ${seat}.`, { player: p.id });
+      addLog(s, now, 'end', 'item', `Night ${n}: ${p.name} picked the Air Marshal’s handcuffs with a bobby pin.`);
+      break;
+    }
     case 'ffcard':
       s.day.doubled[p.id] = true;
       addLog(s, now, 'all', 'item', `${p.name} flashed a frequent-flyer card. Their vote counts twice today.`, { player: p.id });

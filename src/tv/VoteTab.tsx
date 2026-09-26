@@ -28,7 +28,7 @@ export function VoteTab({ ctx }: { ctx: TVContext }) {
   const byVoter = game.votes?.byVoter ?? null;
   const mine = game.mine?.vote ?? null;
   const canVote = new Set(game.options?.vote ?? []);
-  const voting = game.options !== null;
+  const voting = game.options !== null && game.you?.status === 'alive';
   const voters = (target: string) =>
     byVoter
       ? Object.entries(byVoter)
